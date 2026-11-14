@@ -31,7 +31,7 @@ xamlkeys path/to/your/wpf/project
 | `out-of-scope` | warn | `K` 在專案裡存在，但不在這個引用看得到的地方。 |
 | `shadowed` | warn | 合併順序讓這份定義永遠輪不到，而且贏家的內容**不一樣**。 |
 | `shadowed-identical` | info | 同上，但每一份都一模一樣 —— 多餘，不是錯。 |
-| `unused` | warn | XAML 與 C# 都沒有引用這個鍵。 |
+| `unused` | warn | XAML 與 C# 都沒有引用這個鍵；或某個視窗自己的那一份，視窗裡沒有任何東西碰得到（複製貼上之後忘了接的樣式）。 |
 | `orphan-dictionary` | warn | 沒有人合併、程式也沒有載入的資源字典。 |
 | `external` | info | 這個鍵可能來自一本讀不到的合併字典。 |
 

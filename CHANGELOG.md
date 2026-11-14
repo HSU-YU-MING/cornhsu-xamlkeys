@@ -115,6 +115,16 @@ checks found them to be real uses that the previous build reported wrongly (Scre
 localisation keys, ModernWpf's `p91`, MahApps' child windows); one (`Example` in MahApps) is a
 coincidental name match.
 
+- **A window's own dead copy of a shared name is now reported.** `unused` is counted once per key
+  name, so a style copy-pasted into ten windows and wired up in only one looked fine. Cleaning up
+  the same app turned up a `DarkComboBoxStyle` in a dialog that has no combo box. A copy in a
+  `<X.Resources>` that no reference in its own scope reaches is now reported, unless something at
+  runtime could still find it: a theme dictionary, a `{DynamicResource}` of that name elsewhere
+  (lightweight-styling overrides), an `Application` subclass root, the code-behind (`X.xaml.cs`
+  or `X.cs`) naming it or looking resources up by variable, or C# looking the name up. The first
+  draft added 156 findings to the corpus; each exception removed a class of false ones, and the
+  remaining 21 were checked by hand.
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file

@@ -35,7 +35,7 @@
     "implicitThemeDictionaries": 0,
     "runtimeSelectedFamilyFiles": 0,
     "libraryUnresolvedReferences": 0,
-    "unusedDefinitions": 12,
+    "unusedDefinitions": 22,
     "crossProjectReferences": 0,
     "testFilesExcluded": 0,
     "sides": [
@@ -49,13 +49,13 @@
       "outOfScope": 0,
       "shadowed": 0,
       "shadowedIdentical": 0,
-      "unused": 9,
+      "unused": 19,
       "orphanDictionary": 0,
       "external": 0
     },
     "severities": {
       "fail": 0,
-      "warn": 9,
+      "warn": 19,
       "info": 0
     }
   },
@@ -72,6 +72,19 @@
     {
       "kind": "unused",
       "severity": "warn",
+      "key": "DarkComboBoxStyle",
+      "file": "QuillNest/Views/AppLabelManagerDialog.xaml",
+      "line": 55,
+      "side": "neutral",
+      "message": "\u0027DarkComboBoxStyle\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/NoteEditorWindow.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/NoteEditorWindow.xaml",
+        "line": 101
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
       "key": "DarkComboBoxItemStyle",
       "file": "QuillNest/Views/AppLabelManagerDialog.xaml",
       "line": 125,
@@ -81,11 +94,76 @@
     {
       "kind": "unused",
       "severity": "warn",
+      "key": "BoolToVisibilityConverter",
+      "file": "QuillNest/Views/EventTodoEditDialog.xaml",
+      "line": 13,
+      "side": "neutral",
+      "message": "\u0027BoolToVisibilityConverter\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/MainWindow.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/MainWindow.xaml",
+        "line": 13
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "InverseBoolToVisibilityConverter",
+      "file": "QuillNest/Views/EventTodoEditDialog.xaml",
+      "line": 14,
+      "side": "neutral",
+      "message": "\u0027InverseBoolToVisibilityConverter\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/SetupWizardWindow.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/SetupWizardWindow.xaml",
+        "line": 13
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "BoolToVis",
+      "file": "QuillNest/Views/NoteEditorWindow.xaml",
+      "line": 13,
+      "side": "neutral",
+      "message": "\u0027BoolToVis\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/NotesView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/NotesView.xaml",
+        "line": 9
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
       "key": "InverseBoolToVis",
       "file": "QuillNest/Views/NoteEditorWindow.xaml",
       "line": 14,
       "side": "neutral",
       "message": "\u0027InverseBoolToVis\u0027 is defined but never referenced in XAML or code. A similarly named key \u0027InverseBoolToVisibilityConverter\u0027 is referenced -- was this renamed?"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "ObjectToVis",
+      "file": "QuillNest/Views/NoteEditorWindow.xaml",
+      "line": 15,
+      "side": "neutral",
+      "message": "\u0027ObjectToVis\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/NotesView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/NotesView.xaml",
+        "line": 10
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "HexColorToBrushConverter",
+      "file": "QuillNest/Views/NoteEditorWindow.xaml",
+      "line": 16,
+      "side": "neutral",
+      "message": "\u0027HexColorToBrushConverter\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/NotesView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/NotesView.xaml",
+        "line": 11
+      }
     },
     {
       "kind": "unused",
@@ -117,11 +195,50 @@
     {
       "kind": "unused",
       "severity": "warn",
+      "key": "ZeroToVisibilityConverter",
+      "file": "QuillNest/Views/StickyNotesView.xaml",
+      "line": 14,
+      "side": "neutral",
+      "message": "\u0027ZeroToVisibilityConverter\u0027 is defined in UserControl.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/CalendarView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/CalendarView.xaml",
+        "line": 9
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
       "key": "NoteItemStyle",
       "file": "QuillNest/Views/StickyNotesView.xaml",
       "line": 19,
       "side": "neutral",
       "message": "\u0027NoteItemStyle\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "ZeroToVisibilityConverter",
+      "file": "QuillNest/Views/TodoView.xaml",
+      "line": 8,
+      "side": "neutral",
+      "message": "\u0027ZeroToVisibilityConverter\u0027 is defined in UserControl.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/CalendarView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/CalendarView.xaml",
+        "line": 9
+      }
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "InverseBoolToVisibilityConverter",
+      "file": "QuillNest/Views/WorkloadDashboardView.xaml",
+      "line": 8,
+      "side": "neutral",
+      "message": "\u0027InverseBoolToVisibilityConverter\u0027 is defined in UserControl.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/SetupWizardWindow.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/SetupWizardWindow.xaml",
+        "line": 13
+      }
     },
     {
       "kind": "unused",
@@ -140,6 +257,19 @@
       "line": 34,
       "side": "neutral",
       "message": "\u0027ShortInputStyle\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "DataGridTextEditStyle",
+      "file": "QuillNest/Views/WorkloadRowDetailDialog.xaml",
+      "line": 43,
+      "side": "neutral",
+      "message": "\u0027DataGridTextEditStyle\u0027 is defined in Window.Resources but nothing that can see this copy uses it; the copy in QuillNest/Views/WorkloadDashboardView.xaml is the one in use",
+      "related": {
+        "file": "QuillNest/Views/WorkloadDashboardView.xaml",
+        "line": 13
+      }
     }
   ],
   "parseErrorDetails": [],

@@ -207,19 +207,25 @@ public sealed class Analyzer
         // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
+        foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
 
         // 用變數查找的檔裡，跟某個鍵同名的字串 → 算成有人用（理由見 CSharpScanner.LiteralsNearDynamicLookups）。
         // 只計「真的會被判 unused 的鍵」：函式庫的鍵本來就不判，算進來只會灌水。
         var appKeys = ctx.Definitions.Where(d => !ctx.InLibrary(ctx.ById[d.DictionaryId].File))
                                      .Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var (text, _) in cs.LiteralsNearDynamicLookups)
-            if (ctx.DefinedNames.Contains(text) && ctx.ReferencedNames.Add(text) && appKeys.Contains(text))
+        {
+            if (!ctx.DefinedNames.Contains(text)) continue;
+            ctx.CSharpNames.Add(text);
+            if (ctx.ReferencedNames.Add(text) && appKeys.Contains(text))
                 result.KeysNamedNearDynamicLookups++;
+        }
 
         EmitDuplicateKeys(dicts, result, config);
         EmitReferenceFindings(ctx, sides, result);
         EmitShadowed(ctx, result);
         EmitUnused(ctx, result);
+        EmitDeadLocalCopies(ctx, result);   // ⚠ 要在 EmitReferenceFindings 之後：靠它收集 Reached／OpenNames
         EmitOrphanDictionaries(ctx, result);
 
         result.Findings.Sort(CompareFindings);
@@ -271,6 +277,20 @@ public sealed class Analyzer
         public HashSet<string> DefinedNames { get; }
         public HashSet<string> ReferencedNames { get; }
         public Dictionary<string, HashSet<string>> DefinedByProject { get; }
+
+        /// <summary>至少被一個 XAML 引用靜態解析到的定義（以參考比較）。</summary>
+        public HashSet<KeyDefinition> Reached { get; } = [];
+
+        /// <summary>有引用在靜態上**沒有**解析成功的鍵名（解析不到、被 ignore 掉而沒查）。
+        /// 執行期沿著視覺樹往上找時，這種引用可能落到任何一份同名的定義上 —— 見 EmitDeadLocalCopies。</summary>
+        public HashSet<string> OpenNames { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>C# 用過的鍵名：字面查找，加上「變數查找旁邊的同名字串」。
+        /// C# 可以對任何一個元素呼叫 FindResource，所以這些名字的每一份定義都可能被用到。</summary>
+        public HashSet<string> CSharpNames { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>有「用變數查找」的 C# 檔（相對路徑）。</summary>
+        public HashSet<string> DynamicSiteFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>字典 Id -> 把它合併進來的那些「主題入口」（見 MutuallyExclusive）。</summary>
         public Dictionary<int, HashSet<int>> ThemeEntriesOf { get; }
@@ -355,11 +375,12 @@ public sealed class Analyzer
 
         foreach (var r in ctx.References)
         {
-            if (r.SuppressedReason is not null) { result.Suppressed++; continue; }
+            if (r.SuppressedReason is not null) { result.Suppressed++; ctx.OpenNames.Add(r.Key); continue; }
 
             // C# 的查找沒有靜態作用域（執行期沿真實樹走）：只能確認鍵名存不存在。
             if (r.Kind == RefKind.CSharp)
             {
+                ctx.CSharpNames.Add(r.Key);
                 if (!ctx.DefinedNames.Contains(r.Key) && result.ExternalSources.Count == 0
                     && !ctx.InLibrary(r.Location.File))
                     result.Findings.Add(Make(FindingKind.DanglingDynamic, r, ThemeSide.Neutral, cfg,
@@ -381,9 +402,11 @@ public sealed class Analyzer
             {
                 var res = ctx.Engine.Lookup(r.Key, r.ScopeChain, side, refProject);
                 if (res.Status != LookupStatus.Found) failures.Add((side, res));
+                else if (res.Definition is { } def) ctx.Reached.Add(def);
             }
 
             if (failures.Count == 0) continue;
+            ctx.OpenNames.Add(r.Key);
             var allSidesFailed = failures.Count == evaluate.Count;
 
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
@@ -717,6 +740,121 @@ public sealed class Analyzer
                 Message = $"'{group.Key}' is defined but never referenced in XAML or code{where}{renamed}",
             });
         }
+    }
+
+    /// <summary>
+    /// 視窗、控制項自己的 &lt;X.Resources&gt; 裡，**名字別處有人用、這一份卻誰都碰不到**的定義。
+    /// </summary>
+    /// <remarks>
+    /// EmitUnused 是「整棵樹以名字算一次」—— 這是為了在地化（同一個鍵在四十個語系檔各一份），
+    /// 但它有一個盲點，是在 QuillNest 上第一次真的拿來用時看到的：
+    /// 各個視窗複製貼上同一組樣式（DarkComboBoxStyle、DarkComboBoxItemStyle…），
+    /// 只要其中一個視窗在用，其他視窗裡死掉的副本就全部隱形。
+    /// AppLabelManagerDialog 根本沒有下拉選單，它的 DarkComboBoxStyle 卻從沒被報過。
+    /// <para>
+    /// 元素底下的資源只有兩條路會被用到：(1) 靜態作用域裡的引用解析到它 ——
+    /// 這個我們算得出來（Reached）；(2) 執行期沿著樹往上找。第 (2) 條看不到，所以保守處理，
+    /// 下面每一個 continue 都是語料裡實際踩到的一種「執行期找得到」。
+    /// </para>
+    /// 只看 &lt;X.Resources&gt;：獨立字典檔與應用程式層級的資源可以被整個 App 看到，不適用這條。
+    /// </remarks>
+    private static void EmitDeadLocalCopies(Context ctx, AnalysisResult result)
+    {
+        var cfg = ctx.Config;
+
+        // 名字 → 有 {DynamicResource}／{ThemeResource} 引用它的檔
+        var dynamicRefFiles = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var r in ctx.References)
+            if (r.Kind is RefKind.Dynamic or RefKind.Theme)
+            {
+                if (!dynamicRefFiles.TryGetValue(r.Key, out var files))
+                    dynamicRefFiles[r.Key] = files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                files.Add(r.Location.File);
+            }
+
+        var codeBehindText = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var d in ctx.Definitions)
+        {
+            // 整個名字都沒人用 → EmitUnused 已經報過了
+            if (!ctx.ReferencedNames.Contains(d.Key)) continue;
+            if (ctx.Reached.Contains(d)) continue;
+
+            var dict = ctx.ById[d.DictionaryId];
+            if (dict.Owner is null || dict.IsApplicationScope || dict.IsStandaloneFile) continue;
+            if (!dict.Owner.EndsWith(".Resources", StringComparison.Ordinal)) continue;
+            if (ctx.InLibrary(dict.File)) continue;
+
+            // ⚠ 根元素是 Application 的子類別（MAUI 的 <local:App>）：那是整個 App 的資源，不是某個畫面的。
+            //   實測 maui-samples 的 TestHarnessApp。
+            var ownerType = dict.Owner[..dict.Owner.IndexOf('.')];
+            if (ownerType == "App" || ownerType.EndsWith("Application", StringComparison.Ordinal)) continue;
+
+            // ⚠ 上面「只看 X.Resources」同時排除了主題字典（擁有者是 ThemeDictionaries[Default]…）。
+            //   主題字典執行期只會選中一本，而我們只用深、淺兩側去解析 —— HighContrast 那一份
+            //   永遠「沒被解析到」。放進來的話，WinUI Gallery 每一組主題資源的高對比版本都會被報成死的。
+
+            // 別處有靜態解析不到的同名引用（例如樣板裡的 {StaticResource K}：樣板套用時才沿樹往上找）
+            if (ctx.OpenNames.Contains(d.Key)) continue;
+
+            // ⚠ 輕量樣式覆寫：主題或共用樣式裡的 {DynamicResource K}，執行期從**被套用的那個控制項**往上找，
+            //   所以畫面自己的 <X.Resources> 裡同名的 K 會蓋過主題的值 —— 那一份是有人用的。
+            //   實測 Avalonia ControlCatalog 的 TabbedPage* 與 MahApps 的 MahApps.Sizes.ScrollBar.*。
+            //   別的檔裡只要有同名的動態引用就不報。
+            var rel = dict.Location.File;
+            if (dynamicRefFiles.TryGetValue(d.Key, out var dynFiles)
+                && dynFiles.Any(f => !string.Equals(f, rel, StringComparison.OrdinalIgnoreCase))) continue;
+
+            // C# 可以對任何元素呼叫 FindResource
+            if (ctx.CSharpNames.Contains(d.Key)) continue;
+
+            // ⚠ code-behind 有兩種命名：X.xaml.cs，以及 WPF-Samples 的 HexSphereDemo 那種 X.cs
+            var stem = rel[..^Path.GetExtension(rel).Length];
+            string[] codeBehind = [rel + ".cs", stem + ".cs"];
+            if (codeBehind.Any(ctx.DynamicSiteFiles.Contains)) continue;
+            // x:Name 給的鍵會變成欄位，code-behind 直接用名字取（不是 FindResource）
+            if (codeBehind.Any(cb => MentionsWord(CodeBehindText(cb), d.Key))) continue;
+
+            if (d.SuppressedReason is not null) { result.Suppressed++; continue; }
+            if (cfg.UsedAtRuntime.Any(p => Config.MatchesGlob(d.Key, p))) { result.Suppressed++; continue; }
+
+            var usedCopy = ctx.Definitions.FirstOrDefault(o => o.Key == d.Key && ctx.Reached.Contains(o));
+            var where = usedCopy is null ? "" : $"; the copy in {usedCopy.Location.File} is the one in use";
+
+            result.UnusedDefinitions++;
+            result.Findings.Add(new Finding
+            {
+                Kind = FindingKind.Unused,
+                Severity = cfg.SeverityFor(FindingKind.Unused),
+                Key = d.Key,
+                Location = d.Location,
+                Related = usedCopy?.Location,
+                Message = $"'{d.Key}' is defined in {dict.Owner} but nothing that can see this copy uses it{where}",
+            });
+        }
+
+        string CodeBehindText(string relPath)
+        {
+            if (codeBehindText.TryGetValue(relPath, out var text)) return text;
+            var abs = ctx.Abs(relPath);
+            try { text = File.Exists(abs) ? File.ReadAllText(abs) : ""; }
+            catch (IOException) { text = ""; }
+            return codeBehindText[relPath] = text;
+        }
+    }
+
+    private static bool MentionsWord(string text, string word)
+    {
+        for (var i = text.IndexOf(word, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(word, i + 1, StringComparison.Ordinal))
+        {
+            var before = i == 0 ? ' ' : text[i - 1];
+            var after = i + word.Length >= text.Length ? ' ' : text[i + word.Length];
+            if (!IsWordChar(before) && !IsWordChar(after)) return true;
+        }
+        return false;
+
+        static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
     }
 
     /// <summary>沒有被任何人合併、也沒有被程式載入的獨立字典檔。</summary>

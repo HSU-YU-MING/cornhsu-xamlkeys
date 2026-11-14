@@ -34,7 +34,7 @@ xamlkeys path/to/your/wpf/project
 | `out-of-scope` | warn | `K` exists in this project but not where this reference can see it. |
 | `shadowed` | warn | Merge order makes this definition unreachable, and the winner has **different** content. |
 | `shadowed-identical` | info | Same, but every copy is identical — redundant, not wrong. |
-| `unused` | warn | Nothing in XAML or C# references this key. |
+| `unused` | warn | Nothing in XAML or C# references this key — or a window's own copy of a key that nothing in that window can reach (the copy-pasted style nobody wired up). |
 | `orphan-dictionary` | warn | A ResourceDictionary nothing merges and no code loads. |
 | `external` | info | The key may come from a merged dictionary that could not be read. |
 
