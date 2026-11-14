@@ -16,6 +16,7 @@
     "suppressed": 0,
     "parseErrors": 0,
     "unresolvedSites": 0,
+    "invalidIgnores": 0,
     "dynamicKeySites": 0,
     "configOverrides": true,
     "hasApplication": true,
@@ -141,5 +142,6 @@
     }
   ],
   "parseErrorDetails": [],
+  "invalidIgnoreDetails": [],
   "dynamicKeySiteDetails": []
 }

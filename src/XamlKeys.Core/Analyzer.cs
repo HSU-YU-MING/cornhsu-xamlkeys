@@ -16,6 +16,10 @@ public sealed class AnalysisResult
     public int Suppressed { get; set; }
     public List<ParseError> ParseErrors { get; } = [];
     public List<SourceLocation> UnresolvedSites { get; } = [];
+
+    /// <summary>沒寫理由、因此無效的 ignore 註解。⚠ 一定要講出來 ——
+    /// 使用者以為自己壓掉了,實際上沒有。</summary>
+    public List<SourceLocation> InvalidIgnores { get; } = [];
     public List<DynamicKeySite> DynamicKeySites { get; } = [];
     public List<string> ExternalSources { get; } = [];
     public bool HasApplication { get; set; }
@@ -146,6 +150,7 @@ public sealed class Analyzer
 
         result.ParseErrors.AddRange(scanner.Errors);
         result.UnresolvedSites.AddRange(scanner.UnresolvedSites);
+        result.InvalidIgnores.AddRange(scanner.InvalidIgnores);
         result.DynamicKeySites.AddRange(cs.DynamicSites);
 
         var dicts = scanner.Dictionaries;

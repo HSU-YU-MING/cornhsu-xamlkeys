@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HSU-YU-MING/cornhsu-xamlkeys/blob/main/docs/report.schema.json",
+  "title": "XamlKeys JSON report",
+  "description": "The shape written by --json. schemaVersion only increases on a major release; new fields may be added without bumping it, so consumers must ignore fields they do not recognise.",
+  "type": "object",
+  "required": ["schemaVersion", "toolVersion", "summary", "findings"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "toolVersion": { "type": "string" },
+
+    "summary": {
+      "type": "object",
+      "description": "Counts, and — just as important — what this run could not see.",
+      "required": [
+        "dialect", "xamlFiles", "dictionaries", "coverage", "keysDefined", "references",
+        "suppressed", "counts", "severities"
+      ],
+      "properties": {
+        "dialect": { "enum": ["wpf", "winui"] },
+        "dialectAutoDetected": { "type": "boolean" },
+        "dialectMixed": {
+          "type": "boolean",
+          "description": "The tree holds both WPF and WinUI projects, whose merge order is opposite. Each dictionary was resolved with its own project's rules."
+        },
+
+        "xamlFiles": { "type": "integer" },
+        "csharpFiles": { "type": "integer" },
+        "dictionaries": { "type": "integer" },
+        "mergeEdges": { "type": "integer" },
+        "mergeEdgesResolved": { "type": "integer" },
+        "coverage": {
+          "type": "number",
+          "description": "Share of merged dictionaries that could be read. Below minCoverage the run exits 3, because 'unused' cannot be trusted."
+        },
+        "keysDefined": { "type": "integer" },
+        "references": { "type": "integer" },
+
+        "suppressed": { "type": "integer", "description": "Hidden by ignore comments, config or a baseline." },
+        "parseErrors": { "type": "integer" },
+        "unresolvedSites": { "type": "integer", "description": "References whose key is not a string (x:Type, x:Static)." },
+        "invalidIgnores": { "type": "integer", "description": "Ignore comments with no reason. They suppress nothing." },
+        "dynamicKeySites": { "type": "integer", "description": "C# lookups that build the key at runtime." },
+        "libraryKeysNotChecked": { "type": "integer", "description": "Keys in library projects, not evaluated for usage." },
+        "libraryUnresolvedReferences": { "type": "integer" },
+        "crossProjectReferences": { "type": "integer" },
+        "variantDictionaryGroups": { "type": "integer" },
+        "runtimeSelectedFamilyFiles": { "type": "integer" },
+        "runtimeLoadedDictionaries": { "type": "integer" },
+        "implicitThemeDictionaries": { "type": "integer" },
+        "frameworkProvided": { "type": "integer" },
+        "testFilesExcluded": { "type": "integer" },
+        "unusedDefinitions": { "type": "integer", "description": "Definitions covered by the unused findings (one finding per key name)." },
+
+        "configOverrides": { "type": "boolean" },
+        "hasApplication": { "type": "boolean" },
+        "projects": { "type": "integer" },
+        "applicationProjects": { "type": "integer" },
+
+        "winUiKeySource": { "type": "string" },
+        "winUiKeyCount": { "type": "integer" },
+        "wpfFluentThemeInUse": { "type": "boolean" },
+        "wpfFluentKeySource": { "type": "string" },
+        "wpfFluentKeyCount": { "type": "integer" },
+
+        "sides": { "type": "array", "items": { "enum": ["neutral", "dark", "light", "high-contrast", "fallback"] } },
+        "externalSources": { "type": "array", "items": { "type": "string" } },
+
+        "counts": {
+          "type": "object",
+          "description": "Per-kind counts. Keys are camelCase here; findings[].kind uses the kebab-case form.",
+          "properties": {
+            "danglingStatic": { "type": "integer" },
+            "danglingDynamic": { "type": "integer" },
+            "duplicateKey": { "type": "integer" },
+            "outOfScope": { "type": "integer" },
+            "shadowed": { "type": "integer" },
+            "shadowedIdentical": { "type": "integer" },
+            "unused": { "type": "integer" },
+            "orphanDictionary": { "type": "integer" },
+            "external": { "type": "integer" }
+          }
+        },
+
+        "severities": {
+          "type": "object",
+          "required": ["fail", "warn", "info"],
+          "properties": {
+            "fail": { "type": "integer" },
+            "warn": { "type": "integer" },
+            "info": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "severity", "key", "file", "line", "side", "message"],
+        "properties": {
+          "kind": {
+            "enum": ["dangling-static", "dangling-dynamic", "duplicate-key", "out-of-scope",
+                     "shadowed", "shadowed-identical", "unused", "orphan-dictionary", "external"]
+          },
+          "severity": { "enum": ["fail", "warn", "info"] },
+          "key": { "type": "string" },
+          "file": { "type": "string", "description": "Relative to the scan root, forward slashes." },
+          "line": { "type": "integer" },
+          "side": { "enum": ["neutral", "dark", "light", "high-contrast", "fallback"] },
+          "message": { "type": "string" },
+          "related": {
+            "type": "object",
+            "description": "The other end: the winner of a shadowing, the first of a duplicate, the definition an out-of-scope reference wanted.",
+            "required": ["file", "line"],
+            "properties": { "file": { "type": "string" }, "line": { "type": "integer" } }
+          },
+          "externalSource": { "type": "string" }
+        }
+      }
+    },
+
+    "parseErrorDetails": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "message"],
+        "properties": { "file": { "type": "string" }, "message": { "type": "string" } }
+      }
+    },
+
+    "invalidIgnoreDetails": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line"],
+        "properties": { "file": { "type": "string" }, "line": { "type": "integer" } }
+      }
+    },
+
+    "dynamicKeySiteDetails": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "expression"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "expression": { "type": "string" }
+        }
+      }
+    }
+  }
+}

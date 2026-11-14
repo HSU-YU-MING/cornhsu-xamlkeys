@@ -24,6 +24,7 @@ double? minCoverage = null;
 var msbuild = false;
 var showInfo = false;
 var listStale = false;
+var includeTests = false;
 var excludes = new List<string>();
 
 for (var i = 0; i < args.Length; i++)
@@ -33,6 +34,7 @@ for (var i = 0; i < args.Length; i++)
         case "--show-info": showInfo = true; break;
         case "--msbuild": msbuild = true; break;
         case "--stale": listStale = true; break;
+        case "--include-tests": includeTests = true; break;
 
         case "--json":
             if (Value(args, ref i, "--json") is not { } jp) return 2;
@@ -131,6 +133,13 @@ if (!Directory.Exists(root))
     return 2;
 }
 
+// ⚠ 旗標組合不成立時要出聲。靜靜什麼都不做,使用者會以為自己檢查過了。
+if (listStale && baselinePath is null)
+{
+    Console.Error.WriteLine("--stale lists baseline entries that no longer occur, so it needs --baseline <path>");
+    return 2;
+}
+
 Config config;
 var autoDiscoveredConfig = (string?)null;
 try
@@ -161,6 +170,7 @@ if (dialectFlag is not null)
     config.DialectAutoDetected = false;
 }
 config.Exclude.AddRange(excludes);
+if (includeTests) config.IncludeTests = true;
 
 // ⚠ 自動撿到的設定檔**來自被掃描的那棵樹**。在 CI 上掃一個 PR 的時候，
 //   那個檔案就是 PR 的內容 —— 它可以把 severities 全部降成 info、
@@ -173,6 +183,11 @@ if (autoDiscoveredConfig is not null && config.HasOverrides)
 
 var result = Analyzer.Run(root, config);
 var version = ToolVersion();
+
+// ⚠ --write-baseline 要記的是「現在全部的 finding」，不是「扣掉舊 baseline 之後剩下的」。
+//   `--baseline b.json --write-baseline b.json`（更新基準線最自然的打法）
+//   在舊版會把那個檔清成 0 條 —— 而它是進版控的檔案。所以先把完整清單留一份。
+var allFindings = result.Findings.ToList();
 
 // baseline 在輸出之前套用：報告裡不該出現已知債
 Baseline? baseline = null;
@@ -200,8 +215,8 @@ if (writeBaselinePath is not null)
 {
     try
     {
-        File.WriteAllText(writeBaselinePath, Baseline.FromFindings(result.Findings).ToJson(version));
-        Console.WriteLine($"wrote baseline with {result.Findings.Count} entr(ies) to {writeBaselinePath}");
+        File.WriteAllText(writeBaselinePath, Baseline.FromFindings(allFindings).ToJson(version));
+        Console.WriteLine($"wrote baseline with {allFindings.Count} entr(ies) to {writeBaselinePath}");
     }
     catch (IOException ex)
     {
@@ -218,13 +233,25 @@ if (jsonPath is not null && !TryWrite(jsonPath, Report.ToJson(result, version)))
 if (sarifPath is not null && !TryWrite(sarifPath, ReportSarif.ToSarif(result, version))) return 2;
 if (htmlPath is not null && !TryWrite(htmlPath, ReportHtml.ToHtml(result, version))) return 2;
 
-if (listStale && baseline is not null)
+// 棘輪只有在會「收緊」的時候才有意義。債還掉了卻沒人去縮 baseline,
+// 那份清單就會一直把將來的新債一起蓋住 —— 所以即使沒下 --stale 也要提一句。
+if (baseline is not null)
 {
-    var stale = baseline.Stale(result.Findings).ToList();
-    if (stale.Count > 0)
+    var stale = baseline.Stale(allFindings).ToList();
+
+    if (listStale)
     {
-        Console.WriteLine($"{stale.Count} baseline entr(ies) no longer occur -- regenerate with --write-baseline:");
-        foreach (var s in stale) Console.WriteLine($"  {s}");
+        if (stale.Count > 0)
+        {
+            Console.WriteLine($"{stale.Count} baseline entr(ies) no longer occur -- regenerate with --write-baseline:");
+            foreach (var s in stale) Console.WriteLine($"  {s}");
+        }
+        else Console.WriteLine("every baseline entry still occurs; nothing to tighten");
+    }
+    else if (stale.Count > 0)
+    {
+        Console.WriteLine($"tip: {stale.Count} baseline entr(ies) no longer occur. " +
+                          $"Run with --stale to list them, then --write-baseline to tighten the ratchet.");
     }
 }
 
@@ -315,6 +342,7 @@ static void PrintUsage(TextWriter o)
           --dialect wpf|winui      merge-order dialect (default: detected from {ThemeResource})
           --min-coverage <0-100>   minimum share of merged dictionaries that must resolve (default 80)
           --exclude <fragment>     skip paths containing this fragment (repeatable)
+          --include-tests          also scan test projects and fixture folders
           --show-info              also print info-level findings
           --version                print the tool version
           -h, --help               this text

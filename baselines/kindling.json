@@ -16,6 +16,7 @@
     "suppressed": 0,
     "parseErrors": 0,
     "unresolvedSites": 0,
+    "invalidIgnores": 0,
     "dynamicKeySites": 2,
     "configOverrides": true,
     "hasApplication": true,
@@ -105,6 +106,7 @@
     }
   ],
   "parseErrorDetails": [],
+  "invalidIgnoreDetails": [],
   "dynamicKeySiteDetails": [
     {
       "file": "Kindling.WPF/Views/ChoiceDialog.xaml.cs",

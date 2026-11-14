@@ -41,6 +41,7 @@ public static class Report
             w.WriteNumber("suppressed", r.Suppressed);
             w.WriteNumber("parseErrors", r.ParseErrors.Count);
             w.WriteNumber("unresolvedSites", r.UnresolvedSites.Count);
+            w.WriteNumber("invalidIgnores", r.InvalidIgnores.Count);
             w.WriteNumber("dynamicKeySites", r.DynamicKeySites.Count);
             w.WriteBoolean("configOverrides", r.Config.HasOverrides);
             w.WriteBoolean("hasApplication", r.HasApplication);
@@ -116,6 +117,16 @@ public static class Report
                 w.WriteStartObject();
                 w.WriteString("file", e.File);
                 w.WriteString("message", e.Message);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+
+            w.WriteStartArray("invalidIgnoreDetails");
+            foreach (var l in r.InvalidIgnores)
+            {
+                w.WriteStartObject();
+                w.WriteString("file", l.File);
+                w.WriteNumber("line", l.Line);
                 w.WriteEndObject();
             }
             w.WriteEndArray();
@@ -216,6 +227,9 @@ public static class Report
                         $"keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)");
         if (r.ParseErrors.Count > 0)
             o.WriteLine($"note: {r.ParseErrors.Count} file(s) failed to parse and were skipped");
+        if (r.InvalidIgnores.Count > 0)
+            o.WriteLine($"warning: {r.InvalidIgnores.Count} ignore comment(s) have no reason and were ignored " +
+                        $"themselves -- write '<!-- xamlkeys-ignore: why -->' (see summary.invalidIgnoreDetails)");
         if (r.Suppressed > 0)
             o.WriteLine($"note: {r.Suppressed} finding(s) suppressed by ignore comments or config");
 

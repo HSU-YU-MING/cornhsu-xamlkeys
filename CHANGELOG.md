@@ -188,3 +188,35 @@ from 239 false danglings to zero. None of the fifteen existing projects changed 
   `TextPrimaryColor` suggests `LightPrimaryColor`. A wrong suggestion is worse than none, so the
   tests for this feature are mostly about **staying quiet**.
 - **`out-of-scope` now names where the key is defined** instead of saying "elsewhere in the tree".
+
+### Getting the interfaces ready to freeze
+
+1.0 means the interfaces stop changing, so this round was a last pass over them while they can
+still be changed — plus tests that lock them.
+
+Three traps found and fixed:
+
+- **`--baseline b.json --write-baseline b.json` wiped the baseline to zero entries.** That is the
+  natural way to re-record a ratchet, and the file is committed to the repository. `--write-baseline`
+  now always records the full current set, not what is left after the old baseline is subtracted.
+- **`--stale` without `--baseline` silently did nothing** — the exact sin this project complains
+  about elsewhere. It is now a usage error.
+- **An ignore comment with no reason suppressed findings anyway.** The design has always said the
+  reason is required and a reasonless ignore is invalid; that was never implemented, so
+  `<!-- xamlkeys-ignore -->` was an unaccountable silent-suppression channel. It now suppresses
+  nothing, and the run prints a warning naming the lines.
+
+Also: `--include-tests` (the option existed only in the config file), and a nudge when a baseline
+has entries that no longer occur — a ratchet nobody tightens eventually hides new debt.
+
+**The default gate is settled: it stays at `fail` only.** Across the twenty projects in the corpus,
+gating on `fail` turns two of them red with 42 findings, every one verified by hand; gating on
+`warn` would turn sixteen of them red with 2,536. A gate is worth having only if you believe it
+when it fires, so the default stops at "your app will throw at load" and everything else is advice.
+
+**Nine frozen surfaces, 37 tests.** CLI flags and positional arguments, the four exit codes and
+their order, the JSON shape and `schemaVersion`, SARIF rule ids, the config schema and its default
+severities, the baseline `keyVersion` and entry format, the action inputs, the ignore syntax, and
+the default audit scope. Touching any of them turns CI red, so a change has to start by admitting
+it is a change. Two more tests cross-check `docs/report.schema.json` and `docs/config-schema.md`
+against what the tool actually writes and accepts — a spec nobody validates is decoration.

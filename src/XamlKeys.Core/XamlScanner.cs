@@ -171,7 +171,7 @@ public sealed partial class XamlScanner
         {
             if (node is XComment c)
             {
-                pendingIgnore = ParseIgnore(c) ?? pendingIgnore;
+                pendingIgnore = ParseIgnore(c, file) ?? pendingIgnore;
                 continue;
             }
 
@@ -568,7 +568,15 @@ public sealed partial class XamlScanner
         _ => ThemeSide.Neutral,
     };
 
-    private static string? ParseIgnore(XComment c)
+    /// <summary>
+    /// 解析 <c>&lt;!-- xamlkeys-ignore: 理由 --&gt;</c>。
+    ///
+    /// ⚠ **理由必填**。沒寫理由的 ignore 視為無效（不壓制任何東西），並記進
+    /// <see cref="InvalidIgnores"/> 讓報告講出來 ——
+    /// 否則 <c>&lt;!-- xamlkeys-ignore --&gt;</c> 就是一條沒有任何交代的靜默壓制通道，
+    /// 而這個工具的第二條憲法正是「讓結果變寬鬆的每一條路徑都要留下痕跡」。
+    /// </summary>
+    private string? ParseIgnore(XComment c, string file)
     {
         var t = c.Value.Trim();
         if (!t.StartsWith(IgnoreMarker, StringComparison.OrdinalIgnoreCase)) return null;
@@ -576,19 +584,29 @@ public sealed partial class XamlScanner
         var rest = t[IgnoreMarker.Length..].TrimStart();
         if (rest.StartsWith(':')) rest = rest[1..].Trim();
 
-        // ⚠ 理由必填。沒理由的 ignore 視為無效 —— 回傳空字串讓上層報警告。
+        if (rest.Length == 0)
+        {
+            _invalidIgnores.Add(new SourceLocation(Rel(file), LineOf(c)));
+            return null;
+        }
+
         return rest;
     }
 
+    private readonly List<SourceLocation> _invalidIgnores = [];
+
+    /// <summary>沒有寫理由、因此被當成無效的 ignore 註解。</summary>
+    public IReadOnlyList<SourceLocation> InvalidIgnores => _invalidIgnores;
+
     /// <summary>把直接子層的 ignore 註解套到緊接著的資源項目上。</summary>
-    private static void ApplyIgnoreComments(XElement container, ResourceDictionaryNode dict)
+    private void ApplyIgnoreComments(XElement container, ResourceDictionaryNode dict)
     {
         string? pending = null;
         foreach (var node in container.Nodes())
         {
             if (node is XComment c)
             {
-                pending = ParseIgnore(c) ?? pending;
+                pending = ParseIgnore(c, dict.File) ?? pending;
                 continue;
             }
 
