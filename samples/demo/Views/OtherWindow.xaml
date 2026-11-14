@@ -1,0 +1,10 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Window.Resources>
+        <!-- 只在這個畫面的區域資源裡。MainWindow 引用它 -> out-of-scope -->
+        <SolidColorBrush x:Key="OtherWindowLocal" Color="#888888" />
+    </Window.Resources>
+
+    <Border Background="{StaticResource OtherWindowLocal}" />
+</Window>

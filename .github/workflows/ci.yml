@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # ⚠ 全部的 action 釘 40 碼 commit SHA（行尾註解標版本）。
+      #    dependabot 的 github-actions 會更新釘選；不要改回 @v4 這種移動 tag。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore XamlKeys.slnx
+
+      - name: Build
+        run: dotnet build XamlKeys.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test XamlKeys.slnx -c Release --no-build --verbosity normal
+
+      # 示範專案是刻意做壞的：預期 exit 3（有一本外部字典讀不到,覆蓋率 66.7% < 80%）。
+      # ⚠ 退出碼的判定順序規定「不可信」優先於「有違規」—— 這一步同時驗了那個順序。
+      - name: Demo without the coverage floor lowered (expects exit 3)
+        run: |
+          set +e
+          dotnet run --project src/XamlKeys.Cli -c Release --no-build -- samples/demo
+          code=$?
+          set -e
+          if [ "$code" -ne 3 ]; then echo "expected exit 3, got $code"; exit 1; fi
+
+      # 把覆蓋率下限關掉之後,決定退出碼的是 finding（demo 有一筆 fail 級）
+      - name: Demo with the floor lowered (expects exit 1 and exact counts)
+        run: |
+          set +e
+          dotnet run --project src/XamlKeys.Cli -c Release --no-build -- \
+            samples/demo --min-coverage 0 --json demo.json
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then echo "expected exit 1, got $code"; exit 1; fi
+
+      # 對計數下斷言。這同時驗了「工具真的會擋」跟「擋的數量沒有莫名其妙變動」——
+      # 改了規則導致誤判變多,這裡立刻紅。
+      - name: Assert the demo counts
+        run: |
+          jq -e '
+            .summary.counts.danglingStatic    == 1 and
+            .summary.counts.danglingDynamic   == 1 and
+            .summary.counts.duplicateKey      == 1 and
+            .summary.counts.outOfScope        == 1 and
+            .summary.counts.shadowed          == 3 and
+            .summary.counts.shadowedIdentical == 1 and
+            .summary.counts.unused            == 5 and
+            .summary.counts.orphanDictionary  == 1 and
+            .summary.counts.external          == 1 and
+            .summary.suppressed               >= 1
+          ' demo.json > /dev/null
+
+      - name: SARIF omits info-level findings
+        run: |
+          dotnet run --project src/XamlKeys.Cli -c Release --no-build -- \
+            samples/demo --min-coverage 0 --sarif demo.sarif || true
+          jq -e '[.runs[0].results[] | select(.level == "note")] | length == 0' demo.sarif > /dev/null
+
+      - name: README sample is up to date
+        shell: pwsh
+        run: ./scripts/verify-readme-sample.ps1
+
+  # 解析引擎是純 XML,不依賴 WPF runtime —— 這個 job 守住那句話。
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test XamlKeys.slnx -c Release

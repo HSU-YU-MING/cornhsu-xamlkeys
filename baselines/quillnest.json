@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "<redacted>",
+  "summary": {
+    "dialect": "wpf",
+    "dialectAutoDetected": true,
+    "xamlFiles": 32,
+    "csharpFiles": 115,
+    "dictionaries": 29,
+    "mergeEdges": 1,
+    "mergeEdgesResolved": 1,
+    "coverage": 100,
+    "keysDefined": 257,
+    "references": 1989,
+    "suppressed": 0,
+    "parseErrors": 0,
+    "unresolvedSites": 0,
+    "dynamicKeySites": 0,
+    "configOverrides": true,
+    "hasApplication": true,
+    "projects": 1,
+    "applicationProjects": 1,
+    "libraryKeysNotChecked": 0,
+    "variantDictionaryGroups": 0,
+    "frameworkProvided": 0,
+    "runtimeLoadedDictionaries": 2,
+    "implicitThemeDictionaries": 0,
+    "unusedDefinitions": 12,
+    "crossProjectReferences": 0,
+    "testFilesExcluded": 0,
+    "sides": [
+      "neutral"
+    ],
+    "externalSources": [],
+    "counts": {
+      "danglingStatic": 0,
+      "danglingDynamic": 0,
+      "duplicateKey": 0,
+      "outOfScope": 0,
+      "shadowed": 0,
+      "shadowedIdentical": 0,
+      "unused": 9,
+      "orphanDictionary": 0,
+      "external": 0
+    },
+    "severities": {
+      "fail": 0,
+      "warn": 9,
+      "info": 0
+    }
+  },
+  "findings": [
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "AccentBrush",
+      "file": "QuillNest/Resources/DarkTheme.xaml",
+      "line": 82,
+      "side": "neutral",
+      "message": "\u0027AccentBrush\u0027 is defined but never referenced in XAML or code (2 definitions, e.g. also QuillNest/Resources/LightTheme.xaml:86)"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "DarkComboBoxItemStyle",
+      "file": "QuillNest/Views/AppLabelManagerDialog.xaml",
+      "line": 125,
+      "side": "neutral",
+      "message": "\u0027DarkComboBoxItemStyle\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "InverseBoolToVis",
+      "file": "QuillNest/Views/NoteEditorWindow.xaml",
+      "line": 14,
+      "side": "neutral",
+      "message": "\u0027InverseBoolToVis\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "ComboBoxPopup",
+      "file": "QuillNest/Views/PasswordResetWizard.xaml",
+      "line": 15,
+      "side": "neutral",
+      "message": "\u0027ComboBoxPopup\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "DarkModeComboBoxItem",
+      "file": "QuillNest/Views/PasswordResetWizard.xaml",
+      "line": 19,
+      "side": "neutral",
+      "message": "\u0027DarkModeComboBoxItem\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "SettingsTextBoxStyle",
+      "file": "QuillNest/Views/StickyNoteSettingsWindow.xaml",
+      "line": 85,
+      "side": "neutral",
+      "message": "\u0027SettingsTextBoxStyle\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "NoteItemStyle",
+      "file": "QuillNest/Views/StickyNotesView.xaml",
+      "line": 19,
+      "side": "neutral",
+      "message": "\u0027NoteItemStyle\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "DataGridCheckEditStyle",
+      "file": "QuillNest/Views/WorkloadDashboardView.xaml",
+      "line": 23,
+      "side": "neutral",
+      "message": "\u0027DataGridCheckEditStyle\u0027 is defined but never referenced in XAML or code (3 definitions, e.g. also QuillNest/Views/WorkloadRowDetailDialog.xaml:53)"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "ShortInputStyle",
+      "file": "QuillNest/Views/WorkloadRowDetailDialog.xaml",
+      "line": 34,
+      "side": "neutral",
+      "message": "\u0027ShortInputStyle\u0027 is defined but never referenced in XAML or code"
+    }
+  ],
+  "parseErrorDetails": [],
+  "dynamicKeySiteDetails": []
+}

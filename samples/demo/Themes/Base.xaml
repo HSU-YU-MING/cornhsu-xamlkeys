@@ -1,0 +1,36 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 會被 Override.xaml 蓋掉（WPF：後宣告的合併字典贏） -->
+    <SolidColorBrush x:Key="SharedBrush" Color="#FF0000" />
+
+    <!-- 會被 App.xaml 自己的項目蓋掉（字典本身優先於合併進來的） -->
+    <SolidColorBrush x:Key="AppWins" Color="#FF1111" />
+
+    <!-- 同一本字典裡的重複鍵：這是非法 XAML，載入時 parser 會丟錯，但編譯器不擋 -->
+    <SolidColorBrush x:Key="DupKey" Color="#111111" />
+    <SolidColorBrush x:Key="DupKey" Color="#222222" />
+
+    <SolidColorBrush x:Key="UsedEverywhere" Color="#333333" />
+
+    <!-- 跟 Override.xaml 裡那一份**一模一樣**：結果正確,只是多餘 -> shadowed-identical（info） -->
+    <SolidColorBrush x:Key="IdenticalInBoth" Color="#0A0B0C" />
+
+    <!-- 別名：定義 AliasToUsed 的同時引用 UsedEverywhere -->
+    <StaticResource x:Key="AliasToUsed" ResourceKey="UsedEverywhere" />
+
+    <!-- 沒有任何地方引用 -->
+    <SolidColorBrush x:Key="NobodyUsesThis" Color="#444444" />
+
+    <!-- 只有 C# 用字面字串取用：不該被報成沒人用 -->
+    <SolidColorBrush x:Key="CodeOnlyBrush" Color="#999999" />
+
+    <!-- 只有組出來的鍵名會取到（IconSave／IconOpen…）：
+         靠 config 的 usedAtRuntime 才不會被誤報 -->
+    <SolidColorBrush x:Key="IconSave" Color="#AAAAAA" />
+
+    <!-- 壓制示範：理由必填，而且會進 summary.suppressed -->
+    <!-- xamlkeys-ignore: looked up by a plugin at runtime -->
+    <SolidColorBrush x:Key="SuppressedUnused" Color="#555555" />
+
+</ResourceDictionary>

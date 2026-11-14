@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "<redacted>",
+  "summary": {
+    "dialect": "wpf",
+    "dialectAutoDetected": true,
+    "xamlFiles": 16,
+    "csharpFiles": 63,
+    "dictionaries": 10,
+    "mergeEdges": 1,
+    "mergeEdgesResolved": 1,
+    "coverage": 100,
+    "keysDefined": 71,
+    "references": 473,
+    "suppressed": 0,
+    "parseErrors": 0,
+    "unresolvedSites": 0,
+    "dynamicKeySites": 2,
+    "configOverrides": true,
+    "hasApplication": true,
+    "projects": 1,
+    "applicationProjects": 1,
+    "libraryKeysNotChecked": 0,
+    "variantDictionaryGroups": 0,
+    "frameworkProvided": 0,
+    "runtimeLoadedDictionaries": 0,
+    "implicitThemeDictionaries": 0,
+    "unusedDefinitions": 5,
+    "crossProjectReferences": 0,
+    "testFilesExcluded": 0,
+    "sides": [
+      "neutral"
+    ],
+    "externalSources": [],
+    "counts": {
+      "danglingStatic": 0,
+      "danglingDynamic": 0,
+      "duplicateKey": 0,
+      "outOfScope": 0,
+      "shadowed": 0,
+      "shadowedIdentical": 0,
+      "unused": 5,
+      "orphanDictionary": 0,
+      "external": 0
+    },
+    "severities": {
+      "fail": 0,
+      "warn": 5,
+      "info": 0
+    }
+  },
+  "findings": [
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "NullToBool",
+      "file": "Kindling.WPF/Themes/DarkTheme.xaml",
+      "line": 9,
+      "side": "neutral",
+      "message": "\u0027NullToBool\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "Equals",
+      "file": "Kindling.WPF/Themes/DarkTheme.xaml",
+      "line": 10,
+      "side": "neutral",
+      "message": "\u0027Equals\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "Blue",
+      "file": "Kindling.WPF/Themes/DarkTheme.xaml",
+      "line": 32,
+      "side": "neutral",
+      "message": "\u0027Blue\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "AmberBorder",
+      "file": "Kindling.WPF/Themes/DarkTheme.xaml",
+      "line": 46,
+      "side": "neutral",
+      "message": "\u0027AmberBorder\u0027 is defined but never referenced in XAML or code"
+    },
+    {
+      "kind": "unused",
+      "severity": "warn",
+      "key": "CandidateBtn",
+      "file": "Kindling.WPF/Views/RegenerateWorkspaceWindow.xaml",
+      "line": 29,
+      "side": "neutral",
+      "message": "\u0027CandidateBtn\u0027 is defined but never referenced in XAML or code"
+    }
+  ],
+  "parseErrorDetails": [],
+  "dynamicKeySiteDetails": [
+    {
+      "file": "Kindling.WPF/Views/ChoiceDialog.xaml.cs",
+      "line": 32,
+      "expression": "FindResource(i == 0 ? \u0022AccentBtn\u0022 : \u0022DarkBtn\u0022)"
+    },
+    {
+      "file": "Kindling.WPF/Views/MessageDialog.xaml.cs",
+      "line": 108,
+      "expression": "FindResource(accent ? \u0022AccentBtn\u0022 : \u0022DarkBtn\u0022)"
+    }
+  ]
+}

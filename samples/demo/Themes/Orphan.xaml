@@ -1,0 +1,9 @@
+<!-- 沒有任何地方合併這一本，程式也沒有載入它。
+     裡面的鍵在執行期一個都進不了作用域。 -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <SolidColorBrush x:Key="StrandedBrush" Color="#666666" />
+    <SolidColorBrush x:Key="StrandedBrush2" Color="#777777" />
+
+</ResourceDictionary>

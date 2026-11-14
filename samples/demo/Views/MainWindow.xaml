@@ -1,0 +1,44 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d">
+
+    <Window.Resources>
+        <Style x:Key="LocalStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource SharedBrush}" />
+            <!-- 屬性元素形式的引用 -->
+            <Setter Property="Foreground">
+                <Setter.Value>
+                    <StaticResource ResourceKey="UsedEverywhere" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel>
+        <!-- 正常：解析得到 -->
+        <Border Background="{StaticResource AppWins}" />
+        <Border Background="{StaticResource AliasToUsed}" />
+        <Border Background="{StaticResource IdenticalInBoth}" />
+        <Button Style="{StaticResource LocalStyle}" />
+
+        <!-- 懸空的 StaticResource：全專案都沒有這個鍵 -> 執行期丟例外 -->
+        <Border Background="{StaticResource MissingBrush}" />
+
+        <!-- 懸空的 DynamicResource：退回預設值，不爆 -->
+        <Border Background="{DynamicResource MissingDynamicBrush}" />
+
+        <!-- 巢狀在別的 markup extension 裡的引用：要抓得到 -->
+        <TextBlock Text="{Binding Name, Converter={StaticResource UsedEverywhere}}" />
+
+        <!-- 鍵名不是字串：不評，只計入 unresolvedSites -->
+        <Border Style="{StaticResource {x:Type Border}}" />
+
+        <!-- 設計時命名空間：不會進到執行期,整個跳過 -->
+        <Border d:Background="{StaticResource DesignOnlyBrush}" />
+
+        <!-- 在別的畫面的區域資源裡才有 -> out-of-scope（不是懸空,工具的作用域是近似的） -->
+        <Border Background="{StaticResource OtherWindowLocal}" />
+    </StackPanel>
+</Window>

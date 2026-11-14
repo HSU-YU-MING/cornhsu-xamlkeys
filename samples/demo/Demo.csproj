@@ -1,0 +1,9 @@
+<!-- 這個 csproj 刻意不建置（Demo 不是真的要跑的 App）。
+     它存在的理由只有一個：SourceResolver 靠 *.csproj 的位置推「專案根」，
+     沒有它，/Themes/Base.xaml 這種絕對路徑形式就解析不到。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Demo</AssemblyName>
+  </PropertyGroup>
+</Project>

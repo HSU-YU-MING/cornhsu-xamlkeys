@@ -1,0 +1,63 @@
+name: 'XamlKeys resource key audit'
+description: 'Static scope audit for XAML resource keys: dangling references, duplicate and shadowed keys, unused keys.'
+author: 'Cornhsu'
+
+branding:
+  icon: 'key'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Folder to scan'
+    required: false
+    default: '.'
+  config:
+    description: 'Path to xamlkeys.config.json'
+    required: false
+  baseline:
+    description: 'Path to a baseline file; only findings outside it are reported'
+    required: false
+  fail-on:
+    description: "Gate level: 'fail' (default) or 'warn'"
+    required: false
+    default: 'fail'
+  min-coverage:
+    description: 'Minimum share of merged dictionaries that must resolve (0-100)'
+    required: false
+    default: '80'
+  sarif:
+    description: 'Write a SARIF report to this path'
+    required: false
+  json:
+    description: 'Write the JSON report to this path'
+    required: false
+  version:
+    description: 'Version of Cornhsu.XamlKeys to install (default: latest)'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install XamlKeys
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          dotnet tool install -g Cornhsu.XamlKeys --version "${{ inputs.version }}"
+        else
+          dotnet tool install -g Cornhsu.XamlKeys
+        fi
+        echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+    - name: Run XamlKeys
+      shell: bash
+      run: |
+        args=()
+        [ -n "${{ inputs.config }}" ]   && args+=(--config "${{ inputs.config }}")
+        [ -n "${{ inputs.baseline }}" ] && args+=(--baseline "${{ inputs.baseline }}")
+        [ -n "${{ inputs.sarif }}" ]    && args+=(--sarif "${{ inputs.sarif }}")
+        [ -n "${{ inputs.json }}" ]     && args+=(--json "${{ inputs.json }}")
+        args+=(--fail-on "${{ inputs.fail-on }}")
+        args+=(--min-coverage "${{ inputs.min-coverage }}")
+        # ⚠ 路徑一律放在 -- 之後：沒有這個出口的話,一個叫 --version 的資料夾
+        #    會被當成旗標（印版本、exit 0、什麼都沒稽核）
+        xamlkeys "${args[@]}" -- "${{ inputs.path }}"

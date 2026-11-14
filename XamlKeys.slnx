@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/XamlKeys.Core/XamlKeys.Core.csproj" />
+    <Project Path="src/XamlKeys.Cli/XamlKeys.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/XamlKeys.Tests/XamlKeys.Tests.csproj" />
+  </Folder>
+</Solution>

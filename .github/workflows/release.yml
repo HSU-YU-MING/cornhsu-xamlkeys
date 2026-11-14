@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # ⚠ 只認三段式的版本 tag。移動 tag（v0、v1）前移時不會觸發這條。
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: read
+  # NuGet Trusted Publishing：用 OIDC 換臨時金鑰,沒有長效 API key、沒有 repo secret
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # ⚠ 版本號的唯一真相源是 tag。csproj 裡固定寫 0.0.0-dev,這裡用 -p:Version 覆寫。
+      #    不要回頭去改 csproj —— 改了就是重新製造漂移。
+      - name: Derive the version from the tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: dotnet build XamlKeys.slnx -c Release -p:Version=${{ steps.v.outputs.version }}
+
+      - name: Test
+        run: dotnet test XamlKeys.slnx -c Release --no-build
+
+      - name: Pack
+        run: |
+          dotnet pack src/XamlKeys.Cli/XamlKeys.Cli.csproj -c Release --no-build \
+            -p:Version=${{ steps.v.outputs.version }} -o ./artifacts
+
+      - name: NuGet login (Trusted Publishing)
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        id: login
+        with:
+          user: Cornhsu
+
+      - name: Push
+        run: |
+          dotnet nuget push ./artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+            --skip-duplicate

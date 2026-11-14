@@ -1,0 +1,13 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 贏家：WPF 解析到最後合併進來的那一本 -->
+    <SolidColorBrush x:Key="SharedBrush" Color="#00FF00" />
+
+    <!-- 也輸給 App.xaml 自己的項目 -->
+    <SolidColorBrush x:Key="AppWins" Color="#00FF11" />
+
+    <!-- 跟 Base.xaml 裡那一份一模一樣 -->
+    <SolidColorBrush x:Key="IdenticalInBoth" Color="#0A0B0C" />
+
+</ResourceDictionary>

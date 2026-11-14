@@ -1,0 +1,17 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 跨組件、而且那個組件不在掃描範圍內 -> external。
+                     ⚠ 這一本「看不到」會讓這個作用域裡解析不到的鍵全部降級成 info，
+                     而不是報成懸空 —— 那是刻意的：我們沒有資格說它不存在。 -->
+                <ResourceDictionary Source="pack://application:,,,/ImaginaryLib;component/Themes/Generic.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- 這個鍵本地沒有、專案裡也沒有,但那本外部字典可能有 -> external,不是懸空 -->
+    <Border Background="{StaticResource MaybeFromTheLibrary}" />
+</Window>

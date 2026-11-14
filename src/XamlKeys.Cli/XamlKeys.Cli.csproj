@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>XamlKeys.Cli</RootNamespace>
+    <AssemblyName>xamlkeys</AssemblyName>
+
+    <!-- dotnet tool：使用者敲的是乾淨的 `xamlkeys`，套件掛 Cornhsu.* 前綴（規畫書第 11 節） -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>xamlkeys</ToolCommandName>
+    <PackageId>Cornhsu.XamlKeys</PackageId>
+
+    <!-- 版本號的唯一真相源是 git tag：release.yml 在 pack 時用 Version 屬性覆寫這一格。
+         這裡刻意放一個不可能被誤認成正式版的值。
+         ⚠ 不要改成真的版本號（會跟 tag 漂開，從原始碼 build 出來的執行檔自稱舊版，
+         連它蓋在 JSON 報告上的 toolVersion 都是錯的 —— XamlContrast 真的發生過）。
+         ⚠ 也不要整格刪掉（退回 MSBuild 預設的 1.0.0，等於宣告介面已凍結）。 -->
+    <Version>0.0.0-dev</Version>
+    <Description>XamlKeys — static scope audit for XAML resource keys. Finds dangling {StaticResource} references, keys shadowed by merge order, and keys nobody uses. Whole project, no app launch, CI exit codes.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XamlKeys.Core\XamlKeys.Core.csproj" />
+  </ItemGroup>
+
+</Project>

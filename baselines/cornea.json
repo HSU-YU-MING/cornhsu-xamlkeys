@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "<redacted>",
+  "summary": {
+    "dialect": "wpf",
+    "dialectAutoDetected": true,
+    "xamlFiles": 5,
+    "csharpFiles": 15,
+    "dictionaries": 2,
+    "mergeEdges": 0,
+    "mergeEdgesResolved": 0,
+    "coverage": 100,
+    "keysDefined": 1,
+    "references": 1,
+    "suppressed": 0,
+    "parseErrors": 0,
+    "unresolvedSites": 0,
+    "dynamicKeySites": 0,
+    "configOverrides": true,
+    "hasApplication": true,
+    "projects": 1,
+    "applicationProjects": 1,
+    "libraryKeysNotChecked": 0,
+    "variantDictionaryGroups": 0,
+    "frameworkProvided": 0,
+    "runtimeLoadedDictionaries": 0,
+    "implicitThemeDictionaries": 0,
+    "unusedDefinitions": 0,
+    "crossProjectReferences": 0,
+    "testFilesExcluded": 0,
+    "sides": [
+      "neutral"
+    ],
+    "externalSources": [],
+    "counts": {
+      "danglingStatic": 0,
+      "danglingDynamic": 0,
+      "duplicateKey": 0,
+      "outOfScope": 0,
+      "shadowed": 0,
+      "shadowedIdentical": 0,
+      "unused": 0,
+      "orphanDictionary": 0,
+      "external": 0
+    },
+    "severities": {
+      "fail": 0,
+      "warn": 0,
+      "info": 0
+    }
+  },
+  "findings": [],
+  "parseErrorDetails": [],
+  "dynamicKeySiteDetails": []
+}

@@ -1,0 +1,16 @@
+<Application xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 宣告順序有意義：WPF 是「後宣告的贏」。
+                     Base 與 Override 都定義 SharedBrush -> Base 那一份永遠贏不了。 -->
+                <ResourceDictionary Source="Themes/Base.xaml" />
+                <ResourceDictionary Source="/Themes/Override.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- 字典自己的項目優先於合併進來的：這一份會蓋掉 Base 與 Override 的 AppWins -->
+            <SolidColorBrush x:Key="AppWins" Color="#102030" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # ⚠ 只更新「釘選的 SHA」，不要讓它把 @v7 這種移動 tag 寫回來
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "monthly"

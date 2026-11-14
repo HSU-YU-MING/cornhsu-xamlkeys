@@ -1,0 +1,487 @@
+using XamlKeys.Core;
+
+namespace XamlKeys.Tests;
+
+/// <summary>
+/// 外部語料教的每一課，各一條測試。
+///
+/// 2026-11-14 拿七個公開專案（ScreenToGif、HandyControl、MahApps.Metro、wpfui、
+/// MaterialDesignInXamlToolkit、WinUI Gallery、ILSpy，合計 1,593 個 XAML 檔）實跑，
+/// 第一版吐出約 36,000 筆假警報。每一類的成因都寫在對應的測試上。
+///
+/// 這批測試的意義跟一般單元測試不同：它們是「憲法：每條規則來自實查」的存檔。
+/// 自家的四個專案**一條都測不到**（全是 WPF 應用程式、沒有第三方字典、沒有
+/// ThemeDictionaries、沒有 pack URI）—— 這正是 XamlContrast §8.3 的教訓。
+/// </summary>
+public class CorpusLessonTests : IDisposable
+{
+    private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("xamlkeys-corpus");
+
+    public void Dispose() => _dir.Delete(true);
+
+    /// <summary>用一組 {相對路徑: 內容} 造一個小專案，跑完回傳結果。</summary>
+    private AnalysisResult Analyze(Dictionary<string, string> files, Config? cfg = null)
+    {
+        foreach (var (rel, content) in files)
+        {
+            var path = Path.Combine(_dir.FullName, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+        }
+
+        return Analyzer.Run(_dir.FullName, cfg ?? new Config());
+    }
+
+    private const string AppProj = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>";
+    private const string LibProj = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Library</OutputType></PropertyGroup></Project>";
+
+    private static string Dict(string body) => $"""
+        <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        {body}
+        </ResourceDictionary>
+        """;
+
+    private static string App(string body) => $"""
+        <Application xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+          <Application.Resources>
+            <ResourceDictionary>
+        {body}
+            </ResourceDictionary>
+          </Application.Resources>
+        </Application>
+        """;
+
+    private static string Window(string body, string extraNs = "") => $"""
+        <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" {extraNs}>
+        {body}
+        </Window>
+        """;
+
+    // ── WinUI Gallery ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_resource_declared_with_x_Name_is_a_key()
+    {
+        // 教訓來源：WinUI Gallery 的 ImplicitAnimationSet／轉換器／Layout 都用 x:Name。
+        // XAML 規格：資源字典項目沒有 x:Key 時，x:Name 就是它的鍵。
+        // 漏掉的話，引用端報懸空、定義端算不出鍵。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Name="NamedNotKeyed" Color="#111" />"""),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource NamedNotKeyed}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.DanglingStatic or FindingKind.DanglingDynamic);
+        Assert.Equal(1, r.KeysDefined);
+    }
+
+    [Fact]
+    public void A_markup_extension_mentioned_inside_prose_is_not_a_reference()
+    {
+        // 教訓來源：WinUI Gallery 的說明文字
+        //   Text="...is the code equivalent of {ThemeResource Key}. Switch the theme..."
+        // XAML 只在屬性值的**開頭**是 { 時才解析成 markup extension。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Real" Color="#111" />"""),
+            ["Main.xaml"] = Window("""<TextBlock Text="the code equivalent of {ThemeResource Key}. Switch it." />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Key == "Key");
+    }
+
+    [Fact]
+    public void Framework_provided_WinUI_keys_are_not_dangling()
+    {
+        // 教訓來源：WinUI Gallery。沒有框架鍵清單時，195 個不重複的框架鍵
+        // 被報成 975 筆懸空（309 static + 666 dynamic）。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType><UseWinUI>true</UseWinUI></PropertyGroup></Project>",
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Mine" Color="#111" />"""),
+            ["Main.xaml"] = Window("""<Border Background="{ThemeResource TextFillColorPrimaryBrush}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Key == "TextFillColorPrimaryBrush");
+        Assert.True(r.FrameworkProvided > 0);
+    }
+
+    [Fact]
+    public void A_key_the_project_defines_itself_is_not_counted_as_framework_provided()
+    {
+        // ⚠ 框架鍵的檢查必須排在查找**之後**。排在前面的那一版，
+        //   wpfui（WPF 函式庫，刻意沿用 WinUI 的鍵名）有 3021 筆本來解析得到的引用被短路。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType><UseWinUI>true</UseWinUI></PropertyGroup></Project>",
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#111" />"""),
+            ["Main.xaml"] = Window("""<Border Background="{ThemeResource TextFillColorPrimaryBrush}" />"""),
+        });
+
+        Assert.Equal(0, r.FrameworkProvided);
+    }
+
+    [Fact]
+    public void A_HighContrast_theme_dictionary_does_not_collide_with_dark_and_light()
+    {
+        // 教訓來源：WinUI Gallery 的 App.xaml。HighContrast 是**互斥的第三種主題**，
+        // 當成 Neutral 的話，它的鍵會跟深淺兩側的同名鍵互相覆蓋 -> 11 筆假 shadowed。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""
+                <ResourceDictionary.ThemeDictionaries>
+                  <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="Bg" Color="#FFF" /></ResourceDictionary>
+                  <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="Bg" Color="#000" /></ResourceDictionary>
+                  <ResourceDictionary x:Key="HighContrast"><SolidColorBrush x:Key="Bg" Color="#F00" /></ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+                """),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource Bg}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.Shadowed or FindingKind.ShadowedIdentical);
+    }
+
+    [Fact]
+    public void Default_means_light_when_a_Dark_dictionary_is_present()
+    {
+        // 教訓來源：WinUI Gallery 的 XamlResourcesPage —— 一組 Default＋Dark，
+        // Default 裡寫的是淺色值。把 Default 一律當深色會判成兩本互相覆蓋。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""
+                <ResourceDictionary.ThemeDictionaries>
+                  <ResourceDictionary x:Key="Default"><SolidColorBrush x:Key="Bg" Color="#EEE" /></ResourceDictionary>
+                  <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="Bg" Color="#333" /></ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+                """),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource Bg}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.Shadowed or FindingKind.ShadowedIdentical);
+    }
+
+    // ── HandyControl / MaterialDesign / wpfui（函式庫） ─────────────────────
+
+    [Fact]
+    public void A_library_projects_keys_are_not_reported_unused()
+    {
+        // 教訓來源：MaterialDesignInXamlToolkit —— 3372 個鍵被報掉 1767 個。
+        // 函式庫的鍵是它的公開 API，引用它的是**使用者的**專案。
+        var r = Analyze(new()
+        {
+            ["Lib/Lib.csproj"] = LibProj,
+            ["Lib/Themes/Styles.xaml"] = Dict("""<SolidColorBrush x:Key="PublicApiBrush" Color="#111" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Unused);
+        Assert.True(r.LibraryKeysNotChecked > 0, "the skipped keys must be visible in the summary");
+    }
+
+    [Fact]
+    public void A_library_dictionary_nobody_merges_is_not_an_orphan()
+    {
+        // 教訓來源：HandyControl 140 筆、MaterialDesign 103 筆。
+        // 函式庫的字典本來就靠使用者去合併。
+        var r = Analyze(new()
+        {
+            ["Lib/Lib.csproj"] = LibProj,
+            ["Lib/Themes/Styles.xaml"] = Dict("""<SolidColorBrush x:Key="PublicApiBrush" Color="#111" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.OrphanDictionary);
+    }
+
+    [Fact]
+    public void A_reference_to_a_key_in_another_project_is_not_out_of_scope()
+    {
+        // 教訓來源：wpfui 的範例 App 引用函式庫的色票 -> 421 筆假 out-of-scope。
+        // 使用者的 App 用什麼方式把那本字典合併進來（pack URI／generic.xaml／程式組路徑）追不完。
+        var r = Analyze(new()
+        {
+            ["Lib/Lib.csproj"] = LibProj,
+            ["Lib/Themes/Styles.xaml"] = Dict("""<SolidColorBrush x:Key="LibBrush" Color="#111" />"""),
+            ["App/App.csproj"] = AppProj,
+            ["App/App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#222" />"""),
+            ["App/Main.xaml"] = Window("""<Border Background="{StaticResource LibBrush}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.OutOfScope);
+        Assert.True(r.CrossProjectReferences > 0, "cross-project references must be visible in the summary");
+    }
+
+    [Fact]
+    public void Out_of_scope_still_fires_inside_one_project()
+    {
+        // 跨專案不猜，但**同一個專案裡**用錯別的畫面的區域資源，正是這一類的價值所在。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Global" Color="#111" />"""),
+            ["Other.xaml"] = Window("""<Window.Resources><SolidColorBrush x:Key="OnlyHere" Color="#222" /></Window.Resources>"""),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource OnlyHere}" />"""),
+        });
+
+        Assert.Contains(r.Findings, f => f.Kind == FindingKind.OutOfScope && f.Key == "OnlyHere");
+    }
+
+    // ── ScreenToGif ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Locale_variant_dictionaries_are_not_shadowing_each_other()
+    {
+        // 教訓來源：ScreenToGif 用 XAML 做在地化,四十個語系檔各定義同一組字串鍵,
+        // 全部合併進 App.xaml -> 28,704 筆假 shadowed。
+        // 判準：兩本字典的鍵集合重疊度夠高 = 刻意的變體,不是意外的覆蓋。
+        var keys = string.Join('\n', Enumerable.Range(0, 10)
+            .Select(i => $"""<x:String x:Key="S{i}">v</x:String>"""));
+
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="Loc/en.xaml" />
+                  <ResourceDictionary Source="Loc/de.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["Loc/en.xaml"] = Dict(keys),
+            ["Loc/de.xaml"] = Dict(keys.Replace(">v<", ">w<")),
+            ["Main.xaml"] = Window("""<TextBlock Text="{StaticResource S0}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Shadowed);
+        Assert.True(r.VariantDictionaryGroups > 0, "the variant pairing must be visible in the summary");
+    }
+
+    [Fact]
+    public void An_accidental_collision_between_unrelated_dictionaries_is_still_reported()
+    {
+        // 變體規則不能把真正的意外覆蓋一起吃掉：兩本內容完全不同、只撞到一個鍵。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="A.xaml" />
+                  <ResourceDictionary Source="B.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["A.xaml"] = Dict("""
+                <SolidColorBrush x:Key="Clash" Color="#111" />
+                <SolidColorBrush x:Key="A1" Color="#1" /><SolidColorBrush x:Key="A2" Color="#2" />
+                <SolidColorBrush x:Key="A3" Color="#3" /><SolidColorBrush x:Key="A4" Color="#4" />
+                <SolidColorBrush x:Key="A5" Color="#5" /><SolidColorBrush x:Key="A6" Color="#6" />
+                """),
+            ["B.xaml"] = Dict("""
+                <SolidColorBrush x:Key="Clash" Color="#999" />
+                <SolidColorBrush x:Key="B1" Color="#1" /><SolidColorBrush x:Key="B2" Color="#2" />
+                <SolidColorBrush x:Key="B3" Color="#3" /><SolidColorBrush x:Key="B4" Color="#4" />
+                <SolidColorBrush x:Key="B5" Color="#5" /><SolidColorBrush x:Key="B6" Color="#6" />
+                """),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource Clash}" />"""),
+        });
+
+        Assert.Contains(r.Findings, f => f.Kind == FindingKind.Shadowed && f.Key == "Clash");
+    }
+
+    [Fact]
+    public void An_unused_key_defined_in_many_variants_is_reported_once()
+    {
+        // 教訓來源：ScreenToGif。逐一報是 14,468 筆,背後只有 1,094 個鍵名。
+        // 一萬四千行的報告沒有人會讀 —— 等於工具沒做事。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="Loc/en.xaml" />
+                  <ResourceDictionary Source="Loc/de.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["Loc/en.xaml"] = Dict("""<x:String x:Key="Ghost">a</x:String>"""),
+            ["Loc/de.xaml"] = Dict("""<x:String x:Key="Ghost">b</x:String>"""),
+            ["Main.xaml"] = Window("<Border />"),
+        });
+
+        var unused = Assert.Single(r.Findings, f => f.Kind == FindingKind.Unused);
+        Assert.Equal("Ghost", unused.Key);
+        Assert.Equal(2, r.UnusedDefinitions);
+        Assert.Contains("2 definitions", unused.Message);
+    }
+
+    [Fact]
+    public void Themes_Generic_xaml_is_never_an_orphan()
+    {
+        // 教訓來源：ScreenToGif。Themes/Generic.xaml 是 WPF 自動載入的隱含主題字典,
+        // 永遠不會出現在任何 MergedDictionaries 裡 —— 而它往往是整個專案最重要的一本。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Themes/Generic.xaml"] = Dict("""<SolidColorBrush x:Key="InGeneric" Color="#222" />"""),
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource InGeneric}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.OrphanDictionary);
+        Assert.True(r.ImplicitThemeDictionaries > 0);
+    }
+
+    // ── wpfui / QuillNest ──────────────────────────────────────────────────
+
+    [Fact]
+    public void A_dictionary_loaded_from_code_joins_the_application_scope()
+    {
+        // 教訓來源：wpfui 與 QuillNest 都用 C# 在執行期套主題,
+        // 那本字典沒有任何靜態合併邊 —— 不認這條,它的鍵全部變成 out-of-scope 或孤兒。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Themes/DarkTheme.xaml"] = Dict("""<SolidColorBrush x:Key="SwitchedIn" Color="#222" />"""),
+            ["ThemeService.cs"] = """
+                var d = new ResourceDictionary { Source = new Uri("Themes/DarkTheme.xaml", UriKind.Relative) };
+                """,
+            ["Main.xaml"] = Window("""<Border Background="{StaticResource SwitchedIn}" />"""),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.OrphanDictionary or FindingKind.OutOfScope);
+        Assert.True(r.RuntimeLoadedDictionaries > 0);
+    }
+
+    // ── ILSpy ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Test_fixture_xaml_is_skipped_by_default()
+    {
+        // 教訓來源：ILSpy 的 BamlDecompiler 測試案例資料夾裡放著**刻意寫壞的** XAML
+        // （同一本字典裡重複的 x:Key、不被合併的字典）。那是測試資料,不是產品程式碼。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Foo.Tests.Windows/Cases/Broken.xaml"] = Dict("""
+                <SolidColorBrush x:Key="Dup" Color="#1" />
+                <SolidColorBrush x:Key="Dup" Color="#2" />
+                """),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DuplicateKey);
+        Assert.True(r.TestFilesExcluded > 0, "the skipped files must be visible in the summary");
+    }
+
+    [Fact]
+    public void Test_fixture_xaml_can_be_opted_back_in()
+    {
+        var files = new Dictionary<string, string>
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Foo.Tests/Broken.xaml"] = Dict("""
+                <SolidColorBrush x:Key="Dup" Color="#1" />
+                <SolidColorBrush x:Key="Dup" Color="#2" />
+                """),
+        };
+
+        Assert.Contains(Analyze(files, new Config { IncludeTests = true }).Findings,
+                        f => f.Kind == FindingKind.DuplicateKey);
+    }
+
+    // ── MahApps ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_pack_uri_into_a_project_in_the_tree_resolves()
+    {
+        var r = Analyze(new()
+        {
+            ["Lib/MyLib.csproj"] = LibProj,
+            ["Lib/Themes/Styles.xaml"] = Dict("""<SolidColorBrush x:Key="LibBrush" Color="#111" />"""),
+            ["App/App.csproj"] = AppProj,
+            ["App/App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="pack://application:,,,/MyLib;component/Themes/Styles.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["App/Main.xaml"] = Window("""<Border Background="{StaticResource LibBrush}" />"""),
+        });
+
+        Assert.Equal(100.0, r.Coverage);
+        Assert.Empty(r.ExternalSources);
+    }
+
+    [Fact]
+    public void A_pack_uri_to_a_build_generated_file_stays_external()
+    {
+        // 教訓來源：MahApps 的 Styles/Themes/*.xaml 是建置時從 Theme.Template.xaml 產生的,
+        // repo 裡根本沒有那些檔。external 是**正確**答案 —— 而且要拉低覆蓋率,
+        // 因為我們確實看不到它們定義了什麼。
+        var r = Analyze(new()
+        {
+            ["App/App.csproj"] = AppProj,
+            ["App/App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="pack://application:,,,/Generated;component/Themes/Light.Blue.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["App/Main.xaml"] = Window("""<Border Background="{StaticResource FromGenerated}" />"""),
+        });
+
+        Assert.NotEmpty(r.ExternalSources);
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DanglingStatic);
+        Assert.Contains(r.Findings, f => f.Kind == FindingKind.External);
+    }
+
+    [Fact]
+    public void ExternalDictionaries_config_turns_an_external_merge_into_a_resolved_one()
+    {
+        // 設定讀得到卻沒有作用，比沒有這個設定更糟 —— 使用者會以為自己設了。
+        var files = new Dictionary<string, string>
+        {
+            ["App/App.csproj"] = AppProj,
+            ["App/App.xaml"] = App("""
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="pack://application:,,,/ThirdParty;component/Themes/Styles.xaml" />
+                </ResourceDictionary.MergedDictionaries>
+                """),
+            ["vendor/Themes/Styles.xaml"] = Dict("""<SolidColorBrush x:Key="VendorBrush" Color="#111" />"""),
+            ["App/Main.xaml"] = Window("""<Border Background="{StaticResource VendorBrush}" />"""),
+        };
+
+        var without = Analyze(files);
+        Assert.NotEmpty(without.ExternalSources);
+        Assert.Contains(without.Findings, f => f.Kind == FindingKind.External);
+
+        var cfg = new Config();
+        cfg.ExternalDictionaries["ThirdParty"] = "vendor";
+
+        var with = Analyze(files, cfg);
+        Assert.Empty(with.ExternalSources);
+        Assert.Equal(100.0, with.Coverage);
+        Assert.DoesNotContain(with.Findings, f => f.Kind == FindingKind.External);
+        Assert.True(with.Config.HasOverrides, "a config that changes the result must be visible in the summary");
+    }
+
+    // ── 自家專案（.claude/worktrees） ───────────────────────────────────────
+
+    [Fact]
+    public void Dot_directories_are_excluded()
+    {
+        // 教訓來源：自家專案底下的 .claude/worktrees/ 有整份副本,
+        // 不排除的話每個鍵都被數三次,重複定義也會整批假警報。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            [".claude/worktrees/copy/App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+        });
+
+        Assert.Equal(1, r.XamlFiles);
+        Assert.Equal(1, r.KeysDefined);
+    }
+}
