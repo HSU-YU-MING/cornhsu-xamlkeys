@@ -14,6 +14,7 @@ using XamlKeys.Core;
 string? root = null;
 string? jsonPath = null;
 string? sarifPath = null;
+string? htmlPath = null;
 string? configPath = null;
 string? baselinePath = null;
 string? writeBaselinePath = null;
@@ -40,6 +41,10 @@ for (var i = 0; i < args.Length; i++)
         case "--sarif":
             if (Value(args, ref i, "--sarif") is not { } sp) return 2;
             sarifPath = sp; break;
+
+        case "--html":
+            if (Value(args, ref i, "--html") is not { } hp) return 2;
+            htmlPath = hp; break;
 
         case "--config":
             if (Value(args, ref i, "--config") is not { } cp) return 2;
@@ -211,6 +216,7 @@ if (msbuild) Report.WriteMsBuild(Console.Out, result);
 
 if (jsonPath is not null && !TryWrite(jsonPath, Report.ToJson(result, version))) return 2;
 if (sarifPath is not null && !TryWrite(sarifPath, ReportSarif.ToSarif(result, version))) return 2;
+if (htmlPath is not null && !TryWrite(htmlPath, ReportHtml.ToHtml(result, version))) return 2;
 
 if (listStale && baseline is not null)
 {
@@ -299,6 +305,7 @@ static void PrintUsage(TextWriter o)
         Options:
           --json <path>            write the JSON report
           --sarif <path>           write a SARIF 2.1.0 report (fail/warn only)
+          --html <path>            write a self-contained HTML report (no scripts, no external files)
           --msbuild                also print MSBuild diagnostics for the VS error list
           --config <path>          config file (default: xamlkeys.config.json in <path>)
           --baseline <path>        only report findings that are not in this baseline

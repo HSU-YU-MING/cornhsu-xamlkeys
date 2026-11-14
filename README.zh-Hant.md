@@ -63,6 +63,18 @@ WPF 查找資源的順序是：元素自己的 `Resources` → 沿樹往上每�
 
 `exit 3` 是刻意的。「我看不到你的字典」跟「我看過了沒問題」不可以長成同一個綠勾。
 
+## HTML 報告
+
+主控台在舊專案上就是一面牆（實測 ScreenToGif 1,100 筆）。`--html` 產生一份**單一檔案**的報告：
+內嵌 CSS、**沒有 script**（篩選是純 CSS）、沒有外部資源、沒有時間戳，
+CI 的 artifact 直接點開就能看，也 diff 得動。
+
+```bash
+xamlkeys src --html xamlkeys-report.html
+```
+
+頁面最上面是「這次執行看不到什麼」，因為那是「unused 可不可信」的前提。
+
 ## 退出碼
 
 | 碼 | 意思 |

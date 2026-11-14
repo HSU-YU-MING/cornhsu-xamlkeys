@@ -172,6 +172,7 @@ is worse than no setting at all.
 ```
 --json <path>            write the JSON report
 --sarif <path>           write a SARIF 2.1.0 report (fail/warn only)
+--html <path>            write a self-contained HTML report (no scripts, no external files)
 --msbuild                also print MSBuild diagnostics for the VS error list
 --config <path>          config file (default: xamlkeys.config.json in <path>)
 --baseline <path>        only report findings that are not in this baseline

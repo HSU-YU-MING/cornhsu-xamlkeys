@@ -115,3 +115,12 @@ public projects plus three maintainer applications, around 3,600 XAML files. The
 After this round, across all fifteen projects the gate fires on **two** findings, both in
 `microsoft/WPF-Samples` and both verified by hand: `CustomNavWindowStyle` and
 `NavButtonFocusVisualStyle` are referenced but defined nowhere in that repository.
+
+### `--html`: a self-contained report
+
+The console is a wall on a legacy project — 1,100 findings for ScreenToGif. `--html` writes a
+single file with inline CSS, **no scripts**, no external resources and no timestamp, so it can be
+opened straight from a CI artifact (a report with scripts renders blank under a strict CSP) and
+diffed between runs. Severity filtering is pure CSS; a file section collapses when all of its rows
+are filtered out. "What this run could not see" sits at the top of the page, not at the bottom,
+because it is the precondition for trusting `unused`.
