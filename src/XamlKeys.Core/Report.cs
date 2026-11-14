@@ -171,11 +171,11 @@ public static class Report
 
         foreach (var group in shown.GroupBy(f => f.Location.File).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
-            o.WriteLine(group.Key);
+            o.WriteLine(LineStart(group.Key));
             foreach (var f in group.OrderBy(f => f.Location.Line))
             {
                 var side = f.Side == ThemeSide.Neutral ? "" : $" [{Finding.SideSlug(f.Side)}]";
-                o.WriteLine($"  {f.Location.Line,5}  {Finding.SeveritySlug(f.Severity),-4} {Finding.KindSlug(f.Kind),-18} {f.Message}{side}");
+                o.WriteLine($"  {f.Location.Line,5}  {Finding.SeveritySlug(f.Severity),-4} {Finding.KindSlug(f.Kind),-18} {OneLine(f.Message)}{side}");
             }
             o.WriteLine();
         }
@@ -249,8 +249,58 @@ public static class Report
         {
             if (f.Severity == Severity.Info) continue;
             var level = f.Severity == Severity.Fail ? "error" : "warning";
-            o.WriteLine($"{f.Location.File}({f.Location.Line}): {level} {RuleId(f.Kind)}: {f.Message}");
+            o.WriteLine($"{LineStart(f.Location.File)}({f.Location.Line}): {level} {RuleId(f.Kind)}: {OneLine(f.Message)}");
         }
+    }
+
+    // ── 文字輸出的消毒 ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 把掃描到的文字（鍵名、檔名、訊息）壓成「一定只佔一行、而且不是 CI 指令」的樣子。
+    ///
+    /// ⚠ 這個工具會在 CI 上掃**別人送來的 PR**。XAML 的屬性值可以用 `&amp;#10;` 塞進真的換行，
+    ///   於是一個鍵名就能在 log 裡自己開一行 —— 實測可以偽造 MSBuild 診斷、
+    ///   可以讓 GitHub Actions 執行 `::error::`／`::add-mask::`，
+    ///   在 Azure Pipelines 上 `##vso[task.setvariable ...]` 甚至能改後續步驟的變數。
+    ///   JSON 與 SARIF 由序列化器轉義、HTML 由 HtmlEncode 處理；只有純文字輸出要自己來。
+    /// </summary>
+    public static string OneLine(string s)
+    {
+        var clean = true;
+        foreach (var c in s)
+            if (char.IsControl(c) || c is '\u2028' or '\u2029') { clean = false; break; }
+
+        if (clean && !s.Contains("##", StringComparison.Ordinal)) return s;
+
+        var sb = new StringBuilder(s.Length + 8);
+        foreach (var c in s)
+        {
+            switch (c)
+            {
+                case '\n': sb.Append(@"\n"); break;
+                case '\r': sb.Append(@"\r"); break;
+                case '\t': sb.Append(@"\t"); break;
+                default:
+                    if (char.IsControl(c) || c is '\u2028' or '\u2029')
+                        sb.Append(@"\u").Append(((int)c).ToString("X4"));
+                    else
+                        sb.Append(c);
+                    break;
+            }
+        }
+
+        // Azure Pipelines（`##vso[`）與 GitHub Actions 舊格式（`##[`）在一行的**任何位置**都會被當成指令
+        return sb.Replace("##vso[", @"#\u0023vso[").Replace("##[", @"#\u0023[").ToString();
+    }
+
+    /// <summary>
+    /// 放在一行開頭的檔名。GitHub Actions 把以 `::` 開頭的行當成指令，
+    /// 而 Linux 上的資料夾可以就叫 `::error::...` —— 補一個 `./` 就不再是行首。
+    /// </summary>
+    public static string LineStart(string path)
+    {
+        var p = OneLine(path);
+        return p.TrimStart().StartsWith("::", StringComparison.Ordinal) ? "./" + p : p;
     }
 
     /// <summary>⚠ 規則 ID 是凍結面：發出去之後不能改號，使用者會用它做抑制。</summary>

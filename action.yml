@@ -38,11 +38,17 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # ⚠ 所有 input 一律經由 env 進 shell，**不要**寫成 run: 裡的 ${{ inputs.x }}。
+    #    ${{ }} 是在 shell 看到腳本之前就做文字代換的：呼叫端只要把一個
+    #    PR 作者控制得到的值（分支名、標題、檔名）接到 input 上，
+    #    那個值就會被當成指令執行。走 env 的話它永遠只是一個字串。
     - name: Install XamlKeys
       shell: bash
+      env:
+        XK_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          dotnet tool install -g Cornhsu.XamlKeys --version "${{ inputs.version }}"
+        if [ -n "$XK_VERSION" ]; then
+          dotnet tool install -g Cornhsu.XamlKeys --version "$XK_VERSION"
         else
           dotnet tool install -g Cornhsu.XamlKeys
         fi
@@ -50,14 +56,22 @@ runs:
 
     - name: Run XamlKeys
       shell: bash
+      env:
+        XK_PATH: ${{ inputs.path }}
+        XK_CONFIG: ${{ inputs.config }}
+        XK_BASELINE: ${{ inputs.baseline }}
+        XK_SARIF: ${{ inputs.sarif }}
+        XK_JSON: ${{ inputs.json }}
+        XK_FAIL_ON: ${{ inputs.fail-on }}
+        XK_MIN_COVERAGE: ${{ inputs.min-coverage }}
       run: |
         args=()
-        [ -n "${{ inputs.config }}" ]   && args+=(--config "${{ inputs.config }}")
-        [ -n "${{ inputs.baseline }}" ] && args+=(--baseline "${{ inputs.baseline }}")
-        [ -n "${{ inputs.sarif }}" ]    && args+=(--sarif "${{ inputs.sarif }}")
-        [ -n "${{ inputs.json }}" ]     && args+=(--json "${{ inputs.json }}")
-        args+=(--fail-on "${{ inputs.fail-on }}")
-        args+=(--min-coverage "${{ inputs.min-coverage }}")
+        [ -n "$XK_CONFIG" ]   && args+=(--config "$XK_CONFIG")
+        [ -n "$XK_BASELINE" ] && args+=(--baseline "$XK_BASELINE")
+        [ -n "$XK_SARIF" ]    && args+=(--sarif "$XK_SARIF")
+        [ -n "$XK_JSON" ]     && args+=(--json "$XK_JSON")
+        args+=(--fail-on "$XK_FAIL_ON")
+        args+=(--min-coverage "$XK_MIN_COVERAGE")
         # ⚠ 路徑一律放在 -- 之後：沒有這個出口的話,一個叫 --version 的資料夾
         #    會被當成旗標（印版本、exit 0、什麼都沒稽核）
-        xamlkeys "${args[@]}" -- "${{ inputs.path }}"
+        xamlkeys "${args[@]}" -- "$XK_PATH"

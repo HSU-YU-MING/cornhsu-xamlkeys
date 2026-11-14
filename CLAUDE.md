@@ -31,6 +31,14 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **跨專案的比對一律要先限定專案。** 已經踩過三次：作用域鏈（wpfui）、
   方言（ModernWpf）、程式載入的字典（maui-samples）。只比檔名或只看「這棵樹裡有沒有」，
   在多專案的 repo 上就是一次大赦。
+- **掃到的東西都是別人的輸入。** 這個工具在 CI 上掃 PR，鍵名、檔名、baseline 的內容都不可信。
+  - 純文字輸出（主控台、`--msbuild`、`--stale`）裡只要有掃描來的字串，一律過 `Report.OneLine()`；
+    放在行首的檔名用 `Report.LineStart()`。`x:Key="A&#10;::error::..."` 是合法的 XAML，
+    不消毒的話鍵名可以偽造診斷、下 GitHub／Azure 的 CI 指令。JSON／SARIF／baseline **不要**消毒。
+  - `XamlScanner` 的走訪是遞迴的，靠 `MaxElementDepth`（串流階段就擋）保護。
+    新增任何「對元素樹遞迴」的程式碼之前，確認它在那道檢查之後。
+  - `action.yml` 的 input 一律走 `env`，不要在 `run:` 裡寫 `${{ inputs.x }}`。
+  - `HostileInputTests` 守這三條。
 - **`baseline` 的比對鍵不含行號。** 含了的話一次格式化就讓整份失效。
 - **ignore 註解按行比對定義** —— 同一行有兩個 `x:Key` 時會一起壓掉（已知盲區）。
 - **別名鏈刻意不做遞移**：死掉的別名 `A -> B` 仍然算成 `B` 的一次引用。

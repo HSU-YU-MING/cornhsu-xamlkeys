@@ -70,6 +70,9 @@ public sealed partial class XamlScanner
     /// <summary>獨立字典檔的路徑 → 字典 Id。合併解析完要用它接線。</summary>
     public IReadOnlyDictionary<string, int> StandaloneByPath => _standaloneByPath;
 
+    /// <summary>元素巢狀的上限。超過的檔不載入也不走訪（見 ScanFile）。</summary>
+    internal const int MaxElementDepth = 512;
+
     public void ScanFile(string file)
     {
         XDocument doc;
@@ -80,12 +83,32 @@ public sealed partial class XamlScanner
             //   外部實體的解析也只靠「我們剛好不印資源的值」擋著 ——
             //   哪天有人把值加進報告，這就變成任意讀檔。
             //   XAML 從來不用 DTD，所以直接禁掉，並把 XmlResolver 關死。
-            using var reader = XmlReader.Create(file, new XmlReaderSettings
+            var settings = new XmlReaderSettings
             {
                 DtdProcessing = DtdProcessing.Prohibit,
                 XmlResolver = null,
                 IgnoreWhitespace = false,
-            });
+            };
+
+            // ⚠ 巢狀深度要在**載入之前**量，而且一超過就停。實測過兩種死法：
+            //   - 8,000 層（約 100 KB）：後面的遞迴走訪 stack overflow，行程直接死掉，
+            //     退出碼不在契約的 0–3 裡，其他檔的結果全部跟著消失
+            //   - 80,000 層：XDocument.Load 本身就要 18 秒，而且是平方成長的
+            //   真實的 XAML 不會超過幾十層，所以超過上限的檔當成「讀不了」：
+            //   跳過、計入 parseErrors，照樣算進「結果可不可信」。
+            using (var probe = XmlReader.Create(file, settings))
+            {
+                while (probe.Read())
+                {
+                    if (probe.NodeType != XmlNodeType.Element || probe.Depth < MaxElementDepth) continue;
+
+                    _errors.Add(new ParseError(Rel(file),
+                        $"elements are nested more than {MaxElementDepth} levels deep; file skipped"));
+                    return;
+                }
+            }
+
+            using var reader = XmlReader.Create(file, settings);
             doc = XDocument.Load(reader, LoadOptions.SetLineInfo);
         }
         catch (XmlException ex)

@@ -244,7 +244,7 @@ if (baseline is not null)
         if (stale.Count > 0)
         {
             Console.WriteLine($"{stale.Count} baseline entr(ies) no longer occur -- regenerate with --write-baseline:");
-            foreach (var s in stale) Console.WriteLine($"  {s}");
+            foreach (var s in stale) Console.WriteLine($"  {Report.OneLine(s)}");
         }
         else Console.WriteLine("every baseline entry still occurs; nothing to tighten");
     }

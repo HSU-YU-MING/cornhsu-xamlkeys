@@ -87,6 +87,32 @@ is **counted and printed**, and too much of it produces `exit 3` rather than a g
 - **Scope lookups are indexed and variant comparisons are cached.** ScreenToGif (121 files,
   45,054 keys) went from 8.5s to 1.1s with identical output.
 
+### A security pass before release: the scanned content is hostile
+
+The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file
+names, the baseline file — is somebody else's input. Three things were found by probing, and fixed:
+
+- **A resource key could write its own lines into the log.** `x:Key="A&#10;::error::..."` is a
+  valid attribute, and the character reference becomes a real newline in the key. In the console
+  and `--msbuild` output that produced forged diagnostics, live GitHub Actions workflow commands
+  (`::error::`, `::add-mask::`), and on Azure Pipelines a working `##vso[task.setvariable ...]`.
+  Scanned text in plain-text output is now escaped to a single line (`\n`, `\u001B`, ...), `##vso[`
+  and `##[` are defused, and a path that would start a line with `::` is printed as `./::...`.
+  JSON, SARIF and baseline files keep the key exactly as it is — their serialisers already escape.
+- **A deeply nested file crashed the whole run.** About 8,000 nested elements (100 KB) overflowed
+  the stack: an uncatchable crash, an exit code outside the documented 0-3, and every other file's
+  result lost with it. At 80,000 levels `XDocument.Load` alone took 18 seconds. Nesting is now
+  measured while streaming, before the file is loaded; past 512 levels the file is skipped and
+  counted as a parse error, so it still feeds the "is this result trustworthy" decision.
+- **`action.yml` interpolated its inputs straight into shell scripts.** `${{ inputs.path }}` inside
+  `run:` is substituted before the shell sees the script, so a caller wiring an input to anything
+  a PR author controls would have executed it. Inputs now arrive through `env`.
+
+Checked and found sound: the HTML report encodes every scanned string; a `Source` pointing outside
+the scanned tree is never opened (it is counted as an external dictionary); merge cycles terminate;
+the C# scanner's regular expressions have no nested quantifiers. All seventeen corpus projects
+produce byte-identical findings before and after.
+
 ### A second corpus round: six more public projects, seven more rules
 
 Added Files (WinUI 3), Flow.Launcher (WPF app plus plugin projects, 289 locale files), ModernWpf
