@@ -42,6 +42,9 @@ public sealed class AnalysisResult
     /// 不報懸空。⚠ 放寬的路，一定要計數。</summary>
     public int DynamicKeysNamedInCode { get; set; }
 
+    /// <summary>XAML 沒有定義、但 C# 用 Resources.Add／Resources[…] = 加進資源的鍵的引用數。不報懸空。</summary>
+    public int KeysAddedInCode { get; set; }
+
     /// <summary>字典裡有 x:Key 的子字典（執行期由程式挑一本合併）的個數。裡面的鍵當成可見、彼此互斥。</summary>
     public int KeyedDictionaries { get; set; }
 
@@ -212,34 +215,19 @@ public sealed class Analyzer
         result.Dictionaries = dicts.Count;
         result.KeysDefined = scanner.Definitions.Count;
 
-        var allExternal = new List<string>();
+        // 讀不到的合併先記下來，等方言定了再分「內容已知的主題」與「真的看不到」（見下面 AssignDialects 之後）
+        var externalMerges = new List<(string Source, ResourceDictionaryNode Dict)>();
         foreach (var d in dicts)
             foreach (var m in d.Merged)
             {
                 result.MergeEdges++;
-                if (m.IsExternal)
-                {
-                    if (!allExternal.Contains(m.RawSource)) allExternal.Add(m.RawSource);
-                    // 內容已知的主題（WinUI 的 XamlControlsResources、Avalonia 的 FluentTheme、CommunityToolkit…）：
-                    // 鍵名都在清單裡，不算「讀不到」。查找時仍是看不到的合併（不在清單的鍵照舊是 external）。
-                    if (FrameworkKeys.IsKnownThemeSource(m.RawSource))
-                    {
-                        result.MergeEdgesResolved++;
-                        if (!result.KnownThemeSources.Contains(m.RawSource)) result.KnownThemeSources.Add(m.RawSource);
-                    }
-                    else if (!result.ExternalSources.Contains(m.RawSource)) result.ExternalSources.Add(m.RawSource);
-                }
+                if (m.IsExternal) externalMerges.Add((m.RawSource, d));
                 else result.MergeEdgesResolved++;
             }
 
         // 每本字典記住自己屬於哪個專案 —— Application.Resources 的作用域是該專案的,
         // 不是整棵樹的（見 ScopeEngine.EffectiveChain）。
         foreach (var d in dicts) d.ProjectDir = projects.ProjectDirOf(d.File);
-
-        // .NET 9 起 WPF 內建的 Fluent 主題是**選用**的 —— 只有真的被合併進來時,
-        // 它的 955 個鍵才算「框架提供」。沒用它的專案不該被這份清單遮掉真懸空。
-        result.ThemePacksInUse = FrameworkKeys.PacksUsedBy(allExternal);
-        result.WpfFluentThemeInUse = result.ThemePacksInUse.Contains("wpf-fluent");
 
         ApplyThemeSides(dicts, config);
         var themeEntries = PropagateThemeSides(dicts);
@@ -264,6 +252,24 @@ public sealed class Analyzer
         //       整次掃描的優先序因此被翻過來。
         //   明寫 --dialect／config 時一律照使用者說的，整棵樹同一個值。
         AssignDialects(dicts, projects, config, allRefs);
+
+        // 內容已知的主題（WinUI 的 XamlControlsResources、Avalonia 的 FluentTheme、CommunityToolkit、Uno…）：
+        // 鍵名都在清單裡，不算「讀不到」。查找時仍是看不到的合併（不在清單的鍵照舊是 external）。
+        // ⚠ 要在方言定了之後才分：Uno 的清單只對 WinUI 字典算（跟 Avalonia 同名的主題元素撞名）。
+        foreach (var (source, d) in externalMerges)
+        {
+            if (FrameworkKeys.IsKnownThemeSource(source, d.Dialect))
+            {
+                result.MergeEdgesResolved++;
+                if (!result.KnownThemeSources.Contains(source)) result.KnownThemeSources.Add(source);
+            }
+            else if (!result.ExternalSources.Contains(source)) result.ExternalSources.Add(source);
+        }
+
+        // 選用的主題清單只在真的合併了那個主題時才算（.NET 的 WPF Fluent、Avalonia、Uno…）。
+        // 沒用它的專案不該被這份清單遮掉真懸空。
+        result.ThemePacksInUse = FrameworkKeys.PacksUsedBy(externalMerges.Select(e => (e.Source, e.Dict.Dialect)));
+        result.WpfFluentThemeInUse = result.ThemePacksInUse.Contains("wpf-fluent");
 
         // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
@@ -340,6 +346,12 @@ public sealed class Analyzer
         ctx.NamesInCode.UnionWith(cs.NamesInCode.Select(n => n.Text));
         ctx.ComposedSuffixesInCode.AddRange(cs.ComposedSuffixesInCode);
         ctx.ComposedNamesInCode.AddRange(cs.ComposedNamesInCode);
+        foreach (var (k, proj) in cs.KeysAddedInCode)
+        {
+            if (!ctx.KeysAddedInCode.TryGetValue(proj ?? "", out var set))
+                ctx.KeysAddedInCode[proj ?? ""] = set = new HashSet<string>(StringComparer.Ordinal);
+            set.Add(k);
+        }
 
         EmitDuplicateKeys(dicts, result, config);
         EmitReferenceFindings(ctx, sides, result);
@@ -438,6 +450,17 @@ public sealed class Analyzer
         public List<string> ComposedSuffixesInCode { get; } = [];
         public List<(string Prefix, string Suffix)> ComposedNamesInCode { get; } = [];
 
+        /// <summary>專案 → C# 加進資源的鍵（見 CSharpScanner.KeysAddedInCode）。</summary>
+        public Dictionary<string, HashSet<string>> KeysAddedInCode { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>這個鍵是不是由引用所在專案（或相關專案）的 C# 加進資源的。</summary>
+        public bool IsAddedInCode(string key, string? project)
+        {
+            foreach (var p in Projects.Related(project))
+                if (KeysAddedInCode.TryGetValue(p, out var set) && set.Contains(key)) return true;
+            return false;
+        }
+
         /// <summary>鍵名本身、或「字串＋組出來的固定結尾」（"SukiAccentColor" ＋ $"{x}75"）出現在 C# 裡。</summary>
         public bool IsNamedInCode(string key)
         {
@@ -477,6 +500,16 @@ public sealed class Analyzer
 
         public ResourceDictionaryNode? DictOfRef(KeyReference r) =>
             r.ScopeChain.Count > 0 && ById.TryGetValue(r.ScopeChain[0], out var d) ? d : null;
+
+        /// <summary>這個引用該用哪個方言判「框架提供」：所在字典的方言；畫面檔沒有字典時看檔案本身。
+        /// ⚠ 不能用整棵樹的多數決 —— MAUI 專案裡的 WinUI 字典、混了 WPF 與 WinUI 的樹（PowerToys）都會判錯。</summary>
+        public XamlDialect DialectOfRef(KeyReference r)
+        {
+            if (!Config.DialectAutoDetected || Projects.ProjectCount == 0) return Config.Dialect;
+            if (DictOfRef(r) is { } d) return d.Dialect;
+            var abs = Abs(r.Location.File);
+            return Projects.IsInWinUi(abs) || LooksWinUi(abs) ? XamlDialect.WinUi : XamlDialect.Wpf;
+        }
 
         /// <summary>
         /// 合併了這條鏈上某本字典的「上層」（誰合併我、誰又合併它…）裡，第一個看不到的合併來源。
@@ -589,7 +622,10 @@ public sealed class Analyzer
                 ctx.CSharpNames.Add(r.Key);
                 if (r.IsWrite) continue;   // 寫入是定義，不是查找
                 if (!ctx.DefinedNames.Contains(r.Key)
-                    && FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.ThemePacksInUse))
+                    && ctx.IsAddedInCode(r.Key, ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File))))
+                { result.KeysAddedInCode++; continue; }
+                if (!ctx.DefinedNames.Contains(r.Key)
+                    && FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse))
                 { result.FrameworkProvided++; continue; }
                 // 程式自己讀、也在別處以字串寫進資源的鍵（dnSpy 的 ToolTipBackground）：同 DynamicResource 的放寬
                 if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
@@ -621,6 +657,13 @@ public sealed class Analyzer
             if (failures.Count == 0) continue;
             ctx.OpenNames.Add(r.Key);
 
+            // C# 在執行期把這個鍵加進資源（Resources.Add(nameof(X), …) 之類）：有定義，只是不在 XAML 裡
+            if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsAddedInCode(r.Key, refProject))
+            {
+                result.KeysAddedInCode++;
+                continue;
+            }
+
             // {x:Static …Key}／{ComponentResourceKey …}（見 MarkupKeys）：
             // 框架的鍵由框架提供；專案自己的鍵找不到就照舊算 unresolved —— 它可能在 C#（Resources.Add(Keys.X, …)）
             // 或別的組件裡定義，靜態判不出「不存在」。定義在樹裡別處的，照字串鍵的規則走（out-of-scope）。
@@ -634,7 +677,7 @@ public sealed class Analyzer
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
             //    這一條必須排在查找**之後**：排在前面會把本來解析得到的引用也短路掉 ——
             //    實測 wpfui（WPF 專案，自己定義了同名的鍵）有 3021 筆被誤判成「框架提供」。
-            if (FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.ThemePacksInUse))
+            if (FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse))
             { result.FrameworkProvided++; continue; }
 
             // ⚠ 函式庫專案：它的字典是給**使用者**合併的，我們看不到使用者的作用域。
@@ -1460,7 +1503,7 @@ public sealed class Analyzer
         }
 
         foreach (var d in dicts)
-            d.Dialect = projects.IsInWinUi(d.File) ? XamlDialect.WinUi : XamlDialect.Wpf;
+            d.Dialect = projects.IsInWinUi(d.File) || LooksWinUi(d.File) ? XamlDialect.WinUi : XamlDialect.Wpf;
 
         // 報告要印一個值：以「字典數比較多的那一邊」為代表。
         // summary 另外帶 dialectMixed，讓混合的情形看得出來。
@@ -1468,6 +1511,43 @@ public sealed class Analyzer
         cfg.Dialect = winui * 2 > dicts.Count ? XamlDialect.WinUi : XamlDialect.Wpf;
         cfg.DialectMixed = winui > 0 && winui < dicts.Count;
     }
+
+    /// <summary>
+    /// 不在 WinUI 專案裡、但本身是 WinUI XAML 的檔。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-15 第六輪語料（CommunityToolkit.Maui）：MediaElement 的 <c>ResourceDictionary.windows.xaml</c>
+    ///   是 WinUI 字典（<c>using:Microsoft.UI.Xaml.Controls</c>），放在 MAUI 專案裡；Windows 平台資料夾的
+    ///   <c>Platforms/Windows/App.xaml</c> 也是 WinUI。以專案判方言的話，它們引用的 WinUI 內建鍵
+    ///   （<c>UseSystemFocusVisuals</c>、<c>MTCMediaButtonWidth</c>、<c>NavigationViewContentBackground</c>）
+    ///   被報成懸空 —— 其中 6 筆是 gate 擋的那一級。
+    /// </remarks>
+    internal static bool LooksWinUi(string file)
+    {
+        lock (WinUiFileCache)
+            if (WinUiFileCache.TryGetValue(file, out var cached)) return cached;
+
+        var unix = file.Replace('\\', '/');
+        var result = unix.Contains("/Platforms/Windows/", StringComparison.OrdinalIgnoreCase);
+        if (!result)
+        {
+            try
+            {
+                using var reader = new StreamReader(file);
+                var buffer = new char[8192];
+                var head = new string(buffer, 0, reader.ReadBlock(buffer, 0, buffer.Length));
+                result = head.Contains("using:Microsoft.UI.Xaml", StringComparison.Ordinal)
+                      || head.Contains("using:Windows.UI.Xaml", StringComparison.Ordinal);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        lock (WinUiFileCache) WinUiFileCache[file] = result;
+        return result;
+    }
+
+    private static readonly Dictionary<string, bool> WinUiFileCache = new(StringComparer.OrdinalIgnoreCase);
 
     private static void ApplyThemeSides(IReadOnlyList<ResourceDictionaryNode> dicts, Config cfg)
     {
@@ -1560,9 +1640,14 @@ public sealed class Analyzer
             || seg.Equals("TestCases", StringComparison.OrdinalIgnoreCase)) return true;
 
         // Tests / Test / Foo.Tests / Foo.Tests.Windows
+        // ⚠ 2026-11-15 第六輪語料：CommunityToolkit.Maui.UnitTests、Snoop 的 TestHarnesses/（刻意寫壞的
+        //   MissingDynamicResource、BlahStyle）沒被認出來。UnitTests／DeviceTests／UITests 這種「…Tests」：
+        //   大寫 T 才算，免得 Contests 之類的普通名字被當成測試。
         foreach (var part in seg.Split('.'))
             if (part.Equals("Test", StringComparison.OrdinalIgnoreCase)
-                || part.Equals("Tests", StringComparison.OrdinalIgnoreCase)) return true;
+                || part.Equals("Tests", StringComparison.OrdinalIgnoreCase)
+                || (part.Length > 5 && part.EndsWith("Tests", StringComparison.Ordinal))
+                || part.StartsWith("TestHarness", StringComparison.OrdinalIgnoreCase)) return true;
 
         return false;
     }

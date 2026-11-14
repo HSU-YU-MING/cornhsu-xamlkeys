@@ -24,6 +24,11 @@
     <EmbeddedResource Include="AvaloniaDataGridKeys.json" LogicalName="XamlKeys.Core.AvaloniaDataGridKeys.json" />
     <EmbeddedResource Include="AvaloniaTreeDataGridKeys.json" LogicalName="XamlKeys.Core.AvaloniaTreeDataGridKeys.json" />
     <EmbeddedResource Include="CommunityToolkitKeys.json" LogicalName="XamlKeys.Core.CommunityToolkitKeys.json" />
+    <EmbeddedResource Include="SemiAvaloniaKeys.json" LogicalName="XamlKeys.Core.SemiAvaloniaKeys.json" />
+    <EmbeddedResource Include="UnoMaterialKeys.json" LogicalName="XamlKeys.Core.UnoMaterialKeys.json" />
+    <EmbeddedResource Include="UnoCupertinoKeys.json" LogicalName="XamlKeys.Core.UnoCupertinoKeys.json" />
+    <EmbeddedResource Include="UnoToolkitKeys.json" LogicalName="XamlKeys.Core.UnoToolkitKeys.json" />
+    <EmbeddedResource Include="ModernWpfKeys.json" LogicalName="XamlKeys.Core.ModernWpfKeys.json" />
   </ItemGroup>
 
 </Project>

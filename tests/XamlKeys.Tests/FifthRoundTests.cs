@@ -243,7 +243,8 @@ public class FifthRoundTests : IDisposable
         });
 
         Assert.Empty(Keys(r, FindingKind.DanglingDynamic));
-        Assert.Equal(1, r.DynamicKeysNamedInCode);
+        // Resources["K"] = … 是明確的定義，2026-11-15 起另外計在 keysAddedInCode
+        Assert.Equal(1, r.DynamicKeysNamedInCode + r.KeysAddedInCode);
     }
 
     [Fact]
@@ -255,7 +256,8 @@ public class FifthRoundTests : IDisposable
             ["App.csproj"] = AppProj,
             ["App.xaml"] = App(Wpf, """<SolidColorBrush x:Key="Own" Color="Red" />"""),
             ["Main.xaml"] = Win(Wpf, """<Border Background="{DynamicResource Own}" BorderBrush="{StaticResource AccentBrush}" />"""),
-            ["Theme.cs"] = """class Theme { void A() { Application.Current.Resources["AccentBrush"] = null; } }""",
+            // 一般字串（不是 Resources.Add／Resources[…] = 這種明確的定義）
+            ["Theme.cs"] = """class Theme { object I = new Info { ResourceKey = "AccentBrush" }; }""",
         });
 
         Assert.Equal(["AccentBrush"], Keys(r, FindingKind.DanglingStatic));

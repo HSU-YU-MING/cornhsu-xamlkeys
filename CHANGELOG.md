@@ -215,6 +215,27 @@ coincidental name match.
   `XamlControlsResources` or CommunityToolkit reports a higher figure and exits 3 less often.
   `externalSources` no longer lists those themes; they are in `knownThemeSources`.
 
+- **A sixth corpus round: seven more projects** (Uno Gallery, Lively, PixiEditor, Ursa.Avalonia,
+  CommunityToolkit.Maui, Snoop, WeatherTwentyOne): 4,385 findings on the first run, 303 after, each
+  attributed in the evidence log. New:
+  - a key C# adds with `Resources.Add("K", …)`, `Resources.Add(nameof(K), …)` or `Resources["K"] = …` is a
+    definition, `StaticResource` included — adding before `InitializeComponent()` is valid. This removed a
+    gated false `dangling-static` (`keysAddedInCode`);
+  - the dialect is decided per file as well as per project: a WinUI dictionary inside a MAUI project
+    (`using:Microsoft.UI.Xaml`, `Platforms/Windows/`) uses WinUI's key list, and a reference is judged by the
+    dialect of its own file rather than the tree's majority. Six more gated false findings gone;
+  - `…Tests` (`UnitTests`, `DeviceTests`) and `TestHarness…` directories are test material;
+  - key lists for Semi.Avalonia, Uno Material, Uno Cupertino, Uno Toolkit and ModernWpf. A list can be
+    limited to one dialect: Uno's apply only to WinUI dictionaries (Avalonia has a `<SimpleTheme/>` and
+    Material.Avalonia a `<MaterialTheme/>` too), and in a WPF dictionary `<XamlControlsResources/>` is
+    ModernWpf's;
+  - a key read through a generated localization accessor (`Localize.GameMode()`) counts as used — 158 of
+    Flow Launcher's 359 `unused` were these;
+  - "related projects" means referenced or referencing, transitively — not siblings that merely share a
+    library, which in a monorepo made nearly the whole tree related.
+
+  The 42 gated findings across the earlier 24 projects are unchanged.
+
 - **Security: paths outside the scan root are never probed.** A merge path or a csproj `Include` comes from
   the repository being scanned. Checking whether `\\host\share\x.xaml` exists makes Windows open an SMB
   connection to that host and send NTLM credentials — on a CI runner, from a pull request. Every

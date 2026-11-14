@@ -48,6 +48,7 @@ public static class Report
             w.WriteNumber("keysMatchingComposedLookups", r.KeysMatchingComposedLookups);
             w.WriteNumber("keysNamedInCode", r.KeysNamedInCode);
             w.WriteNumber("dynamicKeysNamedInCode", r.DynamicKeysNamedInCode);
+            w.WriteNumber("keysAddedInCode", r.KeysAddedInCode);
             w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
             w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
             w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
@@ -264,6 +265,8 @@ public static class Report
         if (r.LibraryKeyOverrides > 0)
             o.WriteLine($"note: {r.LibraryKeyOverrides} key(s) belong to a library and are redefined to restyle it " +
                         $"-- not reported as shadowed or unused");
+        if (r.KeysAddedInCode > 0)
+            o.WriteLine($"note: {r.KeysAddedInCode} reference(s) name a key that C# adds to resources (Resources.Add) -- not reported as dangling");
         if (r.KeyedDictionaries > 0)
             o.WriteLine($"note: {r.KeyedDictionaries} keyed ResourceDictionar(ies) inside a dictionary were treated as " +
                         $"alternatives the app picks at runtime -- their keys count as defined");

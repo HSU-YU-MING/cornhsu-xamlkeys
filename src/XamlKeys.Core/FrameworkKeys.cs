@@ -43,9 +43,14 @@ public static class FrameworkKeys
     ///   這些主題的鍵名是公開的（MIT），跟 WinUI 一樣產成清單；產生方式見 scripts/regenerate-framework-keys.mjs。
     /// ⚠ 不分條件地豁免，會把沒用那個主題的專案裡的真懸空一起遮掉（同 WPF Fluent 的理由）。
     /// </remarks>
-    public sealed class ThemePack(string name, string resource, Func<string, bool> matches)
+    /// <param name="dialect">只在這個方言的字典裡算（null＝不限）。
+    /// ⚠ Uno 的 &lt;MaterialTheme/&gt;、&lt;SimpleTheme/&gt; 跟 Material.Avalonia、Avalonia 的同名元素撞名 ——
+    ///   Uno 是 WinUI，限定方言才不會把 Avalonia 專案的鍵算成 Uno 的。</param>
+    public sealed class ThemePack(string name, string resource, Func<string, bool> matches, XamlDialect? dialect = null)
     {
         public string Name { get; } = name;
+        public XamlDialect? Dialect { get; } = dialect;
+        public bool AppliesTo(string source, XamlDialect d) => (Dialect is null || Dialect == d) && Matches(source);
         public Func<string, bool> Matches { get; } = matches;
         private readonly Lazy<(HashSet<string> Keys, string Source)> _data =
             new(() => { var src = "unknown"; var set = Load(resource, x => src = x); return (set, src); });
@@ -68,20 +73,36 @@ public static class FrameworkKeys
         new("avalonia-datagrid", "XamlKeys.Core.AvaloniaDataGridKeys.json", s => Has(s, "avares://Avalonia.Controls.DataGrid/")),
         new("avalonia-treedatagrid", "XamlKeys.Core.AvaloniaTreeDataGridKeys.json", s => Has(s, "avares://Avalonia.Controls.TreeDataGrid/")),
         new("community-toolkit", "XamlKeys.Core.CommunityToolkitKeys.json", s => Has(s, "ms-appx:///CommunityToolkit.WinUI.")),
+        // 2026-11-15 第六輪語料：Ursa（Semi 的延伸）747＋913 筆、Uno Gallery 1,768 筆 external 都是這幾套主題的鍵
+        new("semi-avalonia", "XamlKeys.Core.SemiAvaloniaKeys.json",
+            s => s == "<SemiTheme/>" || Has(s, "avares://Semi.Avalonia/")),
+        // ModernWpf：WPF 上仿 WinUI 的函式庫，元素也叫 <XamlControlsResources/>。WPF 字典裡的那個是它，不是 WinUI。
+        // ⚠ 2026-11-15 實測 PowerToys 的 FancyZonesEditor（WPF）：改成逐檔判方言之後，它引用的
+        //   UseSystemFocusVisuals、RadioButtonForegroundPointerOver 不再被 WinUI 的清單蓋到 —— 那本來就是誤打誤撞。
+        new("modernwpf", "XamlKeys.Core.ModernWpfKeys.json",
+            s => s is "<XamlControlsResources/>" or "<ThemeResources/>" || Has(s, "/ModernWpf;component/"), XamlDialect.Wpf),
+        new("uno-material", "XamlKeys.Core.UnoMaterialKeys.json",
+            s => s is "<MaterialTheme/>" or "<MaterialColors/>" or "<MaterialFonts/>" or "<MaterialResources/>"
+                     or "<MaterialToolkitTheme/>" || Has(s, "ms-appx:///Uno.Material"), XamlDialect.WinUi),
+        new("uno-cupertino", "XamlKeys.Core.UnoCupertinoKeys.json",
+            s => s.StartsWith("<Cupertino", StringComparison.Ordinal) || Has(s, "ms-appx:///Uno.Cupertino"), XamlDialect.WinUi),
+        new("uno-toolkit", "XamlKeys.Core.UnoToolkitKeys.json",
+            s => (s.StartsWith('<') && s.Contains("Toolkit", StringComparison.Ordinal)) || Has(s, "ms-appx:///Uno.Toolkit"),
+            XamlDialect.WinUi),
     ];
 
     /// <summary>這個合併來源是內容已知的主題嗎（某個選用套件、或 WinUI 一定在的 XamlControlsResources）？
     /// 是的話不算「讀不到」：鍵名都在清單裡。</summary>
-    public static bool IsKnownThemeSource(string source) =>
-        source == "<XamlControlsResources/>" || Packs.Any(p => p.Matches(source));
+    public static bool IsKnownThemeSource(string source, XamlDialect dialect) =>
+        source == "<XamlControlsResources/>" || Packs.Any(p => p.AppliesTo(source, dialect));
 
     /// <summary>合併來源用到了哪些選用套件。</summary>
-    public static IReadOnlySet<string> PacksUsedBy(IEnumerable<string> sources)
+    public static IReadOnlySet<string> PacksUsedBy(IEnumerable<(string Source, XamlDialect Dialect)> sources)
     {
         var used = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var src in sources)
+        foreach (var (src, d) in sources)
             foreach (var p in Packs)
-                if (p.Matches(src)) used.Add(p.Name);
+                if (p.AppliesTo(src, d)) used.Add(p.Name);
         return used;
     }
 
@@ -122,7 +143,8 @@ public static class FrameworkKeys
         if (dialect == XamlDialect.WinUi && WinUi.Value.Contains(key)) return true;
 
         foreach (var pack in Packs)
-            if (packsInUse.Contains(pack.Name) && pack.Keys.Contains(key)) return true;
+            if (packsInUse.Contains(pack.Name) && (pack.Dialect is null || pack.Dialect == dialect) && pack.Keys.Contains(key))
+                return true;
         return false;
     }
 

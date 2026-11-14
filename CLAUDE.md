@@ -75,7 +75,12 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **`{x:Static …}`／`ComponentResourceKey` 的鍵換成身分字串**（`MarkupKeys`，例如 `{x:Static MyApp.Keys.A}`）。
   框架的鍵：引用算框架提供、定義不算沒人用也不算死副本。專案的鍵找不到時**不報懸空**（可能在 C# 或別的組件）。
   「型別在不在這棵樹」要找**宣告**（`class X`），只是用到不算。
+- **方言逐檔判**（`Analyzer.LooksWinUi`、`Context.DialectOfRef`）：MAUI 專案裡的 WinUI 檔、混了 WPF 與 WinUI 的樹，
+  用整棵樹的多數決都會判錯 —— 而且錯的時候會「誤打誤撞」蓋掉別的問題（PowerToys 的 FancyZonesEditor）。
+- **「相關專案」是上下游，不含兄弟**（`ProjectIndex.Related`）。用無向連通塊的話，monorepo 裡大家都參考同一個
+  共用函式庫，整棵樹都變成相關。
 - **主題套件的鍵名清單是選用的**（`FrameworkKeys.Packs`）：只有樹裡真的合併了那個主題才算。
+  清單可以限定方言（`ThemePack.Dialect`）：不同生態系的主題元素會撞名（Uno／Avalonia 的 `SimpleTheme`）。
   新增清單照 `scripts/regenerate-framework-keys.mjs` 的表加一列、`.csproj` 加 EmbeddedResource、
   **THIRD-PARTY-NOTICES 加一節（授權全文從上游 `git show` 拿，不要手抄）**。內容已知的主題在覆蓋率裡算解析得到，
   但查找時仍是看不到的合併 —— 清單外的鍵照舊 external，別改成懸空（清單只收 XAML 裡寫出來的鍵，C# 產生的不在裡面）。

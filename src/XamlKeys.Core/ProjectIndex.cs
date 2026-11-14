@@ -48,8 +48,8 @@ public sealed partial class ProjectIndex
             {
                 var target = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(dir, m.Groups[1].Value.Replace('\\', Path.DirectorySeparatorChar))));
                 if (target is null) continue;
-                AddEdge(dir, target);
-                AddEdge(target, dir);
+                AddEdge(_references, dir, target);   // dir 參考 target
+                AddEdge(_referencedBy, target, dir);
             }
         }
 
@@ -95,34 +95,43 @@ public sealed partial class ProjectIndex
     }
 
     /// <summary>這個檔所屬的專案目錄（找不到回 null）。</summary>
-    private readonly Dictionary<string, HashSet<string>> _edges = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _references = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _referencedBy = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _related = new(StringComparer.OrdinalIgnoreCase);
 
-    private void AddEdge(string a, string b)
+    private static void AddEdge(Dictionary<string, HashSet<string>> map, string a, string b)
     {
-        if (!_edges.TryGetValue(a, out var set)) _edges[a] = set = new(StringComparer.OrdinalIgnoreCase);
+        if (!map.TryGetValue(a, out var set)) map[a] = set = new(StringComparer.OrdinalIgnoreCase);
         set.Add(b);
     }
 
     /// <summary>
-    /// 跟這個專案以 &lt;ProjectReference&gt; 連在一起（任一方向、可遞移）的所有專案，含自己。
+    /// 這個專案參考的（可遞移）、參考這個專案的（可遞移），加上自己。**不含兄弟**：兩個專案只是參考同一個函式庫，不算相關。
     /// </summary>
     /// <remarks>
     /// ⚠ 「C# 讓它算有人用」的規則要限在這個範圍，不能是整棵樹、也不能只有自己：
     ///   maui-samples 的 231 個範例彼此獨立，一個範例的字串不能赦免另一個的鍵；
     ///   但 Flow Launcher 的主題檔在 App 專案、讀它們的 Theme.cs 在 Flow.Launcher.Core（App 參考它）——
     ///   只認同一個專案的話，SystemBG、WindowStyle 這些真的有人讀的鍵會被報成沒人用。
+    /// ⚠ 第一版是「任一方向相連」（無向圖的連通塊）：在 monorepo 裡大家都參考同一個共用函式庫，
+    ///   於是幾乎整棵樹都「相關」。實測 CommunityToolkit.Maui：範例 App 裡兩個沒人用的鍵，
+    ///   被單元測試專案（跟範例只是都參考同一個函式庫）裡碰巧同名的字串救了回去。
     /// </remarks>
     public IReadOnlySet<string> Related(string? projectDir)
     {
         var key = projectDir ?? "";
         if (_related.TryGetValue(key, out var cached)) return cached;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key };
-        var stack = new Stack<string>();
-        stack.Push(key);
-        while (stack.Count > 0)
-            if (_edges.TryGetValue(stack.Pop(), out var next))
-                foreach (var n in next) if (seen.Add(n)) stack.Push(n);
+        foreach (var map in new[] { _references, _referencedBy })
+        {
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key };
+            var stack = new Stack<string>();
+            stack.Push(key);
+            while (stack.Count > 0)
+                if (map.TryGetValue(stack.Pop(), out var next))
+                    foreach (var n in next)
+                        if (visited.Add(n)) { seen.Add(n); stack.Push(n); }
+        }
         _related[key] = seen;
         return seen;
     }

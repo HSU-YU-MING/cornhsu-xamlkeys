@@ -23,6 +23,7 @@
     "keysMatchingComposedLookups": 0,
     "keysNamedInCode": 0,
     "dynamicKeysNamedInCode": 0,
+    "keysAddedInCode": 0,
     "keyedDictionaries": 0,
     "classBackedDictionaries": 0,
     "libraryKeyOverrides": 0,

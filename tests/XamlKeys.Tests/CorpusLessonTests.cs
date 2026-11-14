@@ -790,7 +790,9 @@ public class CorpusLessonTests : IDisposable
         });
 
         Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DanglingStatic);
-        Assert.Contains(r.ExternalSources, s => s.Contains("SemiTheme"));
+        // 2026-11-15 起 Semi.Avalonia 有內建的鍵名清單：算「內容已知的主題」，清單外的鍵照舊是 external
+        Assert.Contains(r.KnownThemeSources, s => s.Contains("SemiTheme"));
+        Assert.Contains(r.Findings, f => f.Kind == FindingKind.External && f.Key == "FromTheTheme");
     }
 
     [Fact]

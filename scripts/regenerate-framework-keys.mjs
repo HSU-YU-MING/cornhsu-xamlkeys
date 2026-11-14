@@ -10,6 +10,11 @@
 //   avalonia-datagrid       AvaloniaUI/Avalonia.Controls.DataGrid     AvaloniaDataGridKeys.json
 //   avalonia-treedatagrid   AvaloniaUI/Avalonia.Controls.TreeDataGrid AvaloniaTreeDataGridKeys.json
 //   toolkit                 CommunityToolkit/Windows                  CommunityToolkitKeys.json
+//   semi-avalonia           irihitech/Semi.Avalonia                   SemiAvaloniaKeys.json
+//   uno-material            unoplatform/Uno.Themes（Material）         UnoMaterialKeys.json
+//   uno-cupertino           unoplatform/Uno.Themes（Cupertino）        UnoCupertinoKeys.json
+//   uno-toolkit             unoplatform/uno.toolkit.ui                UnoToolkitKeys.json
+//   modernwpf               Kinnara/ModernWpf                         ModernWpfKeys.json
 //
 // 為什麼需要這份資料：專案的 XAML 大量引用框架或主題套件內建的鍵
 // （TextFillColorPrimaryBrush、ControlCornerRadius、SettingsCardWrapThreshold…），
@@ -21,7 +26,7 @@
 //   2. node scripts/regenerate-framework-keys.mjs <pack> <clone 目錄> <完整 SHA>
 //   3. 看 git diff 再 commit，**並且把 THIRD-PARTY-NOTICES.md 的 commit 一起更新**
 //
-// 授權：所有上游都是 MIT。產出的是鍵名清單（事實資料），聲明仍要附。
+// 授權：Uno.Themes 是 Apache-2.0，其餘都是 MIT。產出的是鍵名清單（事實資料），聲明仍要附。
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, sep } from 'node:path';
@@ -59,6 +64,28 @@ const PACKS = {
   'avalonia-treedatagrid': {
     repo: 'AvaloniaUI/Avalonia.Controls.TreeDataGrid', out: 'AvaloniaTreeDataGridKeys.json',
     take: unix => unix.includes('/Themes/'),
+  },
+  'semi-avalonia': {
+    repo: 'irihitech/Semi.Avalonia', out: 'SemiAvaloniaKeys.json',
+    take: unix => unix.includes('/src/Semi.Avalonia/'),
+  },
+  'uno-material': {
+    repo: 'unoplatform/Uno.Themes', out: 'UnoMaterialKeys.json',
+    // Material 主題本身＋它建在上面的共用層（Uno.Themes）
+    take: unix => unix.includes('/src/library/Uno.Material/') || unix.includes('/src/library/Uno.Themes/'),
+  },
+  'uno-cupertino': {
+    repo: 'unoplatform/Uno.Themes', out: 'UnoCupertinoKeys.json',
+    take: unix => unix.includes('/src/library/Uno.Cupertino/') || unix.includes('/src/library/Uno.Themes/'),
+  },
+  'uno-toolkit': {
+    repo: 'unoplatform/uno.toolkit.ui', out: 'UnoToolkitKeys.json',
+    take: unix => unix.includes('/src/Uno.Toolkit.UI/') || unix.includes('/src/library/'),
+  },
+  modernwpf: {
+    repo: 'Kinnara/ModernWpf', out: 'ModernWpfKeys.json',
+    // WPF 上仿 WinUI 外觀的函式庫：主題資源與控制項樣式（Gallery、samples、test、tools 不算）
+    take: unix => unix.includes('/ModernWpf/') || unix.includes('/ModernWpf.Controls/'),
   },
   toolkit: {
     repo: 'CommunityToolkit/Windows', out: 'CommunityToolkitKeys.json',

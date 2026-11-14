@@ -106,6 +106,16 @@ public sealed partial class CSharpScanner
 
     private readonly List<(string Text, string? Project, bool InWriter)> _namesInCode = [];
 
+    /// <summary>C# 用 <c>Resources.Add("K", …)</c>／<c>Resources.Add(nameof(K), …)</c>／<c>Resources["K"] = …</c>
+    /// 加進資源的鍵 —— 那是**定義**。</summary>
+    /// <remarks>
+    /// ⚠ 2026-11-15 第六輪語料（CommunityToolkit.Maui）：範例頁在 code-behind 的 InitializeComponent() 之前
+    ///   <c>Resources.Add(nameof(StringToListConverter), new StringToListConverter { … })</c>，XAML 再用
+    ///   <c>{StaticResource StringToListConverter}</c> —— 完全合法的寫法，工具卻報成 gate 擋的懸空。
+    /// </remarks>
+    public IReadOnlyCollection<(string Key, string? Project)> KeysAddedInCode => _keysAddedInCode;
+    private readonly HashSet<(string Key, string? Project)> _keysAddedInCode = [];
+
     /// <summary>要找的識別字（markup 鍵的成員名，見 MarkupKeys）。掃描前由 Analyzer 填。</summary>
     public HashSet<string> WordsToFind { get; } = new(StringComparer.Ordinal);
     /// <summary>WordsToFind 裡，在某個 C# 檔以完整的字出現過的。</summary>
@@ -170,6 +180,21 @@ public sealed partial class CSharpScanner
                 _namesInCode.Add((m.Groups["s"].Value, project, writer));
         foreach (var m in ComposedSuffixRegex().Matches(code).Cast<Match>())
             _composedSuffixes.Add(m.Groups["s"].Value);
+        // 產生出來的在地化存取器：Localize.GameMode()、ShellLocalization.X —— 方法名就是鍵名
+        // ⚠ 2026-11-15 實測 Flow Launcher：359 筆 unused 裡 158 筆其實是這樣用的（source generator 依語系檔產生）
+        foreach (var m in LocalizationAccessorRegex().Matches(code).Cast<Match>())
+            _namesInCode.Add((m.Groups["k"].Value, project, false));
+        foreach (var m in ResourceAddRegex().Matches(code).Cast<Match>())
+        {
+            var k = m.Groups["k"].Value;
+            if (k.StartsWith("nameof", StringComparison.Ordinal))
+            {
+                var inner = k[(k.IndexOf('(') + 1)..k.LastIndexOf(')')].Trim();
+                k = inner.Contains('.') ? inner[(inner.LastIndexOf('.') + 1)..] : inner;
+            }
+            else k = Unescape(k[1..^1]);
+            if (k.Length > 0) _keysAddedInCode.Add((k, project));
+        }
         // $"TEInherited{name}Foreground"（dnSpy）：只有一個洞、前後都是像鍵名的字，合計至少 3 個字
         foreach (var m in ComposedNameRegex().Matches(code).Cast<Match>())
         {
@@ -467,6 +492,14 @@ public sealed partial class CSharpScanner
     // 用變數當鍵把值寫進資源：Resources[key] = …、resources[kv.Item1] = …（不分大小寫的 resources）
     [GeneratedRegex("""[Rr]esources\s*\[\s*(?!["\s])[^\]\n]{1,80}\]\s*=(?!=)""")]
     private static partial Regex VariableWriteRegex();
+
+    // Localize.Key / Localization.Key / XxxLocalizer.Key（…Localized 是列舉屬性，不算）
+    [GeneratedRegex("""\b\w*(?:Localize|Localization|Localizer)\s*\.\s*(?<k>[A-Za-z_]\w*)""")]
+    private static partial Regex LocalizationAccessorRegex();
+
+    // 把鍵加進資源：Resources.Add("K", …)／Resources.Add(nameof(K), …)／Resources["K"] = …／Resources[nameof(K)] = …
+    [GeneratedRegex("""\b\w*[Rr]esources\s*(?:\.\s*(?:Add|TryAdd)\s*\(\s*(?<k>"(?:[^"\\]|\\.)*"|nameof\s*\(\s*[\w.]+\s*\))\s*,|\[\s*(?<k>"(?:[^"\\]|\\.)*"|nameof\s*\(\s*[\w.]+\s*\))\s*\]\s*=(?!=))""")]
+    private static partial Regex ResourceAddRegex();
 
     // 緊接在查找後面的「= 值」—— 那是寫入，不是讀取（== 是比較，不算）
     [GeneratedRegex("""\G\s*=(?!=)""")]
