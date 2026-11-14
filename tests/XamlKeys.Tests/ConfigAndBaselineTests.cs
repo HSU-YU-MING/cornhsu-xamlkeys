@@ -128,4 +128,29 @@ public class ConfigAndBaselineTests
 
         Assert.Contains("unused|Nowhere.xaml|Ghost|neutral", baseline.Stale(r.Findings));
     }
+
+    [Fact]
+    public void The_summary_says_what_the_baseline_hid_and_does_not_contradict_itself()
+    {
+        // 2026-11-14 在 QuillNest 照 README 導入時看到的兩句：
+        //   "note: the 0 unused key name(s) cover 22 definition(s) ..."   ← 用的是過濾前的數字
+        //   "note: 19 finding(s) suppressed by ignore comments or config" ← 其實是 baseline 濾掉的
+        // 第二句會讓人去找根本不存在的 ignore 註解。
+        var r = Analyzer.Run(TestPaths.Demo, new Config());
+        var unused = r.Findings.Where(f => f.Kind == FindingKind.Unused).ToList();
+        Assert.True(r.UnusedDefinitions > unused.Count, "the demo needs a key defined in more than one dictionary");
+
+        Baseline.FromFindings(unused).Apply(r);
+
+        Assert.Equal(unused.Count, r.BaselineSuppressed);
+        Assert.Equal(0, r.UnusedDefinitions);
+
+        var console = new StringWriter();
+        Report.WriteConsole(console, r, showInfo: false);
+        var text = console.ToString();
+
+        Assert.DoesNotContain("unused finding(s) cover", text);
+        Assert.Contains($"{unused.Count} known finding(s) hidden by the baseline", text);
+        Assert.DoesNotContain($"{unused.Count} finding(s) suppressed by ignore comments", text);
+    }
 }

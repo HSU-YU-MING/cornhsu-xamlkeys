@@ -14,6 +14,10 @@ public sealed class AnalysisResult
     public int KeysDefined { get; set; }
     public int References { get; set; }
     public int Suppressed { get; set; }
+
+    /// <summary>Suppressed 裡被 baseline 濾掉的那部分。分開記，主控台才講得出「是 baseline 濾掉的」——
+    /// 否則使用者會去找根本不存在的 ignore 註解。</summary>
+    public int BaselineSuppressed { get; set; }
     public List<ParseError> ParseErrors { get; } = [];
     public List<SourceLocation> UnresolvedSites { get; } = [];
 
@@ -738,6 +742,7 @@ public sealed class Analyzer
                 // ⚠ 執行期組出來的鍵名那條提醒刻意**不**放在每一筆 finding 上：
                 //   它會在每一行重複一次，使用者只會學會忽略它。位置在 summary 與 console 結尾。
                 Message = $"'{group.Key}' is defined but never referenced in XAML or code{where}{renamed}",
+                Definitions = all.Count,
             });
         }
     }

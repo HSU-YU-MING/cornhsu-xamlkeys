@@ -70,6 +70,10 @@ public sealed class Finding
 
     public ThemeSide Side { get; init; } = ThemeSide.Neutral;
 
+    /// <summary>unused 一筆背後有幾份定義（同一個鍵名在幾本字典裡各定義一次）。只用來算 summary，不輸出。
+    /// ⚠ baseline 濾掉一筆 unused 時要跟著扣，否則「0 個鍵名對應 22 份定義」這種自相矛盾的句子就會出現。</summary>
+    public int Definitions { get; init; } = 1;
+
     /// <summary>baseline 的比對鍵。⚠ 刻意不含行號 —— 行號會隨無關的編輯漂移，
     /// 一次格式化就讓整份 baseline 失效。</summary>
     public string BaselineKey => $"{KindSlug(Kind)}|{Location.File}|{Key}|{SideSlug(Side)}";

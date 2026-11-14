@@ -39,6 +39,7 @@ public static class Report
             w.WriteNumber("keysDefined", r.KeysDefined);
             w.WriteNumber("references", r.References);
             w.WriteNumber("suppressed", r.Suppressed);
+            w.WriteNumber("baselineSuppressed", r.BaselineSuppressed);
             w.WriteNumber("parseErrors", r.ParseErrors.Count);
             w.WriteNumber("unresolvedSites", r.UnresolvedSites.Count);
             w.WriteNumber("invalidIgnores", r.InvalidIgnores.Count);
@@ -198,8 +199,8 @@ public static class Report
             o.WriteLine($"note: {r.LibraryKeysNotChecked} key(s) in library projects were not checked for usage -- " +
                         $"a library's keys are its public API and are referenced by its consumers");
         if (r.UnusedDefinitions > r.Count(FindingKind.Unused))
-            o.WriteLine($"note: the {r.Count(FindingKind.Unused)} unused key name(s) cover " +
-                        $"{r.UnusedDefinitions} definition(s) across variant dictionaries");
+            o.WriteLine($"note: the {r.Count(FindingKind.Unused)} unused finding(s) cover {r.UnusedDefinitions} " +
+                        $"definition(s) -- a key name defined in several dictionaries is reported once");
         if (r.LibraryUnresolvedReferences > 0)
             o.WriteLine($"note: {r.LibraryUnresolvedReferences} reference(s) in library projects resolve to nothing " +
                         $"in their own project; a consumer may supply them, so they are not gated");
@@ -234,8 +235,10 @@ public static class Report
         if (r.InvalidIgnores.Count > 0)
             o.WriteLine($"warning: {r.InvalidIgnores.Count} ignore comment(s) have no reason and were ignored " +
                         $"themselves -- write '<!-- xamlkeys-ignore: why -->' (see summary.invalidIgnoreDetails)");
-        if (r.Suppressed > 0)
-            o.WriteLine($"note: {r.Suppressed} finding(s) suppressed by ignore comments or config");
+        if (r.Suppressed - r.BaselineSuppressed > 0)
+            o.WriteLine($"note: {r.Suppressed - r.BaselineSuppressed} finding(s) suppressed by ignore comments or config");
+        if (r.BaselineSuppressed > 0)
+            o.WriteLine($"note: {r.BaselineSuppressed} known finding(s) hidden by the baseline");
 
         // 第一次在舊專案上跑一定是一片紅。不講這句的話,使用者看到的是一面牆,
         // 而解法（baseline）寫在 README 裡 —— 他還沒讀到那裡就已經把工具關掉了。

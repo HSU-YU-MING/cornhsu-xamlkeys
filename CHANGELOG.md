@@ -125,6 +125,12 @@ coincidental name match.
   draft added 156 findings to the corpus; each exception removed a class of false ones, and the
   remaining 21 were checked by hand.
 
+- **With `--baseline`, the summary now says what the baseline hid.** Following the README's
+  adoption steps printed "19 finding(s) suppressed by ignore comments or config" (there were no
+  ignore comments: it was the baseline) and "the 0 unused key name(s) cover 22 definition(s)"
+  (a count taken before the baseline was applied). The baseline's share is a separate line and a
+  separate summary field, `baselineSuppressed`.
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file

@@ -14,6 +14,7 @@
     "keysDefined": 1,
     "references": 1,
     "suppressed": 0,
+    "baselineSuppressed": 0,
     "parseErrors": 0,
     "unresolvedSites": 0,
     "invalidIgnores": 0,

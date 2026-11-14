@@ -184,7 +184,7 @@ public class FrozenContractTests
         {
             "dialect", "dialectAutoDetected", "dialectMixed", "xamlFiles", "csharpFiles",
             "dictionaries", "mergeEdges", "mergeEdgesResolved", "coverage", "keysDefined",
-            "references", "suppressed", "parseErrors", "unresolvedSites", "invalidIgnores",
+            "references", "suppressed", "baselineSuppressed", "parseErrors", "unresolvedSites", "invalidIgnores",
             "dynamicKeySites", "keysNamedNearDynamicLookups", "configOverrides", "hasApplication", "projects", "applicationProjects",
             "libraryKeysNotChecked", "variantDictionaryGroups", "frameworkProvided",
             "runtimeLoadedDictionaries", "implicitThemeDictionaries", "runtimeSelectedFamilyFiles",

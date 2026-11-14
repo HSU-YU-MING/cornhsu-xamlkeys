@@ -74,11 +74,13 @@ public sealed class Baseline
     /// <summary>把已知債從 findings 裡挑掉。回傳被挑掉的筆數（要進 summary.suppressed）。</summary>
     public int Apply(AnalysisResult result)
     {
-        var before = result.Findings.Count;
+        var hidden = result.Findings.Where(f => Entries.Contains(f.BaselineKey)).ToList();
         result.Findings.RemoveAll(f => Entries.Contains(f.BaselineKey));
-        var removed = before - result.Findings.Count;
-        result.Suppressed += removed;
-        return removed;
+
+        result.Suppressed += hidden.Count;
+        result.BaselineSuppressed += hidden.Count;
+        result.UnusedDefinitions -= hidden.Where(f => f.Kind == FindingKind.Unused).Sum(f => f.Definitions);
+        return hidden.Count;
     }
 
     /// <summary>baseline 裡有、這次沒看到的項目 —— 債還掉了，可以重產 baseline。</summary>

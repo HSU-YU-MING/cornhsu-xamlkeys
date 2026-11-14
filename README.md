@@ -69,7 +69,7 @@ Views/MainWindow.xaml
 7 XAML file(s), 7 dictionar(ies), 19 key(s), 14 reference(s)
 merged dictionaries resolved: 2/3 (66.7%)
 dangling-static 1, dangling-dynamic 1, duplicate-key 1, out-of-scope 1, shadowed 3, shadowed-identical 1, unused 5, orphan-dictionary 1, external 1
-note: the 5 unused key name(s) cover 6 definition(s) across variant dictionaries
+note: the 5 unused finding(s) cover 6 definition(s) -- a key name defined in several dictionaries is reported once
 note: 1 merged dictionar(ies) could not be read -- 'unused' results are incomplete for keys they may define
 note: 1 runtime-composed resource lookup(s) in C# -- keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)
 note: 1 finding(s) suppressed by ignore comments or config

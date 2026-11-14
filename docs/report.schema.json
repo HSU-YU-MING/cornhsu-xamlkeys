@@ -37,6 +37,7 @@
         "references": { "type": "integer" },
 
         "suppressed": { "type": "integer", "description": "Hidden by ignore comments, config or a baseline." },
+        "baselineSuppressed": { "type": "integer", "description": "The part of 'suppressed' hidden by --baseline." },
         "parseErrors": { "type": "integer" },
         "unresolvedSites": { "type": "integer", "description": "References whose key is not a string (x:Type, x:Static)." },
         "invalidIgnores": { "type": "integer", "description": "Ignore comments with no reason. They suppress nothing." },
