@@ -196,12 +196,14 @@ is worse than no setting at all.
 --dialect wpf|winui      merge-order dialect (default: detected from the project files)
 --min-coverage <0-100>   minimum share of merged dictionaries that must resolve (default 80)
 --exclude <fragment>     skip paths containing this fragment (repeatable)
+--include-tests          also scan test projects and fixture folders
 --show-info              also print info-level findings
 ```
 
 ## Known limitations
 
-Every one of these was found by running the tool over seven public projects — see
+Every one of these was found by running the tool over seventeen public projects (WPF, WinUI,
+Avalonia and .NET MAUI, about 5,600 XAML files) — see
 [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md).
 
 | Limitation | Effect | What the tool does about it |

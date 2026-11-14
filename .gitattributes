@@ -1,0 +1,7 @@
+# 全 repo 行尾釘死 LF：CI 的 Windows runner 預設 autocrlf=true，CRLF checkout 會改變
+# raw string literal 的內容（測試因此在 CI 上與本機行為不同 —— PolyMigrate 踩過）。
+# 新 repo 一開始就釘，免得日後要做一次全 repo 的行尾重寫。
+* text=auto eol=lf
+
+# 二進位
+*.png binary

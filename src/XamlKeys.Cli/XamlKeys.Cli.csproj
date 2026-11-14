@@ -17,7 +17,7 @@
          連它蓋在 JSON 報告上的 toolVersion 都是錯的 —— XamlContrast 真的發生過）。
          ⚠ 也不要整格刪掉（退回 MSBuild 預設的 1.0.0，等於宣告介面已凍結）。 -->
     <Version>0.0.0-dev</Version>
-    <Description>XamlKeys — static scope audit for XAML resource keys. Finds dangling {StaticResource} references, keys shadowed by merge order, and keys nobody uses. Whole project, no app launch, CI exit codes.</Description>
+    <Description>XamlKeys — static scope audit for XAML resource keys in WPF, WinUI, Avalonia and .NET MAUI. Finds dangling {StaticResource} references, duplicate keys, keys shadowed by merge order, and keys nobody uses. Whole project, no app launch, CI exit codes.</Description>
   </PropertyGroup>
 
   <ItemGroup>

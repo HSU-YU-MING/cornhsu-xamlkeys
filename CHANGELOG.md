@@ -13,6 +13,13 @@ see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
 First release.
 
+**In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
+It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
+against twenty real projects — seventeen public ones and three of the maintainer's, about 5,600
+XAML files — in four rounds; the sections below are in the order the work happened, so the first
+"Validated against" section describes round one only. Across the final corpus the default gate
+fires on 42 findings in two projects, every one of them verified by hand.
+
 ### What it does
 
 Parses every XAML file under a root, builds the resource **scope graph** (merge order included),

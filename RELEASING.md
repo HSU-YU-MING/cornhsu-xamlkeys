@@ -34,24 +34,32 @@ git push origin v0.1.0
 自家三個專案**全部是 WPF 應用程式**，測不到函式庫、pack URI、ThemeDictionaries、WinUI
 那幾類缺陷。`verify-baselines.ps1` 守不到它們。
 
-做法（照 XamlContrast 的流程）：sparse clone 只拿 `*.xaml`、`*.cs`、`*.csproj`，
+做法（照 XamlContrast 的流程）：sparse clone 只拿 `*.xaml`、`*.axaml`、`*.cs`、`*.csproj`，
 新舊兩版各跑 `--json`、逐筆比 findings：
 
 ```bash
+# 四輪語料的完整清單（WPF 應用程式與函式庫、WinUI 3、Avalonia、.NET MAUI）
 for repo in NickeManarin/ScreenToGif HandyOrg/HandyControl MahApps/MahApps.Metro \
             lepoco/wpfui MaterialDesignInXAML/MaterialDesignInXamlToolkit \
-            microsoft/WinUI-Gallery icsharpcode/ILSpy; do
+            microsoft/WinUI-Gallery icsharpcode/ILSpy \
+            files-community/Files Flow-Launcher/Flow.Launcher Kinnara/ModernWpf \
+            fluentribbon/Fluent.Ribbon microsoft/WPF-Samples QL-Win/QuickLook \
+            AvaloniaUI/Avalonia amwx/FluentAvalonia irihitech/Semi.Avalonia \
+            dotnet/maui-samples dotnet/eShop; do
   name=$(basename "$repo")
   git clone --filter=blob:none --no-checkout --depth 1 "https://github.com/$repo.git" "$name"
   (cd "$name" && git sparse-checkout init --cone \
-     && git sparse-checkout set --no-cone '/**/*.xaml' '/**/*.cs' '/**/*.csproj' \
+     && git sparse-checkout set --no-cone '/**/*.xaml' '/**/*.axaml' '/**/*.cs' '/**/*.csproj' \
      && git checkout)
   xamlkeys "$name" --min-coverage 0 --json "$name.json"
 done
 ```
 
-2026-11-14 的基準數字（第一版）記在 `docs/實查歸因-2026-11-14.md` 第 3 節。
-**任何一類的計數大幅變動都要能解釋**。
+2026-11-14 的基準數字記在 `docs/實查歸因-2026-11-14.md`（四輪各一節）。
+**任何一類的計數大幅變動都要能解釋**，而且有三筆已知的真 finding 要盯住有沒有消失：
+wpfui 的 `TreeViewItemFocusVisual`、WPF-Samples 的 `CustomNavWindowStyle` 與
+`NavButtonFocusVisualStyle`。它們不見了，多半不是對方修好了，是我們把檢查弄丟了
+（這種「假的進步」在開發期間發生過三次）。
 
 ## 框架鍵清單（WinUI 與 WPF Fluent）
 

@@ -19,7 +19,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
-    <PackageTags>xaml;wpf;winui;resourcedictionary;unused-resources;static-analysis;ci;dotnet-tool</PackageTags>
+    <PackageTags>xaml;wpf;winui;avalonia;maui;resourcedictionary;unused-resources;staticresource;static-analysis;ci;dotnet-tool</PackageTags>
 
     <!-- 可除錯性：讓使用者能 step-in 進原始碼 -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

@@ -29,7 +29,7 @@ a property of today's report format, not a security boundary. The parser is now 
 boundary does not depend on it.
 
 Because DTDs are refused, entity-expansion attacks ("billion laughs") cannot start.
-`FrozenContractTests` and `CorpusLessonTests` both cover this.
+`CorpusLessonTests.A_DTD_is_refused_rather_than_expanded` covers this.
 
 ### Symlinks and directory junctions
 
