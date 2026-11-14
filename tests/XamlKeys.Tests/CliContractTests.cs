@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Core = XamlKeys.Core;
 
 namespace XamlKeys.Tests;
 
@@ -151,6 +152,104 @@ public class CliContractTests
         var (exit, _, err) = Run("--baseline", Path.Combine(TestPaths.Demo, "no-baseline.json"), TestPaths.Demo);
         Assert.Equal(2, exit);
         Assert.Contains("baseline not found", err);
+    }
+
+    [Fact]
+    public void Re_recording_a_baseline_onto_itself_does_not_empty_it()
+    {
+        // ⚠ `--baseline b.json --write-baseline b.json` 是更新棘輪最自然的打法。
+        //   舊版先套用舊 baseline 再寫入「剩下的」—— 於是把檔案清成 0 條。
+        //   那個檔案在版控裡，這是會毀資料的 bug。
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-rerecord");
+        try
+        {
+            var bl = Path.Combine(dir.FullName, "b.json");
+            Run("--min-coverage", "0", "--write-baseline", bl, TestPaths.Demo);
+            var before = Core.Baseline.Load(bl).Entries.Count;
+            Assert.True(before > 0);
+
+            Run("--min-coverage", "0", "--baseline", bl, "--write-baseline", bl, TestPaths.Demo);
+
+            Assert.Equal(before, Core.Baseline.Load(bl).Entries.Count);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void Stale_without_a_baseline_is_a_usage_error_not_a_silent_no_op()
+    {
+        // 靜靜什麼都不做，使用者會以為自己檢查過了
+        var (exit, _, err) = Run("--min-coverage", "0", "--stale", TestPaths.Demo);
+        Assert.Equal(2, exit);
+        Assert.Contains("--baseline", err);
+    }
+
+    [Fact]
+    public void A_baseline_with_entries_that_no_longer_occur_gets_a_nudge()
+    {
+        // 沒人去收緊的棘輪，最後會把新債一起蓋住
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-nudge");
+        try
+        {
+            var bl = Path.Combine(dir.FullName, "b.json");
+            File.WriteAllText(bl, """{"keyVersion":1,"toolVersion":"x","entries":["unused|Nowhere.xaml|Ghost|neutral"]}""");
+
+            var (_, stdout, _) = Run("--min-coverage", "0", "--baseline", bl, TestPaths.Demo);
+            Assert.Contains("no longer occur", stdout);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void The_html_report_is_written_where_asked()
+    {
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-htmlcli");
+        try
+        {
+            var html = Path.Combine(dir.FullName, "out", "report.html");
+            Run("--min-coverage", "0", "--html", html, TestPaths.Demo);
+
+            Assert.True(File.Exists(html));
+            Assert.StartsWith("<!doctype html>", File.ReadAllText(html), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void Include_tests_brings_test_paths_back_into_the_scan()
+    {
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-inctests");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, "App.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+            File.WriteAllText(Path.Combine(dir.FullName, "App.xaml"), """
+                <Application xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources><ResourceDictionary>
+                    <SolidColorBrush x:Key="Used" Color="#111" />
+                  </ResourceDictionary></Application.Resources>
+                </Application>
+                """);
+            File.WriteAllText(Path.Combine(dir.FullName, "Main.xaml"), """
+                <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{StaticResource Used}" />
+                </Window>
+                """);
+            Directory.CreateDirectory(Path.Combine(dir.FullName, "App.Tests"));
+            File.WriteAllText(Path.Combine(dir.FullName, "App.Tests", "Broken.xaml"), """
+                <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <SolidColorBrush x:Key="Dup" Color="#1" />
+                  <SolidColorBrush x:Key="Dup" Color="#2" />
+                </ResourceDictionary>
+                """);
+
+            Assert.Equal(0, Run(dir.FullName).Exit);                       // 預設跳過測試路徑
+            Assert.Equal(1, Run("--include-tests", dir.FullName).Exit);    // 掃進來就會看到重複鍵
+        }
+        finally { dir.Delete(true); }
     }
 
     [Fact]

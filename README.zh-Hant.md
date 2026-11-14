@@ -1,4 +1,4 @@
-# XamlKeys
+# <img src="https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-xamlkeys/main/icon.png" width="28" alt=""/> XamlKeys
 
 **XAML 資源鍵的靜態作用域稽核。支援 WPF、WinUI、Avalonia 與 .NET MAUI。不開 App、全專案掃、CI 退出碼。**
 

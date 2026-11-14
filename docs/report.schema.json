@@ -63,7 +63,7 @@
         "wpfFluentKeySource": { "type": "string" },
         "wpfFluentKeyCount": { "type": "integer" },
 
-        "sides": { "type": "array", "items": { "enum": ["neutral", "dark", "light", "high-contrast", "fallback"] } },
+        "sides": { "type": "array", "items": { "enum": ["neutral", "dark", "light", "high-contrast"] } },
         "externalSources": { "type": "array", "items": { "type": "string" } },
 
         "counts": {
@@ -108,7 +108,7 @@
           "key": { "type": "string" },
           "file": { "type": "string", "description": "Relative to the scan root, forward slashes." },
           "line": { "type": "integer" },
-          "side": { "enum": ["neutral", "dark", "light", "high-contrast", "fallback"] },
+          "side": { "enum": ["neutral", "dark", "light", "high-contrast"] },
           "message": { "type": "string" },
           "related": {
             "type": "object",

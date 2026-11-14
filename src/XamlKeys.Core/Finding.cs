@@ -93,7 +93,6 @@ public sealed class Finding
         ThemeSide.Dark => "dark",
         ThemeSide.Light => "light",
         ThemeSide.HighContrast => "high-contrast",
-        ThemeSide.Fallback => "fallback",
         _ => "neutral",
     };
 

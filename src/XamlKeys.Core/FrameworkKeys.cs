@@ -35,8 +35,6 @@ public static class FrameworkKeys
         "SystemChrome",
     ];
 
-    public static string SourceCommit => WinUiSource;
-
     private static string WinUiSource = "unknown";
     private static string WpfFluentSource = "unknown";
 
@@ -77,15 +75,6 @@ public static class FrameworkKeys
 
     public static int Count => WinUi.Value.Count;
 
-    /// <summary>
-    /// 這份清單會過期：WinUI 每出一版就多幾個框架鍵，而清單沒跟上的話，
-    /// 那些新鍵會被報成懸空 —— **而且不會有任何東西變紅**，只會慢慢多出假警報。
-    ///
-    /// 沒有辦法在離線的情況下知道上游有沒有變，所以這裡退而求其次：
-    /// 把「這份資料是什麼時候的」放進報告，讓使用者自己看得到它老了。
-    /// 重新產生的方式見 RELEASING.md。
-    /// </summary>
-    public const string RegenerateHint = "scripts/regenerate-framework-keys.mjs";
 
     private static HashSet<string> Load(string resourceName, Action<string> setSource)
     {

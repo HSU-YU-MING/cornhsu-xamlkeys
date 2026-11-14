@@ -27,10 +27,6 @@ public enum ThemeSide
     /// 實測：WinUI Gallery 因此冒出 11 筆假 shadowed。
     /// 預設不評這一側（大多數 App 只覆寫少數幾個鍵，逐一評會是整片噪音）。</summary>
     HighContrast,
-
-    /// <summary>ThemeDictionaries 裡的 "Default"，而且 Light 與 Dark 都已經各有一本 ——
-    /// 那本在執行期永遠輪不到。獨立成一側，免得它跟兩側的同名鍵互相「覆蓋」。</summary>
-    Fallback,
 }
 
 /// <summary>原始碼位置。File 一律是相對於掃描根的正斜線路徑 —— baseline 要跨 OS 可攜。</summary>
@@ -171,5 +167,4 @@ public enum LookupStatus
 public sealed record LookupResult(
     LookupStatus Status,
     KeyDefinition? Definition = null,
-    IReadOnlyList<KeyDefinition>? Shadowed = null,
     string? ExternalSource = null);

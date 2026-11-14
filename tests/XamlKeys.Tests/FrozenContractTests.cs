@@ -155,7 +155,7 @@ public class FrozenContractTests
     [Fact]
     public void The_theme_side_names_are_frozen()
     {
-        Assert.Equal(["neutral", "dark", "light", "high-contrast", "fallback"],
+        Assert.Equal(["neutral", "dark", "light", "high-contrast"],
                      Enum.GetValues<ThemeSide>().Select(Finding.SideSlug).ToArray());
     }
 

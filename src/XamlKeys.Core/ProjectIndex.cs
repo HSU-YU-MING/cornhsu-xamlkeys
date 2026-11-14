@@ -29,9 +29,7 @@ public sealed partial class ProjectIndex
             var dir = Path.GetDirectoryName(Path.GetFullPath(proj));
             if (dir is null) continue;
 
-            var winui = IsWinUiProject(proj);
-            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), winui));
-            if (winui) AnyWinUiProject = true;
+            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), IsWinUiProject(proj)));
         }
 
         // 最深的目錄排前面：巢狀專案要先比對到自己，不是父專案
@@ -45,11 +43,6 @@ public sealed partial class ProjectIndex
 
     public bool HasAnyApplication { get; }
 
-    /// <summary>有任何專案是 WinUI 3／UWP。
-    /// ⚠ 這是判斷方言的**主要**依據，不要只靠 {ThemeResource} ——
-    /// wpfui 是 WPF 函式庫但刻意沿用 WinUI 的鍵名與寫法，只看 XAML 會判錯，
-    /// 而方言判錯會把合併字典的優先序整個倒過來（shadowed 的贏家與輸家對調）。</summary>
-    public bool AnyWinUiProject { get; private set; }
 
     public int ProjectCount => _projects.Count;
     public int ApplicationCount => _projects.Count(p => p.IsApplication);

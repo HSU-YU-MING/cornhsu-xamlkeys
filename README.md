@@ -1,4 +1,4 @@
-# XamlKeys
+# <img src="https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-xamlkeys/main/icon.png" width="28" alt=""/> XamlKeys
 
 **Static scope audit for XAML resource keys. WPF, WinUI, Avalonia and .NET MAUI. No app launch, whole project, CI exit codes.**
 
