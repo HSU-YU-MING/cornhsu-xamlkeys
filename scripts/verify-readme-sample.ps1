@@ -36,7 +36,9 @@ $readmePath = Join-Path $repo 'README.md'
 $readme = Get-Content $readmePath -Raw -Encoding UTF8
 
 # README 裡的那一段是 "## Example" 之後第一個沒有語言標籤的 ``` 區塊
-$pattern = '(?s)(## Example.*?\n```\n)(.*?)(\n```)'
+# ⚠ \r?\n：README 可能是 CRLF（被別的工具改寫過）。只認 \n 的 regex 會整個對不上，
+#    而錯誤訊息是「找不到示範區塊」，看起來像 README 被改壞了,其實只是換行字元。
+$pattern = '(?s)(## Example.*?\r?\n```\r?\n)(.*?)(\r?\n```)'
 $m = [regex]::Match($readme, $pattern)
 if (-not $m.Success) { throw 'cannot locate the sample block in README.md' }
 

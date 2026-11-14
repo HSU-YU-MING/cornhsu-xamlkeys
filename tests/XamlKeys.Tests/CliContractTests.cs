@@ -154,6 +154,55 @@ public class CliContractTests
     }
 
     [Fact]
+    public void Stale_baseline_entries_are_listed()
+    {
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-stale");
+        try
+        {
+            var bl = Path.Combine(dir.FullName, "b.json");
+            File.WriteAllText(bl, """{"keyVersion":1,"toolVersion":"x","entries":["unused|Nowhere.xaml|Ghost|neutral"]}""");
+
+            var (_, stdout, _) = Run("--min-coverage", "0", "--baseline", bl, "--stale", TestPaths.Demo);
+            Assert.Contains("no longer occur", stdout);
+            Assert.Contains("Ghost", stdout);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void MsBuild_output_carries_the_rule_ids()
+    {
+        var (_, stdout, _) = Run("--min-coverage", "0", "--msbuild", TestPaths.Demo);
+        Assert.Contains("): error XK0001:", stdout);
+        Assert.Contains("): error XK0002:", stdout);
+    }
+
+    [Fact]
+    public void A_config_found_inside_the_scanned_tree_is_announced()
+    {
+        // ⚠ 在 CI 上掃一個 PR 時,那個設定檔就是 PR 的內容 ——
+        //   它可以把 severities 全降成 info,把守門員靜靜關掉。不禁止,但一定要講出來。
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-cfgdisc");
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(TestPaths.Demo, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(TestPaths.Demo, f);
+                var dest = Path.Combine(dir.FullName, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(f, dest, overwrite: true);
+            }
+
+            File.WriteAllText(Path.Combine(dir.FullName, "xamlkeys.config.json"),
+                              """{"severities":{"dangling-static":"info"}}""");
+
+            var (_, _, stderr) = Run("--min-coverage", "0", dir.FullName);
+            Assert.Contains("found in the scanned tree", stderr);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
     public void Json_and_sarif_are_written_where_asked()
     {
         var dir = Directory.CreateTempSubdirectory("xamlkeys-cli3");

@@ -21,7 +21,9 @@ dotnet tool install -g Cornhsu.XamlKeys
 xamlkeys path/to/your/wpf/project
 ```
 
-> Requires the **.NET 10 runtime**. The analysis is pure XML — it runs on Linux CI too.
+> Requires the **.NET 10 runtime**. The analysis is pure XML with no WPF dependency, so it is
+> built to run on Linux CI as well — but that has **not been verified on a real Linux run yet**
+> (the CI workflow does it on the first push; see ROADMAP).
 
 ## What it finds
 

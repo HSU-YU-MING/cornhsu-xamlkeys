@@ -127,9 +127,12 @@ if (!Directory.Exists(root))
 }
 
 Config config;
+var autoDiscoveredConfig = (string?)null;
 try
 {
-    var effective = configPath ?? DefaultConfigIn(root);
+    if (configPath is null && DefaultConfigIn(root) is { } found) autoDiscoveredConfig = found;
+
+    var effective = configPath ?? autoDiscoveredConfig;
     config = effective is not null ? Config.Load(effective) : new Config();
 
     if (configPath is not null && !File.Exists(configPath))
@@ -153,6 +156,15 @@ if (dialectFlag is not null)
     config.DialectAutoDetected = false;
 }
 config.Exclude.AddRange(excludes);
+
+// ⚠ 自動撿到的設定檔**來自被掃描的那棵樹**。在 CI 上掃一個 PR 的時候，
+//   那個檔案就是 PR 的內容 —— 它可以把 severities 全部降成 info、
+//   或用 usedAtRuntime 把整批鍵壓掉，把守門員靜靜關掉。
+//   不禁止（本地使用者就是靠它設定），但**一定要講出來**，而且只在它真的放寬了結果時講。
+if (autoDiscoveredConfig is not null && config.HasOverrides)
+    Console.Error.WriteLine(
+        $"note: using '{autoDiscoveredConfig}' found in the scanned tree; it changes severities, " +
+        $"suppressions or thresholds. Pass --config explicitly to control which file is used.");
 
 var result = Analyzer.Run(root, config);
 var version = ToolVersion();

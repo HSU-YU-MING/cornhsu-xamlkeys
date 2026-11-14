@@ -47,6 +47,10 @@ public static class Report
             w.WriteNumber("libraryKeysNotChecked", r.LibraryKeysNotChecked);
             w.WriteNumber("variantDictionaryGroups", r.VariantDictionaryGroups);
             w.WriteNumber("frameworkProvided", r.FrameworkProvided);
+            // 框架鍵清單的來源版本。⚠ 它會過期而且不會有任何東西變紅 ——
+            //    放進報告讓使用者看得到它多舊（重產方式見 RELEASING.md）。
+            w.WriteString("winUiKeySource", FrameworkKeys.SourceCommit);
+            w.WriteNumber("winUiKeyCount", FrameworkKeys.Count);
             w.WriteNumber("runtimeLoadedDictionaries", r.RuntimeLoadedDictionaries);
             w.WriteNumber("implicitThemeDictionaries", r.ImplicitThemeDictionaries);
             w.WriteNumber("unusedDefinitions", r.UnusedDefinitions);
@@ -197,6 +201,13 @@ public static class Report
             o.WriteLine($"note: {r.ParseErrors.Count} file(s) failed to parse and were skipped");
         if (r.Suppressed > 0)
             o.WriteLine($"note: {r.Suppressed} finding(s) suppressed by ignore comments or config");
+
+        // 第一次在舊專案上跑一定是一片紅。不講這句的話,使用者看到的是一面牆,
+        // 而解法（baseline）寫在 README 裡 —— 他還沒讀到那裡就已經把工具關掉了。
+        if (r.Findings.Count >= 50)
+            o.WriteLine($"tip: {r.Findings.Count} findings is a lot for a first run. " +
+                        $"Record them once with --write-baseline <path>, then use --baseline <path> " +
+                        $"so that only new findings fail.");
     }
 
     // ── MSBuild 診斷格式（給 Visual Studio 的錯誤清單） ─────────────────────

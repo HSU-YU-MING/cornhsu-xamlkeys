@@ -23,6 +23,8 @@
     "libraryKeysNotChecked": 0,
     "variantDictionaryGroups": 0,
     "frameworkProvided": 0,
+    "winUiKeySource": "unknown",
+    "winUiKeyCount": 3573,
     "runtimeLoadedDictionaries": 0,
     "implicitThemeDictionaries": 0,
     "unusedDefinitions": 5,
