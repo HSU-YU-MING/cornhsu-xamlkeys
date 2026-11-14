@@ -26,11 +26,31 @@ public sealed partial class CSharpScanner
     private readonly List<KeyReference> _references = [];
     private readonly List<DynamicKeySite> _dynamicSites = [];
     private readonly List<(string Path, string? Project)> _loadedDictionaryPaths = [];
+    private readonly List<(string Text, SourceLocation Location)> _literalsNearDynamicLookups = [];
 
     public CSharpScanner(string root) => _root = Path.GetFullPath(root);
 
     public IReadOnlyList<KeyReference> References => _references;
     public IReadOnlyList<DynamicKeySite> DynamicSites => _dynamicSites;
+
+    /// <summary>
+    /// 有「用變數查找」的檔裡出現的每一個像鍵名的字串字面。分析時，跟定義過的鍵同名的會算成有人用。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 在 Kindling 上實際用的時候抓到的：
+    /// <code>
+    /// (string Glyph, string BrushKey)? icon = image switch { ... => ("glyph", "Blue"), ... };
+    /// IconText.SetResourceReference(TextBlock.ForegroundProperty, ic.BrushKey);
+    /// </code>
+    /// 查找點只看得到 <c>ic.BrushKey</c>，鍵名在上面十行的 switch 裡。工具原本說 <c>Blue</c> 沒人用 ——
+    /// 照做的話，資訊對話框的圖示就沒有顏色了。這是這支工具最不該犯的錯（叫人刪掉有用的東西）。
+    /// <para>
+    /// 用變數查找的鍵名，九成就寫在同一個檔裡（switch、三元、陣列、對照表）。所以「同一個檔裡、
+    /// 跟某個鍵同名的字串」當成引用。誤差方向是安全的：只會讓 unused 少報，而且有計數
+    /// （<c>keysNamedNearDynamicLookups</c>），使用者看得到工具在這裡放寬了。
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<(string Text, SourceLocation Location)> LiteralsNearDynamicLookups => _literalsNearDynamicLookups;
 
     /// <summary>程式碼裡載入的字典路徑（new ResourceDictionary { Source = new Uri("…") }）。
     /// 用來避免把它們誤報成 orphan-dictionary。</summary>
@@ -60,10 +80,15 @@ public sealed partial class CSharpScanner
                 ScopeChain = [],   // 執行期沿真實樹查找，沒有靜態作用域
             });
 
+        var dynamicBefore = _dynamicSites.Count;
         foreach (var m in DynamicLookupRegex().Matches(code).Cast<Match>())
             _dynamicSites.Add(new DynamicKeySite(
                 new SourceLocation(rel, LineAt(code, m.Index)),
                 Shorten(m.Value)));
+
+        if (_dynamicSites.Count > dynamicBefore)
+            foreach (var m in KeyLikeLiteralRegex().Matches(code).Cast<Match>())
+                _literalsNearDynamicLookups.Add((m.Groups["s"].Value, new SourceLocation(rel, LineAt(code, m.Index))));
 
         var project = ProjectOf?.Invoke(file);
         foreach (var m in XamlPathRegex().Matches(code).Cast<Match>())
@@ -177,20 +202,44 @@ public sealed partial class CSharpScanner
             : full.Replace('\\', '/');
     }
 
-    // FindResource("K") / TryFindResource("K") / SetResourceReference(prop, "K") / Resources["K"]
+    // 字面鍵名的查找。每一種都是在語料裡實際看到的寫法：
+    //   WPF        FindResource("K")、TryFindResource("K")、SetResourceReference(prop, "K")、Resources["K"]
+    //   Avalonia   TryFindResource("K", out v)、TryFindResource("K", theme, out v)、TryGetResource("K", theme, out v)、
+    //              GetResourceObservable("K")、new DynamicResourceExtension("K")
+    //   MAUI       SetDynamicResource(prop, "K")、Resources.TryGetValue("K", out v)
+    // ⚠ 2026-11-14 之前只認 WPF 那四種。Avalonia 的 TryFindResource 多一個 out 參數，
+    //   原本的「字串後面緊接右括號」對不上，於是那些鍵被當成沒人用。
     [GeneratedRegex("""
-        (?:(?:Try)?FindResource\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
-        | (?:SetResourceReference\s*\([^,()]*,\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
+        (?:(?:Try)?FindResource\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*[,)])
+        | (?:Set(?:ResourceReference|DynamicResource)\s*\([^,()]*,\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
         | (?:Resources\s*\[\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\])
+        | (?:TryGetResource\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*,)
+        | (?:Resources\s*\.\s*TryGetValue\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*,)
+        | (?:GetResourceObservable\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*[,)])
+        | (?:(?:Dynamic|Static)ResourceExtension\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
         """, RegexOptions.IgnorePatternWhitespace)]
     private static partial Regex LiteralLookupRegex();
 
-    // 同樣的呼叫但參數不是字面字串 —— $"Icon{name}"、變數、常數
+    // 同樣的呼叫但鍵名不是字面字串 —— $"Icon{name}"、變數、常數、三元。
+    // ⚠ (?!["\s]) 而不是 (?!")：「FindResource( "K")」左括號後面有空白時，\s* 會退回去，
+    //   讓 (?!") 對著那個空白成立，字面查找就被誤算成一個執行期查找。
+    // ⚠ typeof(X) 是隱含樣式的鍵（型別），跟 x:Key 無關，不算。
+    // ⚠ Resources[key] = value 是**寫入**，不是查找 —— 算進來的話，主題服務那種
+    //   「整張色盤寫進資源」的檔會讓 LiteralsNearDynamicLookups 把色盤裡每個鍵都算成有人用。
     [GeneratedRegex("""
-        (?:(?:Try)?FindResource\s*\(\s*(?!")[^)\n]{1,80}\))
-        | (?:Resources\s*\[\s*(?!")[^\]\n]{1,80}\])
+        (?:(?:Try)?FindResource\s*\(\s*(?!["\s])[^)\n]{1,80}\))
+        | (?:Set(?:ResourceReference|DynamicResource)\s*\([^,()]*,\s*(?!["\s]|typeof\s*\()[^)\n]{1,80}\))
+        | (?:Resources\s*\[\s*(?!["\s])[^\]\n]{1,80}\](?!\s*=[^=]))
+        | (?:TryGetResource\s*\(\s*(?!["\s])[^,)\n]{1,80},)
+        | (?:Resources\s*\.\s*TryGetValue\s*\(\s*(?!["\s])[^,)\n]{1,80},)
+        | (?:GetResourceObservable\s*\(\s*(?!["\s])[^,)\n]{1,80}[,)])
+        | (?:(?:Dynamic|Static)ResourceExtension\s*\(\s*(?!["\s)])[^)\n]{1,80}\))
         """, RegexOptions.IgnorePatternWhitespace)]
     private static partial Regex DynamicLookupRegex();
+
+    // 長得像鍵名的一般字串字面（不含 $"…" 與 @"…"）。用在 LiteralsNearDynamicLookups。
+    [GeneratedRegex("""(?<![@$\w"])"(?<s>[A-Za-z_][\w.\-]{0,99})(?=")""")]
+    private static partial Regex KeyLikeLiteralRegex();
 
     [GeneratedRegex("""["'](?<p>[^"'\n]*\.xaml)["']""", RegexOptions.IgnoreCase)]
     private static partial Regex XamlPathRegex();

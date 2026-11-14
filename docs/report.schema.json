@@ -41,6 +41,7 @@
         "unresolvedSites": { "type": "integer", "description": "References whose key is not a string (x:Type, x:Static)." },
         "invalidIgnores": { "type": "integer", "description": "Ignore comments with no reason. They suppress nothing." },
         "dynamicKeySites": { "type": "integer", "description": "C# lookups that build the key at runtime." },
+        "keysNamedNearDynamicLookups": { "type": "integer", "description": "Keys counted as used because their name appears as a string literal in a C# file that looks resources up by variable. Never reported as unused." },
         "libraryKeysNotChecked": { "type": "integer", "description": "Keys in library projects, not evaluated for usage." },
         "libraryUnresolvedReferences": { "type": "integer" },
         "crossProjectReferences": { "type": "integer" },

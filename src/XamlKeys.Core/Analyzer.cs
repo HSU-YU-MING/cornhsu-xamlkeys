@@ -21,6 +21,10 @@ public sealed class AnalysisResult
     /// 使用者以為自己壓掉了,實際上沒有。</summary>
     public List<SourceLocation> InvalidIgnores { get; } = [];
     public List<DynamicKeySite> DynamicKeySites { get; } = [];
+
+    /// <summary>因為在「用變數查找」的 C# 檔裡以字串出現、而被算成有人用的鍵名數。
+    /// ⚠ 這是一條放寬的路（見 CSharpScanner.LiteralsNearDynamicLookups），一定要計數。</summary>
+    public int KeysNamedNearDynamicLookups { get; set; }
     public List<string> ExternalSources { get; } = [];
     public bool HasApplication { get; set; }
     public List<ThemeSide> Sides { get; } = [];
@@ -203,6 +207,14 @@ public sealed class Analyzer
         // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
+
+        // 用變數查找的檔裡，跟某個鍵同名的字串 → 算成有人用（理由見 CSharpScanner.LiteralsNearDynamicLookups）。
+        // 只計「真的會被判 unused 的鍵」：函式庫的鍵本來就不判，算進來只會灌水。
+        var appKeys = ctx.Definitions.Where(d => !ctx.InLibrary(ctx.ById[d.DictionaryId].File))
+                                     .Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var (text, _) in cs.LiteralsNearDynamicLookups)
+            if (ctx.DefinedNames.Contains(text) && ctx.ReferencedNames.Add(text) && appKeys.Contains(text))
+                result.KeysNamedNearDynamicLookups++;
 
         EmitDuplicateKeys(dicts, result, config);
         EmitReferenceFindings(ctx, sides, result);

@@ -58,6 +58,8 @@ WPF 查找資源的順序是：元素自己的 `Resources` → 沿樹往上每�
 
 - 讀不到的合併字典 → `external`，而且 **unused 的結論被宣告為不完整**
 - C# 裡組出來的鍵名（`FindResource($"Icon{name}")`）→ 計入動態查找點
+- 先放進變數再交給查找的鍵名（`var k = ok ? "Green" : "Red"; ...SetResourceReference(p, k)`）
+  → 那個檔裡跟鍵同名的字串都算有人用，而且數量會印出來
 - **函式庫**專案的鍵 → 完全不判（那是它的公開 API）
 - 讀不到的字典太多 → **exit 3**，「結果不可信」
 

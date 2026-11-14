@@ -43,6 +43,7 @@ public static class Report
             w.WriteNumber("unresolvedSites", r.UnresolvedSites.Count);
             w.WriteNumber("invalidIgnores", r.InvalidIgnores.Count);
             w.WriteNumber("dynamicKeySites", r.DynamicKeySites.Count);
+            w.WriteNumber("keysNamedNearDynamicLookups", r.KeysNamedNearDynamicLookups);
             w.WriteBoolean("configOverrides", r.Config.HasOverrides);
             w.WriteBoolean("hasApplication", r.HasApplication);
             w.WriteNumber("projects", r.Projects);
@@ -225,6 +226,9 @@ public static class Report
         if (r.DynamicKeySites.Count > 0)
             o.WriteLine($"note: {r.DynamicKeySites.Count} runtime-composed resource lookup(s) in C# -- " +
                         $"keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)");
+        if (r.KeysNamedNearDynamicLookups > 0)
+            o.WriteLine($"note: {r.KeysNamedNearDynamicLookups} key(s) were counted as used because their name appears " +
+                        $"as a string in a C# file that looks resources up by variable");
         if (r.ParseErrors.Count > 0)
             o.WriteLine($"note: {r.ParseErrors.Count} file(s) failed to parse and were skipped");
         if (r.InvalidIgnores.Count > 0)

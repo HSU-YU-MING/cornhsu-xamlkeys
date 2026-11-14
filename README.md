@@ -114,6 +114,8 @@ break the app. Every blind spot is therefore **counted and printed**, never swal
 
 - a merged dictionary it could not read → `external`, and the **unused** result is declared incomplete
 - a key composed at runtime in C# (`FindResource($"Icon{name}")`) → counted as a dynamic site
+- a key handed to such a lookup through a variable (`var k = ok ? "Green" : "Red"; ...SetResourceReference(p, k)`)
+  → any string in that file that matches a key name counts as a use, and the number is printed
 - keys in a **library** project → not checked at all (they are that library's public API)
 - too many unreadable dictionaries → **exit 3**, "result is not trustworthy"
 

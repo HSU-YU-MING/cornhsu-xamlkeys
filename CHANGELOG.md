@@ -87,6 +87,34 @@ is **counted and printed**, and too much of it produces `exit 3` rather than a g
 - **Scope lookups are indexed and variant comparisons are cached.** ScreenToGif (121 files,
   45,054 keys) went from 8.5s to 1.1s with identical output.
 
+### Using it for real: the first finding was wrong
+
+Running the README's adoption steps on one of the author's own apps, the very first `unused`
+finding was false. `Blue` was used — but through a variable:
+
+```csharp
+(string Glyph, string BrushKey)? icon = image switch { ... => ("glyph", "Blue"), ... };
+IconText.SetResourceReference(TextBlock.ForegroundProperty, ic.BrushKey);
+```
+
+The C# scanner did not even count that line as a dynamic lookup, so the summary gave no warning
+either. Deleting `Blue` as advised would have taken the colour off the information dialog's icon.
+
+- **More lookup forms are recognised, literal and by variable.** Avalonia's
+  `TryFindResource("K", out v)`, `TryGetResource`, `GetResourceObservable`,
+  `DynamicResourceExtension`; MAUI's `SetDynamicResource` and `Resources.TryGetValue`; and the
+  variable form of `SetResourceReference`. `typeof(X)` keys (implicit styles) and
+  `Resources[k] = v` (a write) are no longer counted as lookups.
+- **In a C# file that looks resources up by variable, a string that matches a key name counts as
+  a use.** The key handed to the lookup is nearly always written in the same file — in a switch, a
+  ternary, a table. This can only make `unused` report less, and the number of keys it applies to
+  is printed (`keysNamedNearDynamicLookups`).
+
+Across the seventeen corpus projects 168 `unused` findings disappeared and none appeared. Spot
+checks found them to be real uses that the previous build reported wrongly (ScreenToGif's
+localisation keys, ModernWpf's `p91`, MahApps' child windows); one (`Example` in MahApps) is a
+coincidental name match.
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file

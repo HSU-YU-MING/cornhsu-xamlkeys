@@ -17,7 +17,8 @@
     "parseErrors": 0,
     "unresolvedSites": 0,
     "invalidIgnores": 0,
-    "dynamicKeySites": 2,
+    "dynamicKeySites": 3,
+    "keysNamedNearDynamicLookups": 1,
     "configOverrides": true,
     "hasApplication": true,
     "projects": 1,
@@ -34,7 +35,7 @@
     "implicitThemeDictionaries": 0,
     "runtimeSelectedFamilyFiles": 0,
     "libraryUnresolvedReferences": 0,
-    "unusedDefinitions": 5,
+    "unusedDefinitions": 4,
     "crossProjectReferences": 0,
     "testFilesExcluded": 0,
     "sides": [
@@ -48,13 +49,13 @@
       "outOfScope": 0,
       "shadowed": 0,
       "shadowedIdentical": 0,
-      "unused": 5,
+      "unused": 4,
       "orphanDictionary": 0,
       "external": 0
     },
     "severities": {
       "fail": 0,
-      "warn": 5,
+      "warn": 4,
       "info": 0
     }
   },
@@ -76,15 +77,6 @@
       "line": 10,
       "side": "neutral",
       "message": "\u0027Equals\u0027 is defined but never referenced in XAML or code"
-    },
-    {
-      "kind": "unused",
-      "severity": "warn",
-      "key": "Blue",
-      "file": "Kindling.WPF/Themes/DarkTheme.xaml",
-      "line": 32,
-      "side": "neutral",
-      "message": "\u0027Blue\u0027 is defined but never referenced in XAML or code"
     },
     {
       "kind": "unused",
@@ -112,6 +104,11 @@
       "file": "Kindling.WPF/Views/ChoiceDialog.xaml.cs",
       "line": 32,
       "expression": "FindResource(i == 0 ? \u0022AccentBtn\u0022 : \u0022DarkBtn\u0022)"
+    },
+    {
+      "file": "Kindling.WPF/Views/MessageDialog.xaml.cs",
+      "line": 73,
+      "expression": "SetResourceReference(TextBlock.ForegroundProperty, ic.BrushKey)"
     },
     {
       "file": "Kindling.WPF/Views/MessageDialog.xaml.cs",

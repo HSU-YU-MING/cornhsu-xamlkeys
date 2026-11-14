@@ -24,10 +24,46 @@ public class CSharpScannerTests
     [InlineData("""var b = el.TryFindResource("Key1");""", "Key1")]
     [InlineData("""var b = Application.Current.Resources["Key1"];""", "Key1")]
     [InlineData("""el.SetResourceReference(Control.BackgroundProperty, "Key1");""", "Key1")]
+    // Avalonia
+    [InlineData("""if (this.TryFindResource("Key1", out var v)) { }""", "Key1")]
+    [InlineData("""if (this.TryFindResource("Key1", ThemeVariant.Dark, out var v)) { }""", "Key1")]
+    [InlineData("""if (res.TryGetResource("Key1", ThemeVariant.Dark, out var v)) { }""", "Key1")]
+    [InlineData("""var o = this.GetResourceObservable("Key1");""", "Key1")]
+    [InlineData("""el[!Border.BackgroundProperty] = new DynamicResourceExtension("Key1");""", "Key1")]
+    // .NET MAUI
+    [InlineData("""label.SetDynamicResource(Label.TextColorProperty, "Key1");""", "Key1")]
+    [InlineData("""Application.Current.Resources.TryGetValue("Key1", out var c);""", "Key1")]
+    // 左括號後面有空白：還是字面查找，不能被算成執行期查找
+    [InlineData("""var b = el.FindResource( "Key1" );""", "Key1")]
     public void Reads_literal_lookups(string code, string expected)
     {
-        var (refs, _) = Scan(code);
+        var (refs, dyn) = Scan(code);
         Assert.Equal(expected, Assert.Single(refs).Key);
+        Assert.Empty(dyn);
+    }
+
+    [Theory]
+    [InlineData("IconText.SetResourceReference(TextBlock.ForegroundProperty, ic.BrushKey);")]
+    [InlineData("label.SetDynamicResource(Label.TextColorProperty, key);")]
+    [InlineData("if (this.TryFindResource(key, out var v)) { }")]
+    [InlineData("if (res.TryGetResource(name, ThemeVariant.Dark, out var v)) { }")]
+    [InlineData("Application.Current.Resources.TryGetValue(key, out var c);")]
+    [InlineData("var b = Application.Current.Resources[key];")]
+    public void A_lookup_by_variable_is_a_dynamic_site(string code)
+    {
+        var (refs, dyn) = Scan(code);
+        Assert.Empty(refs);
+        Assert.Single(dyn);
+    }
+
+    [Theory]
+    [InlineData("SetResourceReference(StyleProperty, typeof(ScrollViewer));")]     // 隱含樣式：鍵是型別
+    [InlineData("Application.Current.Resources[key] = brush;")]                    // 寫入，不是查找
+    public void Things_that_look_like_lookups_but_are_not(string code)
+    {
+        var (refs, dyn) = Scan(code);
+        Assert.Empty(refs);
+        Assert.Empty(dyn);
     }
 
     [Fact]
@@ -113,6 +149,66 @@ public class CSharpScannerTests
             s.ScanFile(file);
 
             Assert.Contains(s.LoadedDictionaryPaths, e => e.Path == "Themes/DarkTheme.xaml");
+        }
+        finally { dir.Delete(true); }
+    }
+
+    // ── 用變數查找的檔裡，跟鍵同名的字串 ─────────────────────────────────
+
+    [Fact]
+    public void A_key_handed_to_a_variable_lookup_in_the_same_file_is_not_reported_as_unused()
+    {
+        // Kindling 實際用的時候抓到的：Blue 被說成沒人用，照做的話資訊對話框的圖示就沒顏色了。
+        // 同時守住反面：主題服務把整張色盤**寫進**資源，那些鍵名不能因此全部變成「有人用」。
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-near");
+        try
+        {
+            void Put(string rel, string content)
+            {
+                var path = Path.Combine(dir.FullName, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, content);
+            }
+
+            const string ns = "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" " +
+                              "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"";
+
+            Put("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+            Put("App.xaml", $"""
+                <Application {ns}>
+                  <Application.Resources>
+                    <SolidColorBrush x:Key="Blue" Color="#378ADD" />
+                    <SolidColorBrush x:Key="Red" Color="#E24B4A" />
+                    <SolidColorBrush x:Key="AmberBorder" Color="#5A4A1E" />
+                  </Application.Resources>
+                </Application>
+                """);
+            Put("Main.xaml", $$"""<Window {{ns}}><Border Background="{DynamicResource Red}" /></Window>""");
+            Put("MessageDialog.xaml.cs", """
+                (string Glyph, string BrushKey)? icon = image switch
+                {
+                    MessageBoxImage.Error       => ("x", "Red"),
+                    MessageBoxImage.Information => ("i", "Blue"),
+                    _ => null,
+                };
+                IconText.SetResourceReference(TextBlock.ForegroundProperty, icon.Value.BrushKey);
+                """);
+            Put("ThemeService.cs", """
+                static readonly (string Key, string Dark, string Light)[] Palette =
+                {
+                    ("Blue", "#378ADD", "#1D6FC4"),
+                    ("AmberBorder", "#5A4A1E", "#E6D8A8"),
+                };
+                foreach (var (key, dark, light) in Palette) Application.Current.Resources[key] = Make(dark);
+                """);
+
+            var r = Analyzer.Run(dir.FullName, new Config());
+
+            Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Unused && f.Key == "Blue");
+            Assert.Contains(r.Findings, f => f.Kind == FindingKind.Unused && f.Key == "AmberBorder");
+            // Red 本來就被 XAML 引用了，不算這條規則救回來的
+            Assert.Equal(1, r.KeysNamedNearDynamicLookups);
+            Assert.Single(r.DynamicKeySites);
         }
         finally { dir.Delete(true); }
     }
