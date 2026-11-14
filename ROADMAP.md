@@ -29,9 +29,18 @@
          新舊版逐筆比對；每一筆 finding 都寫明「真的／假的、為什麼」進 `docs/`。
          假的要嘛修掉、要嘛寫進 README 的已知盲區 —— 不能有「沒人解釋」的 finding。
       2. **至少一筆上游回報被對方維護者確認或修掉。** 這是「它叫的時候是真的」唯一不靠作者自己判斷的證據。
-         已送出：[lepoco/wpfui#1780](https://github.com/lepoco/wpfui/issues/1780)
+         **✅ 2026-11-15 達成**：[dnSpyEx/dnSpy#536](https://github.com/dnSpyEx/dnSpy/issues/536)
+         （`DialogBorderStyle` 引用不存在的 `TabItemSelectedBackground`）送出當天，維護者 ElektroKill 以
+         [5d63b7f](https://github.com/dnSpyEx/dnSpy/commit/5d63b7fb38f220b4f52d8d23b57a2bf7333fe499)
+         「Fix reference to non existent XAML resource (fixes #536)」修掉，改法與回報建議的一字不差。
+         其他送出的：[lepoco/wpfui#1780](https://github.com/lepoco/wpfui/issues/1780)
          （`TreeViewItemFocusVisual`）、[microsoft/WPF-Samples#819 的留言](https://github.com/microsoft/WPF-Samples/pull/819#issuecomment-6877668604)
-         （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`）。
+         （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`）、
+         [MaterialDesignInXamlToolkit#4124](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit/issues/4124)、
+         [Avalonia#22833](https://github.com/AvaloniaUI/Avalonia/issues/22833)、
+         [SukiUI#674](https://github.com/kikipoulet/SukiUI/issues/674)、
+         [WeatherTwentyOne#72](https://github.com/davidortinau/WeatherTwentyOne/issues/72)。
+         追蹤表在 repo 外（維護者本機的上游回報資料夾）。
       3. **凍結面撐過至少三個 0.x 版本。** 從 0.1.0 起連續三版沒有改動 `FrozenContractTests` 的任何預期值。
 
       為什麼是三個月：小眾的 CLI 工具，沒有回報不代表沒有人用，也可能只是沒人用 ——
