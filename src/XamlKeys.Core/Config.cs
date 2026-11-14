@@ -20,6 +20,10 @@ public sealed class Config
     /// <summary>true 表示 dialect 沒有明寫、由偵測決定。要寫進 summary。</summary>
     public bool DialectAutoDetected { get; set; } = true;
 
+    /// <summary>這棵樹裡同時有 WPF 與 WinUI 專案（兩者的合併優先序相反）。
+    /// 每本字典用自己專案的方言，但這件事要在 summary 講出來。</summary>
+    public bool DialectMixed { get; set; }
+
     /// <summary>額外排除的路徑片段（除了內建的 bin/obj/點開頭目錄）。</summary>
     public List<string> Exclude { get; } = [];
 

@@ -27,6 +27,9 @@ public static class Report
             w.WriteStartObject("summary");
             w.WriteString("dialect", r.Config.Dialect == XamlDialect.Wpf ? "wpf" : "winui");
             w.WriteBoolean("dialectAutoDetected", r.Config.DialectAutoDetected);
+            // ⚠ 一棵樹裡可以同時有 WPF 與 WinUI 專案,兩者的合併優先序相反。
+            //    每本字典用自己專案的方言,但這件事要看得見。
+            w.WriteBoolean("dialectMixed", r.Config.DialectMixed);
             w.WriteNumber("xamlFiles", r.XamlFiles);
             w.WriteNumber("csharpFiles", r.CSharpFiles);
             w.WriteNumber("dictionaries", r.Dictionaries);
@@ -53,6 +56,8 @@ public static class Report
             w.WriteNumber("winUiKeyCount", FrameworkKeys.Count);
             w.WriteNumber("runtimeLoadedDictionaries", r.RuntimeLoadedDictionaries);
             w.WriteNumber("implicitThemeDictionaries", r.ImplicitThemeDictionaries);
+            w.WriteNumber("runtimeSelectedFamilyFiles", r.RuntimeSelectedFamilyFiles);
+            w.WriteNumber("libraryUnresolvedReferences", r.LibraryUnresolvedReferences);
             w.WriteNumber("unusedDefinitions", r.UnusedDefinitions);
             w.WriteNumber("crossProjectReferences", r.CrossProjectReferences);
             w.WriteNumber("testFilesExcluded", r.TestFilesExcluded);
@@ -180,11 +185,20 @@ public static class Report
         if (r.UnusedDefinitions > r.Count(FindingKind.Unused))
             o.WriteLine($"note: the {r.Count(FindingKind.Unused)} unused key name(s) cover " +
                         $"{r.UnusedDefinitions} definition(s) across variant dictionaries");
+        if (r.LibraryUnresolvedReferences > 0)
+            o.WriteLine($"note: {r.LibraryUnresolvedReferences} reference(s) in library projects resolve to nothing " +
+                        $"in their own project; a consumer may supply them, so they are not gated");
+        if (r.RuntimeSelectedFamilyFiles > 0)
+            o.WriteLine($"note: {r.RuntimeSelectedFamilyFiles} unmerged dictionar(ies) look like a runtime-selected " +
+                        $"family (same directory, near-identical key sets) and were not reported as orphans");
         if (r.VariantDictionaryGroups > 0)
             o.WriteLine($"note: {r.VariantDictionaryGroups} dictionary pair(s) look like locale/theme variants " +
                         $"(near-identical key sets) and were not reported as shadowing");
         if (r.FrameworkProvided > 0)
             o.WriteLine($"note: {r.FrameworkProvided} reference(s) resolve to keys the WinUI framework provides");
+        if (r.Config.DialectMixed)
+            o.WriteLine("note: this tree contains both WPF and WinUI projects, whose merge order is opposite; " +
+                        "each dictionary was resolved with its own project's rules");
         if (r.CrossProjectReferences > 0)
             o.WriteLine($"note: {r.CrossProjectReferences} reference(s) point at keys defined in another project " +
                         $"in this tree -- their scope was not checked");

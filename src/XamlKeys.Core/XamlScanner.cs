@@ -172,12 +172,15 @@ public sealed partial class XamlScanner
                                      .OfType<string>()
                                      .ToHashSet(StringComparer.Ordinal);
 
+                    var groupId = _nextThemeGroupId++;
+
                     foreach (var t in group)
                     {
                         var themeKey = t.Attribute(XamlNs + "Key")?.Value;
                         var themeDict = NewDictionary(dict.File, $"ThemeDictionaries[{themeKey}]",
                                                       LineOf(t), standalone: false, appScope: false);
                         themeDict.Side = SideOf(themeKey, names);
+                        themeDict.ThemeGroupId = groupId;
 
                         if (t.Attribute("Source")?.Value is { Length: > 0 } ts)
                             AddMerged(themeDict, ts, dict.File, LineOf(t));
@@ -206,7 +209,24 @@ public sealed partial class XamlScanner
     private void InlineMerged(XElement m, ResourceDictionaryNode parent, IReadOnlyList<int> chain,
                               HashSet<string> ignorable, string? suppressed)
     {
-        if (m.Name.LocalName != "ResourceDictionary") return;
+        // ⚠ MergedDictionaries 裡放的不一定是 <ResourceDictionary>：
+        //    函式庫常提供 ResourceDictionary 的**子類別**，用元素寫法合併進來
+        //    （Wpf.Ui 的 <ui:ThemesDictionary />、<ui:ControlsDictionary />）。
+        //    它們的內容在組件裡，靜態看不到。
+        //    舊版直接 return —— 等於把一本看不到的字典當成「不存在」，
+        //    正好違反第一不變量。實測：QuillLook 因此多出 117 筆假 dangling-dynamic。
+        if (m.Name.LocalName != "ResourceDictionary")
+        {
+            parent.Merged.Add(new MergedReference
+            {
+                RawSource = $"<{m.Name.LocalName}/>",
+                Location = new SourceLocation(Rel(parent.File), LineOf(m)),
+                ResolvedDictionaryId = null,
+                ExternalReason = $"'{m.Name.LocalName}' is a ResourceDictionary subclass supplied by a library; "
+                               + "its contents are not visible in the source tree",
+            });
+            return;
+        }
 
         var inline = NewDictionary(parent.File, "MergedDictionaries[inline]", LineOf(m),
                                    standalone: false, appScope: false);
@@ -252,6 +272,9 @@ public sealed partial class XamlScanner
                 if (el.Name.LocalName is "StaticResource" or "DynamicResource" or "ThemeResource")
                     alias = el.Attribute("ResourceKey")?.Value?.Trim();
 
+                // 別名指向的也可能是 markup extension（{x:Static …Key}）—— 那不是字串鍵
+                if (alias is not null && alias.StartsWith('{')) alias = null;
+
                 var def = new KeyDefinition
                 {
                     Key = raw,
@@ -296,6 +319,16 @@ public sealed partial class XamlScanner
             && el.Attribute(XamlNs + "Key") is null && el.Attribute(XamlNs + "Name") is null
             && el.Attribute("ResourceKey")?.Value is { Length: > 0 } rk)
         {
+            // ⚠ ResourceKey 的值也可以是 markup extension：
+            //    <StaticResource ResourceKey="{x:Static SystemColors.HighlightColorKey}"/>
+            //    舊版把整串當成鍵名,於是報出 10 筆叫「{x:Static SystemColors.…}」的假懸空
+            //    （實測 ModernWpf 的 HighContrast.xaml）。
+            if (rk.TrimStart().StartsWith('{'))
+            {
+                _unresolvedSites.Add(new SourceLocation(Rel(file), LineOf(el)));
+                return;
+            }
+
             _references.Add(new KeyReference
             {
                 Key = rk.Trim(),
@@ -376,6 +409,7 @@ public sealed partial class XamlScanner
     }
 
     private readonly List<(MergedReference Ref, string Path)> _pendingLinks = [];
+    private int _nextThemeGroupId;
 
     /// <summary>所有檔掃完之後把合併參考接到實際的字典節點上。</summary>
     public void LinkMergedDictionaries()

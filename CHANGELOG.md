@@ -79,3 +79,39 @@ is **counted and printed**, and too much of it produces `exit 3` rather than a g
   with every copy.
 - **Scope lookups are indexed and variant comparisons are cached.** ScreenToGif (121 files,
   45,054 keys) went from 8.5s to 1.1s with identical output.
+
+### A second corpus round: six more public projects, seven more rules
+
+Added Files (WinUI 3), Flow.Launcher (WPF app plus plugin projects, 289 locale files), ModernWpf
+(WPF library with a WinUI helper tool in the same repo), Fluent.Ribbon, microsoft/WPF-Samples
+(dozens of separate projects) and QuickLook (plugin architecture) — bringing the corpus to twelve
+public projects plus three maintainer applications, around 3,600 XAML files. They produced roughly
+970 more false positives. Each fix has a test in `CorpusLessonTests.cs`.
+
+- **A `ResourceDictionary` subclass inside `MergedDictionaries` is an external merge edge.**
+  QuickLook and Flow.Launcher merge `<ui:ThemesDictionary />`, whose contents live in an assembly.
+  They were being ignored entirely — an unreadable dictionary treated as if it did not exist, which
+  is the exact inverse of the tool's first invariant. 717 false danglings.
+- **The dialect is decided per project, not per tree.** ModernWpf is a WPF library, but a helper
+  tool under `tools/` declares `<UseWinUI>true</UseWinUI>` — one project flipped the merge order for
+  the whole scan, swapping the winner and loser of every `shadowed` finding.
+- **Two dictionaries in one `ThemeDictionaries` group can never shadow each other.** They are
+  mutually exclusive at runtime. This replaces guessing from the key names, which got Files'
+  `Default` + `HighContrast` pair wrong.
+- **`Application.Resources` belongs to its own project.** Appending every application scope in the
+  tree let a sample app's unreadable dictionary poison the scope of every file in the library —
+  and silently downgraded an already-verified real bug from `dangling-static` to `external`.
+- **A family of unmerged, near-identical dictionaries in one directory is runtime-selected.**
+  Flow.Launcher's `Languages/` holds 289 files of exactly 606 keys each, picked at runtime through a
+  fully composed path. 289 false orphans.
+- **A `ResourceKey` attribute can hold a markup extension.** `ResourceKey="{x:Static
+  SystemColors.HighlightColorKey}"` was being read as a literal key name.
+- **An unresolved reference in a library project is reported but not gated.** A library's
+  dictionaries are merged by someone else, and what that someone merges first is unknowable.
+  `{DynamicResource}` drops to `info` (it is the documented way to let a consumer override a value);
+  `{StaticResource}` stays at `warn`, because it throws at load — wpfui's real bug is exactly that
+  shape.
+
+After this round, across all fifteen projects the gate fires on **two** findings, both in
+`microsoft/WPF-Samples` and both verified by hand: `CustomNavWindowStyle` and
+`NavButtonFocusVisualStyle` are referenced but defined nowhere in that repository.

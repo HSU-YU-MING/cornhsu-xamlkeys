@@ -15,7 +15,6 @@ namespace XamlKeys.Core;
 public sealed class ScopeEngine
 {
     private readonly Dictionary<int, ResourceDictionaryNode> _byId;
-    private readonly XamlDialect _dialect;
     private readonly IReadOnlyList<ThemeSide> _sides;
     private readonly int[] _appScope;
 
@@ -30,11 +29,16 @@ public sealed class ScopeEngine
         Dictionary<string, List<KeyDefinition>> ByKey,
         List<string> Externals);
 
-    public ScopeEngine(IReadOnlyList<ResourceDictionaryNode> dictionaries, XamlDialect dialect,
+    /// <param name="dialect">非 null 時，整組字典一律用這個方言（明寫 --dialect、或測試）。
+    /// null 時用**每本字典自己的** <see cref="ResourceDictionaryNode.Dialect"/> ——
+    /// 一棵樹裡可以同時有 WPF 與 WinUI 專案。</param>
+    public ScopeEngine(IReadOnlyList<ResourceDictionaryNode> dictionaries, XamlDialect? dialect = null,
                        IReadOnlyList<ThemeSide>? sides = null)
     {
         _byId = dictionaries.ToDictionary(d => d.Id);
-        _dialect = dialect;
+
+        if (dialect is { } forced)
+            foreach (var d in dictionaries) d.Dialect = forced;
         _sides = sides ?? [ThemeSide.Neutral];
         // Application.Resources，加上「程式在執行期合併進來的」字典 ——
         // 後者是主題切換的標準寫法，靜態看不到合併邊，但執行期確實在作用域裡。
@@ -54,11 +58,15 @@ public sealed class ScopeEngine
     /// <summary>沒有被任何人合併的字典 —— 重複鍵的偵測從這些點出發，避免同一組重複報很多次。</summary>
     public IReadOnlyList<ResourceDictionaryNode> RootDictionaries { get; }
 
-    public LookupResult Lookup(string key, IReadOnlyList<int> chain, ThemeSide side)
+    /// <param name="projectDir">引用所在檔案的專案目錄。
+    /// ⚠ 不能從 chain[0] 推：畫面檔常常沒有自己的 &lt;X.Resources&gt;，鏈是空的 ——
+    /// 而那正是最常見的情形。推不出來就只好接全樹的 Application 作用域，
+    /// 於是別的專案合併的一本看不到的字典會污染這裡（實測 wpfui）。</param>
+    public LookupResult Lookup(string key, IReadOnlyList<int> chain, ThemeSide side, string? projectDir = null)
     {
         string? firstExternal = null;
 
-        foreach (var id in EffectiveChain(chain))
+        foreach (var id in EffectiveChain(chain, projectDir))
         {
             var scope = OrderFor(id);
 
@@ -75,14 +83,33 @@ public sealed class ScopeEngine
             : new LookupResult(LookupStatus.NotFound);
     }
 
-    /// <summary>真正的查找鏈：元素自己的作用域 → …→ 檔案根 → Application.Resources。
+    /// <summary>真正的查找鏈：元素自己的作用域 → …→ 檔案根 → **同一個專案的** Application.Resources。
+    ///
     /// ⚠ Application 那一層不在掃描器建的鏈裡（它在別的檔案），一定要補上，
-    ///   否則全域色票會被整批報成懸空。</summary>
-    private IEnumerable<int> EffectiveChain(IReadOnlyList<int> chain)
+    ///   否則全域色票會被整批報成懸空。
+    /// ⚠ 但只能補**同一個專案的**。實測（wpfui）：補全樹的話，
+    ///   `samples/Wpf.Ui.Demo.Mvvm/App.xaml` 合併的一本看不到的字典，
+    ///   會讓函式庫 `src/Wpf.Ui/` 底下每一個檔案的查找都變成「不可知」，
+    ///   一筆真的懸空引用因此被降級成 external。</summary>
+    private IEnumerable<int> EffectiveChain(IReadOnlyList<int> chain, string? projectDir)
     {
         foreach (var id in chain) yield return id;
+
+        var project = projectDir
+                   ?? (chain.Count > 0 && _byId.TryGetValue(chain[0], out var first) ? first.ProjectDir : null);
+
         foreach (var id in _appScope)
-            if (!chain.Contains(id)) yield return id;
+        {
+            if (chain.Contains(id)) continue;
+
+            // 專案推不出來時（檔案不在任何 csproj 底下）保守一點：全部都接
+            if (project is not null && _byId.TryGetValue(id, out var app)
+                && app.ProjectDir is not null
+                && !string.Equals(app.ProjectDir, project, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            yield return id;
+        }
     }
 
     private bool SideMatches(KeyDefinition def, ThemeSide side)
@@ -121,7 +148,9 @@ public sealed class ScopeEngine
 
         order.AddRange(d.OwnKeys);
 
-        var merged = _dialect == XamlDialect.Wpf
+        // ⚠ 方言是**每本字典自己的**（跟著它所屬的專案），不是整次掃描一個值。
+        //    一棵樹裡可以同時有 WPF 與 WinUI 專案，而兩者的合併優先序相反。
+        var merged = d.Dialect == XamlDialect.Wpf
             ? Enumerable.Reverse(d.Merged)      // WPF：後宣告的贏 → 反向先查
             : d.Merged;                          // WinUI：宣告順序先查
 

@@ -110,6 +110,25 @@ public sealed class ResourceDictionaryNode
     /// <summary>這本字典屬於哪一側。ThemeDictionaries 裡的字典、或 config 標記的主題檔才不是 Neutral。</summary>
     public ThemeSide Side { get; set; } = ThemeSide.Neutral;
 
+    /// <summary>這本字典所屬的專案目錄（不在任何專案底下就是 null）。
+    /// ⚠ Application.Resources 的作用域是**該專案的**，不是整棵樹的。
+    /// 實測（wpfui）：把全樹的 Application.Resources 都接到每一次查找上，
+    /// 結果是某個範例 App 合併的一本看不到的字典，污染了函式庫裡每一個檔案的作用域 ——
+    /// 一筆真的懸空引用因此被降級成 external。</summary>
+    public string? ProjectDir { get; set; }
+
+    /// <summary>同一個 &lt;ResourceDictionary.ThemeDictionaries&gt; 群組的識別碼（不是主題字典就是 null）。
+    /// ⚠ 同一組裡的字典**本質上互斥**（執行期只會選中一本），所以它們之間永遠不是「覆蓋」。
+    /// 這條比用鍵名（Dark／Light／Default／HighContrast）去推穩健得多 ——
+    /// 實測 Files 的 GridSplitter.xaml 是 Default ＋ HighContrast 的組合，
+    /// 靠鍵名推會判成互相覆蓋。</summary>
+    public int? ThemeGroupId { get; set; }
+
+    /// <summary>這本字典依哪一套合併優先序解析。
+    /// ⚠ 逐**專案**決定，不是整次掃描一個值：一棵樹裡可以同時有 WPF 與 WinUI 專案
+    /// （ModernWpf 就是 WPF 函式庫配一個 WinUI 的輔助工具）。</summary>
+    public XamlDialect Dialect { get; set; } = XamlDialect.Wpf;
+
     /// <summary>根元素就是 ResourceDictionary 的獨立檔（可以被 Source 合併）。</summary>
     public bool IsStandaloneFile { get; init; }
 

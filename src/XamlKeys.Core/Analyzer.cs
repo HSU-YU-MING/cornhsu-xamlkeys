@@ -40,6 +40,12 @@ public sealed class AnalysisResult
     /// <summary>框架隱含載入的主題字典數（Themes/Generic.xaml 之類）。</summary>
     public int ImplicitThemeDictionaries { get; set; }
 
+    /// <summary>被認成「執行期才挑一本」的家族（語系檔、主題檔）而沒有報孤兒的檔案數。</summary>
+    public int RuntimeSelectedFamilyFiles { get; set; }
+
+    /// <summary>函式庫專案裡解析不到、因此沒有納入 gate 的引用數。</summary>
+    public int LibraryUnresolvedReferences { get; set; }
+
     /// <summary>unused 的 finding 涵蓋的定義總數（同名鍵在多本變體字典裡只報一筆）。</summary>
     public int UnusedDefinitions { get; set; }
 
@@ -154,6 +160,10 @@ public sealed class Analyzer
                 else result.MergeEdgesResolved++;
             }
 
+        // 每本字典記住自己屬於哪個專案 —— Application.Resources 的作用域是該專案的,
+        // 不是整棵樹的（見 ScopeEngine.EffectiveChain）。
+        foreach (var d in dicts) d.ProjectDir = projects.ProjectDirOf(d.File);
+
         ApplyThemeSides(dicts, config);
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
         result.HasApplication = projects.HasAnyApplication;
@@ -164,20 +174,21 @@ public sealed class Analyzer
         var allRefs = scanner.References.Concat(cs.References).ToList();
         result.References = allRefs.Count;
 
-        // 方言自動偵測。
+        // 方言。
         // ⚠ 這會把合併字典的優先序整個倒過來（WPF 後宣告的贏、WinUI 相反），
         //   判錯的話 shadowed 的贏家與輸家會對調，使用者會改錯那一個。
-        //   所以**主要依據是 csproj**（UseWinUI／WindowsAppSDK／UAP）：
-        //   wpfui 是 WPF 函式庫但刻意沿用 WinUI 的 {ThemeResource} 寫法與鍵名,
-        //   只看 XAML 會把它判成 WinUI。只有在連一個 csproj 都沒有時才退回看 XAML。
-        if (config.DialectAutoDetected)
-        {
-            if (projects.AnyWinUiProject) config.Dialect = XamlDialect.WinUi;
-            else if (projects.ProjectCount == 0 && allRefs.Any(x => x.Kind == RefKind.Theme))
-                config.Dialect = XamlDialect.WinUi;
-        }
+        //
+        //   兩條教訓：
+        //   (a) **依據是 csproj，不是 XAML 寫法** —— wpfui 是 WPF 函式庫但刻意沿用
+        //       WinUI 的 {ThemeResource} 與鍵名，只看 XAML 會判錯。
+        //   (b) **逐專案判，不是整棵樹判一次** —— ModernWpf 是 WPF 函式庫，
+        //       但 repo 裡一個 tools/ 底下的輔助工具寫了 <UseWinUI>true</UseWinUI>，
+        //       整次掃描的優先序因此被翻過來。
+        //   明寫 --dialect／config 時一律照使用者說的，整棵樹同一個值。
+        AssignDialects(dicts, projects, config, allRefs);
 
-        var engine = new ScopeEngine(dicts, config.Dialect, SidesPresent(dicts));
+        // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
+        var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config);
 
         EmitDuplicateKeys(dicts, result, config);
@@ -327,10 +338,14 @@ public sealed class Analyzer
             var ownSide = ctx.DictOfRef(r)?.Side ?? ThemeSide.Neutral;
             var evaluate = ownSide == ThemeSide.Neutral ? sides : [ownSide];
 
+            // ⚠ 專案由**引用所在的檔案**決定,不是鏈的第一個字典 ——
+            //   畫面檔常常沒有自己的 <X.Resources>,鏈是空的。
+            var refProject = ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File));
+
             var failures = new List<(ThemeSide Side, LookupResult Res)>();
             foreach (var side in evaluate)
             {
-                var res = ctx.Engine.Lookup(r.Key, r.ScopeChain, side);
+                var res = ctx.Engine.Lookup(r.Key, r.ScopeChain, side, refProject);
                 if (res.Status != LookupStatus.Found) failures.Add((side, res));
             }
 
@@ -391,8 +406,34 @@ public sealed class Analyzer
                 ? "StaticResource throws at load time"
                 : "DynamicResource silently falls back to the default value";
 
-            result.Findings.Add(Make(kind, r, side0, cfg,
-                $"'{r.Key}' is not defined anywhere in this tree; {consequence}"));
+            var finding = Make(kind, r, side0, cfg,
+                $"'{r.Key}' is not defined anywhere in this tree; {consequence}");
+
+            // ⚠ 函式庫／外掛專案：它的字典是給**別人**合併的,而那個「別人」會先合併什麼
+            //   我們不可能知道。ModernWpf、MaterialDesignThemes.MahApps、Wpf.Ui、
+            //   Flow Launcher 的外掛都靠這個模式（實測這一類佔了 190 筆）。
+            //
+            //   **不隱藏,只降級**：還是報出來、還是進 JSON,但不進 gate，
+            //   因為在函式庫裡這件事本來就證不出來。
+            //   DynamicResource 降到 info（那是「讓使用者覆寫」的標準寫法）、
+            //   StaticResource 只降到 warn（它會在載入期丟例外,風險實在不同 ——
+            //   實測 wpfui 的 TreeViewItemFocusVisual 就是這樣的真 bug）。
+            if (ctx.InLibrary(r.Location.File))
+            {
+                finding = new Finding
+                {
+                    Kind = kind,
+                    Severity = kind == FindingKind.DanglingStatic ? Severity.Warn : Severity.Info,
+                    Key = r.Key,
+                    Location = r.Location,
+                    Side = side0,
+                    Message = $"'{r.Key}' is not defined anywhere in this library project; {consequence}. " +
+                              $"A library's consumer may supply it, so this is not gated",
+                };
+                result.LibraryUnresolvedReferences++;
+            }
+
+            result.Findings.Add(finding);
         }
     }
 
@@ -423,6 +464,11 @@ public sealed class Analyzer
                 foreach (var loser in losers)
                 {
                     if (loser.SuppressedReason is not null) { result.Suppressed++; continue; }
+
+                    // ⚠ 同一個 ThemeDictionaries 群組裡的兩本字典本質上互斥（執行期只選中一本），
+                    //   所以它們之間永遠不是覆蓋。這條比用鍵名去推穩健 ——
+                    //   實測 Files 的 GridSplitter.xaml 是 Default ＋ HighContrast,靠鍵名會判錯。
+                    if (SameThemeGroup(ctx, winner.DictionaryId, loser.DictionaryId)) continue;
 
                     // ⚠ 語系檔／主題檔**刻意**定義同一組鍵，執行期才換。
                     //   實測：ScreenToGif 用 XAML 做在地化（四十種語言、各約 1200 個鍵），
@@ -465,6 +511,48 @@ public sealed class Analyzer
 
         result.VariantDictionaryGroups = variantPairs.Count;
     }
+
+    /// <summary>
+    /// 「執行期才挑一本」的字典家族 —— 同一個目錄底下、沒有人合併、而且鍵集合幾乎一樣的那一批。
+    ///
+    /// ⚠ 實測（Flow Launcher）：`Languages/` 底下 289 個語系檔，**每一個都剛好 606 個鍵**，
+    /// 全部沒有被任何 MergedDictionaries 合併 —— 程式用完全組出來的路徑
+    /// （`Path.Combine(directory, name + ".xaml")`）在執行期挑一本，而那行程式還在
+    /// 預設被排除的測試專案裡。靜態追不到，但 289 個鍵集合一模一樣的檔案擺在同一個目錄，
+    /// 沒有別的合理解釋。
+    ///
+    /// 門檻刻意訂得保守（同目錄、至少三本、重疊度與變體判定同一條線），
+    /// 而且家族的檔案數要進 summary —— 這是一條會讓結果變寬鬆的路徑。
+    /// </summary>
+    private static HashSet<int> RuntimeSelectedFamilies(Context ctx, HashSet<int> merged)
+    {
+        const int MinFamilySize = 3;
+        var result = new HashSet<int>();
+
+        var candidates = ctx.Dicts
+            .Where(d => d.IsStandaloneFile && !merged.Contains(d.Id)
+                     && !d.IsRuntimeLoaded && d.OwnKeys.Count >= VariantMinKeys)
+            .GroupBy(d => Path.GetDirectoryName(d.File) ?? "", StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dir in candidates)
+        {
+            var list = dir.ToList();
+            if (list.Count < MinFamilySize) continue;
+
+            // 以第一本為基準，數有幾本跟它是變體
+            var family = list.Where(d => d.Id == list[0].Id || AreVariants(ctx, list[0].Id, d.Id)).ToList();
+            if (family.Count < MinFamilySize) continue;
+
+            foreach (var d in family) result.Add(d.Id);
+        }
+
+        return result;
+    }
+
+    /// <summary>兩本字典在同一個 ThemeDictionaries 群組裡嗎？</summary>
+    private static bool SameThemeGroup(Context ctx, int a, int b) =>
+        ctx.ById.TryGetValue(a, out var da) && ctx.ById.TryGetValue(b, out var db)
+        && da.ThemeGroupId is { } ga && db.ThemeGroupId is { } gb && ga == gb;
 
     /// <summary>兩本字典是不是「同一組的替代品」（語系檔、深淺主題檔）？
     /// 判準是鍵集合的重疊度：刻意的變體會幾乎一模一樣，意外的覆蓋只會撞到幾個。
@@ -563,6 +651,9 @@ public sealed class Analyzer
             foreach (var m in d.Merged)
                 if (m.ResolvedDictionaryId is { } id) merged.Add(id);
 
+        var families = RuntimeSelectedFamilies(ctx, merged);
+        result.RuntimeSelectedFamilyFiles = families.Count;
+
         foreach (var d in ctx.Dicts)
         {
             if (!d.IsStandaloneFile) continue;
@@ -570,6 +661,8 @@ public sealed class Analyzer
             if (d.OwnKeys.Count == 0) continue;
             // 程式在執行期載入的、以及框架隱含載入的主題字典，都不是孤兒（MarkRuntimeLoaded 標過）
             if (d.IsRuntimeLoaded) continue;
+            // 執行期才挑一本的家族（語系檔、主題檔）：見 RuntimeSelectedFamilies
+            if (families.Contains(d.Id)) continue;
 
             // ⚠ 函式庫的字典本來就靠**使用者**合併。不認這條，HandyControl 會報 140 筆、
             //   MaterialDesign 103 筆，全部是假的。
@@ -635,6 +728,36 @@ public sealed class Analyzer
             if (implicitTheme) result.ImplicitThemeDictionaries++;
             else result.RuntimeLoadedDictionaries++;
         }
+    }
+
+    /// <summary>逐本字典決定方言（見 Run 裡的註解）。順便把「整棵樹的代表值」寫回 config，
+    /// 因為報告與訊息還是需要一個可以印的值。</summary>
+    private static void AssignDialects(IReadOnlyList<ResourceDictionaryNode> dicts, ProjectIndex projects,
+                                       Config cfg, List<KeyReference> allRefs)
+    {
+        if (!cfg.DialectAutoDetected)
+        {
+            foreach (var d in dicts) d.Dialect = cfg.Dialect;
+            return;
+        }
+
+        // 連一個 csproj 都沒有（資源資料夾、sparse clone）→ 只好看 XAML 的寫法
+        if (projects.ProjectCount == 0)
+        {
+            var guess = allRefs.Any(x => x.Kind == RefKind.Theme) ? XamlDialect.WinUi : XamlDialect.Wpf;
+            foreach (var d in dicts) d.Dialect = guess;
+            cfg.Dialect = guess;
+            return;
+        }
+
+        foreach (var d in dicts)
+            d.Dialect = projects.IsInWinUi(d.File) ? XamlDialect.WinUi : XamlDialect.Wpf;
+
+        // 報告要印一個值：以「字典數比較多的那一邊」為代表。
+        // summary 另外帶 dialectMixed，讓混合的情形看得出來。
+        var winui = dicts.Count(d => d.Dialect == XamlDialect.WinUi);
+        cfg.Dialect = winui * 2 > dicts.Count ? XamlDialect.WinUi : XamlDialect.Wpf;
+        cfg.DialectMixed = winui > 0 && winui < dicts.Count;
     }
 
     private static void ApplyThemeSides(IReadOnlyList<ResourceDictionaryNode> dicts, Config cfg)

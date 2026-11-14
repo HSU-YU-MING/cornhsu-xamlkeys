@@ -17,7 +17,7 @@ namespace XamlKeys.Core;
 /// </summary>
 public sealed partial class ProjectIndex
 {
-    private readonly List<(string Dir, bool IsApplication)> _projects = [];
+    private readonly List<(string Dir, bool IsApplication, bool IsWinUi)> _projects = [];
 
     public ProjectIndex(string root, IEnumerable<string> projectFiles, IEnumerable<string> xamlFiles)
     {
@@ -29,8 +29,9 @@ public sealed partial class ProjectIndex
             var dir = Path.GetDirectoryName(Path.GetFullPath(proj));
             if (dir is null) continue;
 
-            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir)));
-            if (IsWinUiProject(proj)) AnyWinUiProject = true;
+            var winui = IsWinUiProject(proj);
+            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), winui));
+            if (winui) AnyWinUiProject = true;
         }
 
         // 最深的目錄排前面：巢狀專案要先比對到自己，不是父專案
@@ -57,18 +58,36 @@ public sealed partial class ProjectIndex
     public bool IsInApplication(string file)
     {
         var full = Path.GetFullPath(file);
-        foreach (var (dir, isApp) in _projects)
+        foreach (var (dir, isApp, _) in _projects)
             if (full.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 return isApp;
 
         return _projects.Count == 0;
     }
 
+    /// <summary>
+    /// 這個檔所在的專案是 WinUI 嗎？
+    ///
+    /// ⚠ 必須**逐專案**問，不能問「這棵樹裡有沒有 WinUI 專案」。
+    /// 實測（ModernWpf）：那是一個 WPF 函式庫，但 repo 裡有一個
+    /// `tools/theme-shadow/WinUIReferenceCapture` 輔助工具寫了 `<UseWinUI>true</UseWinUI>` ——
+    /// 一個 csproj 就把整次掃描的合併優先序翻過來，shadowed 的贏家與輸家全部對調。
+    /// </summary>
+    public bool IsInWinUi(string file)
+    {
+        var full = Path.GetFullPath(file);
+        foreach (var (dir, _, winui) in _projects)
+            if (full.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return winui;
+
+        return false;
+    }
+
     /// <summary>這個檔所屬的專案目錄（找不到回 null）。</summary>
     public string? ProjectDirOf(string file)
     {
         var full = Path.GetFullPath(file);
-        foreach (var (dir, _) in _projects)
+        foreach (var (dir, _, _) in _projects)
             if (full.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 return dir;
 

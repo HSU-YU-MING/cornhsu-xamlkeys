@@ -4,6 +4,7 @@
   "summary": {
     "dialect": "wpf",
     "dialectAutoDetected": true,
+    "dialectMixed": false,
     "xamlFiles": 5,
     "csharpFiles": 15,
     "dictionaries": 2,
@@ -27,6 +28,8 @@
     "winUiKeyCount": 3573,
     "runtimeLoadedDictionaries": 0,
     "implicitThemeDictionaries": 0,
+    "runtimeSelectedFamilyFiles": 0,
+    "libraryUnresolvedReferences": 0,
     "unusedDefinitions": 0,
     "crossProjectReferences": 0,
     "testFilesExcluded": 0,
