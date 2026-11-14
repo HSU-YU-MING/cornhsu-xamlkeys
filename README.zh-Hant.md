@@ -116,6 +116,7 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 | `ComponentResourceKey`、`{x:Static …Key}` | 不是字串鍵 | 計入 unresolved，不評 |
 | 函式庫專案 | 它的鍵是公開 API | 不判 `unused` 與 `orphan-dictionary` |
 | 符號連結與目錄接合點 | 裡面的內容會被跳過 | 跟著走的話，指回祖先的接合點會讓掃描永遠跑不完 |
+| 死掉的別名會把目標養著 | `unused` 少報 | `<StaticResource x:Key="A" ResourceKey="B"/>` 算成對 `B` 的一次引用，即使 `A` 自己沒人用。刻意的：往少報的方向錯，不往「叫你刪東西」的方向錯 |
 | Avalonia 的自訂主題變體（`x:Key="{x:Static …}"`） | 當成中性側 | 互斥規則仍然適用，所以它們之間不會互相覆蓋 |
 
 ## 授權

@@ -214,6 +214,7 @@ Every one of these was found by running the tool over seven public projects — 
 | `ComponentResourceKey`, `{x:Static …Key}` | Not string keys | Counted as unresolved sites, never graded |
 | Library projects | Their keys are public API | `unused` and `orphan-dictionary` are not evaluated there |
 | Symlinks and directory junctions | Their contents are skipped | Following them can loop forever when one points at an ancestor |
+| A dead alias keeps its target alive | `unused` under-reports | `<StaticResource x:Key="A" ResourceKey="B"/>` counts as a use of `B`, even when `A` itself is unused. Deliberate: this errs towards reporting less, not towards telling you to delete something |
 | Avalonia custom theme variants (`x:Key="{x:Static …}"`) | Treated as a neutral side | Mutual exclusion still applies, so they never shadow each other |
 
 ## License
