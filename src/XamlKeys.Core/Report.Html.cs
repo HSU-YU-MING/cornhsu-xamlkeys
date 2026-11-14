@@ -141,6 +141,8 @@ public static class ReportHtml
                     + "<strong>'unused' is incomplete</strong> for keys they may define");
         if (r.DynamicKeySites.Count > 0)
             blind.Add($"{r.DynamicKeySites.Count} resource lookup(s) in C# build the key at runtime");
+        if (r.FrameworkKeyOverrides > 0)
+            blind.Add($"{r.FrameworkKeyOverrides} key(s) redefine a key the framework itself reads, so they are not graded as unused");
         if (r.KeysNamedNearDynamicLookups > 0)
             blind.Add($"{r.KeysNamedNearDynamicLookups} key(s) counted as used because their name appears as a string "
                     + "in a C# file that looks resources up by variable");

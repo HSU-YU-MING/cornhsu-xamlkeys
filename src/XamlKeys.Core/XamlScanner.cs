@@ -373,12 +373,23 @@ public sealed partial class XamlScanner
                         },
                         ScopeChain = chain,
                         SuppressedReason = suppressed,
+                        Owner = def,
                     });
+
+                // 這個資源整棵子樹裡的引用，都屬於它（巢狀的有鍵資源會再往內換）
+                var outer = _owner;
+                _owner = def;
+                try { WalkElement(el, dict.File, chain, ignorable, suppressed); }
+                finally { _owner = outer; }
+                return;
             }
         }
 
         WalkElement(el, dict.File, chain, ignorable, suppressed);
     }
+
+    /// <summary>目前走訪位置所在的最內層「有鍵的資源」。見 KeyReference.Owner。</summary>
+    private KeyDefinition? _owner;
 
     // ── 引用蒐集 ───────────────────────────────────────────────────────────
 
@@ -412,6 +423,7 @@ public sealed partial class XamlScanner
                 },
                 ScopeChain = chain,
                 SuppressedReason = suppressed,
+                Owner = _owner,
             });
         }
 
@@ -454,6 +466,7 @@ public sealed partial class XamlScanner
             Kind = r.Kind,
             ScopeChain = chain,
             SuppressedReason = suppressed,
+            Owner = _owner,
         });
     }
 

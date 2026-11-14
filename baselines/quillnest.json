@@ -20,6 +20,8 @@
     "invalidIgnores": 0,
     "dynamicKeySites": 0,
     "keysNamedNearDynamicLookups": 0,
+    "frameworkKeyOverrides": 0,
+    "unusedOnlyViaUnused": 0,
     "configOverrides": true,
     "hasApplication": true,
     "projects": 1,

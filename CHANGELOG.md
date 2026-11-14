@@ -136,6 +136,16 @@ coincidental name match.
   thing that run had just done. It now reports `(18 entries that no longer occur were dropped)`,
   and the README shows the tighten step, which the adoption section had left out.
 
+- **`unused` follows chains.** A key whose every reference sits inside resources that are themselves
+  unused is reported too, naming the resource that holds it (`'AccentColor' is only referenced by
+  'AccentBrush' ..., which is itself unused`). Before, cleaning up took several rounds and each one
+  looked finished. This removes the "a dead alias keeps its target alive" known limitation. Across
+  the corpus it adds 59 findings, each checked to have no live reference.
+- **Redefining a framework key is not `unused`.** A WinUI app that sets `ButtonBackground` or
+  `TeachingTipMinWidth` is restyling the framework's templates, which read the key at runtime. These
+  were reported as unused — 33 of 80 findings in Files, 16 of 42 in WinUI Gallery. They are now
+  counted in `frameworkKeyOverrides` instead.
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file

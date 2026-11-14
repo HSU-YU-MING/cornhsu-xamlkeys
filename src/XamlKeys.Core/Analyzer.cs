@@ -29,6 +29,13 @@ public sealed class AnalysisResult
     /// <summary>因為在「用變數查找」的 C# 檔裡以字串出現、而被算成有人用的鍵名數。
     /// ⚠ 這是一條放寬的路（見 CSharpScanner.LiteralsNearDynamicLookups），一定要計數。</summary>
     public int KeysNamedNearDynamicLookups { get; set; }
+
+    /// <summary>重新定義了框架內建鍵（WinUI 的輕量樣式覆寫、System* 前綴）而沒有判「沒人用」的鍵名數。
+    /// 框架自己的樣板在執行期會讀它們 —— 原始碼樹裡看不到這個引用。</summary>
+    public int FrameworkKeyOverrides { get; set; }
+
+    /// <summary>因為「只被沒人用的資源引用」而連帶判成沒人用的鍵名數（含在 unused 計數裡）。</summary>
+    public int UnusedOnlyViaUnused { get; set; }
     public List<string> ExternalSources { get; } = [];
     public bool HasApplication { get; set; }
     public List<ThemeSide> Sides { get; } = [];
@@ -230,6 +237,7 @@ public sealed class Analyzer
         EmitShadowed(ctx, result);
         EmitUnused(ctx, result);
         EmitDeadLocalCopies(ctx, result);   // ⚠ 要在 EmitReferenceFindings 之後：靠它收集 Reached／OpenNames
+        EmitUnusedOnlyViaUnused(ctx, result);   // ⚠ 要在上面兩個之後：從它們報出來的定義往下推
         EmitOrphanDictionaries(ctx, result);
 
         result.Findings.Sort(CompareFindings);
@@ -292,6 +300,12 @@ public sealed class Analyzer
         /// <summary>C# 用過的鍵名：字面查找，加上「變數查找旁邊的同名字串」。
         /// C# 可以對任何一個元素呼叫 FindResource，所以這些名字的每一份定義都可能被用到。</summary>
         public HashSet<string> CSharpNames { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>已經被報成「沒人用」的定義（以參考比較）。連帶判定從這裡往下推。</summary>
+        public HashSet<KeyDefinition> UnusedDefs { get; } = [];
+
+        /// <summary>重新定義框架內建鍵的鍵名（見 EmitUnused）。</summary>
+        public HashSet<string> FrameworkOverrideNames { get; } = new(StringComparer.Ordinal);
 
         /// <summary>有「用變數查找」的 C# 檔（相對路徑）。</summary>
         public HashSet<string> DynamicSiteFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -711,8 +725,16 @@ public sealed class Analyzer
 
             if (cfg.UsedAtRuntime.Any(p => Config.MatchesGlob(d.Key, p))) { result.Suppressed++; continue; }
 
+            // ⚠ 重新定義框架內建的鍵 = 改框架樣板的外觀（WinUI 的 lightweight styling）。
+            //   框架的樣板在執行期用 {ThemeResource ButtonBackground} 讀它 —— 那個引用在框架裡，
+            //   不在使用者的原始碼樹。實測 Files 的 80 筆 unused 有 33 筆是這種、WinUI Gallery 42 筆裡 16 筆，
+            //   全部是「叫人刪掉有用的東西」。
+            if (FrameworkKeys.IsProvidedByFramework(d.Key, dict.Dialect, result.WpfFluentThemeInUse))
+            { ctx.FrameworkOverrideNames.Add(d.Key); continue; }
+
             candidates.Add(d);
         }
+        result.FrameworkKeyOverrides = ctx.FrameworkOverrideNames.Count;
 
         // ⚠ 一個鍵名只報一筆，不管它被定義了幾次。
         //   實測：ScreenToGif 用 XAML 做在地化,同一個字串鍵在四十個語系檔各定義一次,
@@ -744,6 +766,7 @@ public sealed class Analyzer
                 Message = $"'{group.Key}' is defined but never referenced in XAML or code{where}{renamed}",
                 Definitions = all.Count,
             });
+            ctx.UnusedDefs.UnionWith(all);
         }
     }
 
@@ -836,6 +859,7 @@ public sealed class Analyzer
                 Related = usedCopy?.Location,
                 Message = $"'{d.Key}' is defined in {dict.Owner} but nothing that can see this copy uses it{where}",
             });
+            ctx.UnusedDefs.Add(d);
         }
 
         string CodeBehindText(string relPath)
@@ -860,6 +884,76 @@ public sealed class Analyzer
         return false;
 
         static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+    }
+
+    /// <summary>
+    /// 只被「沒人用的資源」引用的鍵，其實也沒人用。
+    /// </summary>
+    /// <remarks>
+    /// QuillNest 實測：<c>AccentColor</c> 只被 <c>AccentBrush</c> 的定義引用，<c>AccentBrush</c> 本身沒人用。
+    /// 舊版只報 <c>AccentBrush</c>；使用者刪掉它、下一次執行才冒出 <c>AccentColor</c> —— 清一次債要跑好幾輪，
+    /// 而且每一輪之間的報告都是「看起來清完了」。
+    /// <para>
+    /// ⚠ 這條會讓 unused 多報，而 unused 的第一失敗模式就是叫人刪掉有用的東西。所以：
+    /// (1) 只從「已經被報出來的」沒人用的定義往下推 —— 它們已經通過了函式庫、ignore、usedAtRuntime、
+    ///     框架鍵、C# 查找這些例外；(2) 只要有任何一個引用不在死資源裡（畫面本體、活的資源、C#、
+    ///     被 ignore 的引用）就不算；(3) 訊息裡講出是被誰拖下水的，讓使用者有得覆核。
+    /// </para>
+    /// </remarks>
+    private static void EmitUnusedOnlyViaUnused(Context ctx, AnalysisResult result)
+    {
+        var cfg = ctx.Config;
+
+        var refsByName = ctx.References.Where(r => r.Kind != RefKind.CSharp)
+                                       .GroupBy(r => r.Key, StringComparer.Ordinal)
+                                       .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var defsByName = ctx.Definitions.GroupBy(d => d.Key, StringComparer.Ordinal)
+                                        .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var reported = new HashSet<string>(result.Findings.Where(f => f.Kind == FindingKind.Unused).Select(f => f.Key),
+                                           StringComparer.Ordinal);
+
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var (name, refs) in refsByName)
+            {
+                if (reported.Contains(name)) continue;
+                if (!defsByName.TryGetValue(name, out var defs)) continue;
+                if (ctx.CSharpNames.Contains(name) || ctx.FrameworkOverrideNames.Contains(name)) continue;
+
+                // 每一個引用都要在一個已經判死的資源裡面
+                if (!refs.All(r => r.SuppressedReason is null && r.Owner is { } o && ctx.UnusedDefs.Contains(o))) continue;
+
+                var live = defs.Where(d => !ctx.InLibrary(ctx.ById[d.DictionaryId].File)).ToList();
+                if (live.Count == 0) continue;
+                if (live.Any(d => d.SuppressedReason is not null)
+                    || cfg.UsedAtRuntime.Any(p => Config.MatchesGlob(name, p))) { result.Suppressed++; reported.Add(name); continue; }
+
+                var all = live.OrderBy(d => d.Location.File, StringComparer.Ordinal).ThenBy(d => d.Location.Line).ToList();
+                var via = refs.Select(r => r.Owner!).OrderBy(o => o.Location.File, StringComparer.Ordinal)
+                              .ThenBy(o => o.Location.Line).First();
+                var others = refs.Select(r => r.Owner!.Key).Distinct(StringComparer.Ordinal).Count() - 1;
+                var also = others > 0 ? $" (and {others} other unused resource(s))" : "";
+
+                result.UnusedDefinitions += all.Count;
+                result.UnusedOnlyViaUnused++;
+                result.Findings.Add(new Finding
+                {
+                    Kind = FindingKind.Unused,
+                    Severity = cfg.SeverityFor(FindingKind.Unused),
+                    Key = name,
+                    Location = all[0].Location,
+                    Related = via.Location,
+                    Message = $"'{name}' is only referenced by '{via.Key}' at {via.Location}{also}, " +
+                              $"which is itself unused -- removing that leaves this with no references",
+                    Definitions = all.Count,
+                });
+                ctx.UnusedDefs.UnionWith(all);
+                reported.Add(name);
+                changed = true;
+            }
+        } while (changed);
     }
 
     /// <summary>沒有被任何人合併、也沒有被程式載入的獨立字典檔。</summary>

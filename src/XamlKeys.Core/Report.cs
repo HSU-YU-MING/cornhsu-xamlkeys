@@ -45,6 +45,8 @@ public static class Report
             w.WriteNumber("invalidIgnores", r.InvalidIgnores.Count);
             w.WriteNumber("dynamicKeySites", r.DynamicKeySites.Count);
             w.WriteNumber("keysNamedNearDynamicLookups", r.KeysNamedNearDynamicLookups);
+            w.WriteNumber("frameworkKeyOverrides", r.FrameworkKeyOverrides);
+            w.WriteNumber("unusedOnlyViaUnused", r.UnusedOnlyViaUnused);
             w.WriteBoolean("configOverrides", r.Config.HasOverrides);
             w.WriteBoolean("hasApplication", r.HasApplication);
             w.WriteNumber("projects", r.Projects);
@@ -227,6 +229,11 @@ public static class Report
         if (r.DynamicKeySites.Count > 0)
             o.WriteLine($"note: {r.DynamicKeySites.Count} runtime-composed resource lookup(s) in C# -- " +
                         $"keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)");
+        if (r.FrameworkKeyOverrides > 0)
+            o.WriteLine($"note: {r.FrameworkKeyOverrides} key(s) redefine a key the framework itself reads (lightweight styling) " +
+                        $"-- not reported as unused");
+        if (r.UnusedOnlyViaUnused > 0)
+            o.WriteLine($"note: {r.UnusedOnlyViaUnused} of the unused key(s) are referenced only from inside other unused resources");
         if (r.KeysNamedNearDynamicLookups > 0)
             o.WriteLine($"note: {r.KeysNamedNearDynamicLookups} key(s) were counted as used because their name appears " +
                         $"as a string in a C# file that looks resources up by variable");

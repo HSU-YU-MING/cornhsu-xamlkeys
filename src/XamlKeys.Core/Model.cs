@@ -73,6 +73,16 @@ public sealed class KeyReference
 
     public string? SuppressedReason { get; set; }
 
+    /// <summary>
+    /// 這個引用寫在哪一個「有鍵的資源」裡面（最內層那個）。寫在畫面本體、隱含樣式裡的是 null。
+    /// </summary>
+    /// <remarks>
+    /// 用來判斷連帶的「沒人用」：<c>AccentColor</c> 只被 <c>AccentBrush</c> 的定義引用，
+    /// 而 <c>AccentBrush</c> 本身沒人用 —— 那 <c>AccentColor</c> 其實也沒人用（QuillNest 實測）。
+    /// 別名 <c>&lt;StaticResource x:Key="A" ResourceKey="B"/&gt;</c> 的 Owner 就是 A 自己。
+    /// </remarks>
+    public KeyDefinition? Owner { get; init; }
+
     public override string ToString() => $"{{{Kind}Resource {Key}}} @ {Location}";
 }
 
