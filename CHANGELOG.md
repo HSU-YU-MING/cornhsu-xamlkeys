@@ -223,6 +223,11 @@ coincidental name match.
   it was found by an automated review of the `Link` change. Content outside the root was never parsed, and no
   result changes on any of the 24 corpus projects. `HostileInputTests` records every path the resolver
   asks the file system about and asserts none is outside the root.
+  A second automated review of that fix found two more ways out, both closed: `externalDictionaries` (the
+  config file is also picked up from the scanned repository) now only accepts directories inside the scan
+  root — outside ones never worked anyway, since only XAML under the root is read, and the documented
+  example `../packages/…` is replaced; and a path whose string is under the root but passes through a
+  symlink or directory junction is not probed (each component's own attributes are read, never followed).
 
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.

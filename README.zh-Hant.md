@@ -135,7 +135,7 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
   "exclude": ["Generated"],
   "includeTests": false,
   "externalDictionaries": [
-    { "assembly": "HandyControl", "path": "../packages/HandyControl/Themes" }
+    { "assembly": "HandyControl", "path": "vendor/HandyControl/Themes" }
   ],
   "themeFiles": { "dark": ["Themes/Dark"], "light": ["Themes/Light"] },
   "severities": { "unused": "info", "out-of-scope": "fail" }
@@ -143,6 +143,9 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 ```
 
 寫錯的屬性名會直接**報錯**，不會被默默略過 —— 一個拼錯而沒有作用的設定，比沒有設定更糟。
+
+`externalDictionaries` 把組件名對到**掃描範圍內**的目錄（通常是 vendored 的函式庫主題副本）。範圍外的目錄一律忽略：
+這個工具只讀掃描根底下的 XAML；而且設定檔是從被掃的 repo 撿的，裡面的路徑不能讓它碰到 `\\主機\分享` 或機器上其他地方。
 每一格的說明在 [docs/config-schema.md](docs/config-schema.md)。
 
 ## 選項

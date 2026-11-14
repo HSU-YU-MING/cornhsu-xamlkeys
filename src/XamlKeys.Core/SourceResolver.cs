@@ -23,6 +23,12 @@ public sealed partial class SourceResolver
 
     public SourceResolver(string root, IEnumerable<string> projectFiles,
                           IReadOnlyDictionary<string, string>? externalDictionaries = null)
+        : this(root, projectFiles, externalDictionaries, Directory.Exists) { }
+
+    /// <param name="directoryProbe">externalDictionaries 的目錄檢查。測試換成記錄器，確認範圍外的目錄從來沒被查過。</param>
+    internal SourceResolver(string root, IEnumerable<string> projectFiles,
+                            IReadOnlyDictionary<string, string>? externalDictionaries,
+                            Func<string, bool> directoryProbe)
     {
         _root = Path.GetFullPath(root);
         _assemblies = new(StringComparer.OrdinalIgnoreCase);
@@ -55,19 +61,21 @@ public sealed partial class SourceResolver
         //   但也不會悄悄成功 —— 解析失敗照舊會記成 external 並拉低覆蓋率。
         if (externalDictionaries is null) return;
 
+        // ⚠ 只收**掃描根底下**的目錄（例如 vendored 的函式庫副本）。
+        //   config 是從被掃的 repo 自動撿的 —— 對方可以寫 "path": "\\attacker\share"，
+        //   光是 Directory.Exists 就會發出 SMB 連線。範圍外的目錄本來也沒有作用：
+        //   這支工具只解析掃描根底下的 XAML，指過去的檔讀不到，照舊是 external。
+        //   （2026-11-15 由自動安全審查指出；舊文件的範例 "../packages/…" 從來沒有生效過。）
         foreach (var (assembly, path) in externalDictionaries)
         {
-            var dir = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(_root, path));
-            if (Directory.Exists(dir))
-            {
-                _assemblies[assembly] = dir;
-                _trusted.Add(Path.GetFullPath(dir));
-            }
+            var dir = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(_root, path));
+            if (!IsAllowed(dir + Path.DirectorySeparatorChar + "_")) continue;
+            if (directoryProbe(dir)) _assemblies[assembly] = dir;
         }
     }
 
     /// <summary>
-    /// 只認**掃描根底下**的檔（以及使用者在自己的 config 裡指名的外部字典目錄）。
+    /// 只認**掃描根底下**的路徑，而且從掃描根到它的每一段都不是符號連結或目錄接合點。
     /// </summary>
     /// <remarks>
     /// ⚠ 這支工具會在 CI 上掃別人的 repo。合併路徑與 csproj 的 Include 都是對方寫的：
@@ -84,16 +92,30 @@ public sealed partial class SourceResolver
 
     private bool IsAllowed(string full)
     {
-        if (Under(full, _root)) return true;
-        foreach (var d in _trusted) if (Under(full, d)) return true;
-        return false;
+        var root = _root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return false;
 
-        static bool Under(string path, string dir) =>
-            path.StartsWith(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar,
-                            StringComparison.OrdinalIgnoreCase);
+        // ⚠ 字串在範圍內，不代表檔案在範圍內：中間任何一段是符號連結或目錄接合點，就可能指到範圍外
+        //   （包括 \\主機\分享）。只讀那一段**自己**的屬性 —— 不跟著連結走 —— 是連結就整條不碰。
+        //   README 本來就寫「連結裡的內容會被跳過」，這裡讓存在檢查也守同一條。
+        var cur = root;
+        foreach (var part in full[(root.Length + 1)..].Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            cur = cur + Path.DirectorySeparatorChar + part;
+            if (!_notALink.TryGetValue(cur, out var ok)) _notALink[cur] = ok = !IsLink(cur);
+            if (!ok) return false;
+        }
+        return true;
     }
 
-    private readonly List<string> _trusted = [];
+    private readonly Dictionary<string, bool> _notALink = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsLink(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }   // 不存在：沒有東西可跟
+    }
 
     /// <summary>
     /// csproj 裡從別處連結進來的 XAML：(專案目錄, 連結後的相對路徑) → 實際的檔。

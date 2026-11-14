@@ -181,7 +181,7 @@ To exempt a single key, with a reason (the reason is required, and suppressed it
   "exclude": ["Generated"],
   "includeTests": false,
   "externalDictionaries": [
-    { "assembly": "HandyControl", "path": "../packages/HandyControl/Themes" }
+    { "assembly": "HandyControl", "path": "vendor/HandyControl/Themes" }
   ],
   "themeFiles": { "dark": ["Themes/Dark"], "light": ["Themes/Light"] },
   "severities": { "unused": "info", "out-of-scope": "fail" }
@@ -190,6 +190,11 @@ To exempt a single key, with a reason (the reason is required, and suppressed it
 
 An unknown property is an **error**, not a shrug: a misspelled setting that silently does nothing
 is worse than no setting at all.
+
+`externalDictionaries` maps an assembly name to a directory **inside the scanned tree** — typically a
+vendored copy of a library's themes. Directories outside it are ignored: the tool only reads XAML under the
+root it scans, and the config file is picked up from the repository being scanned, so a path there must not
+be able to reach `\\host\share` or the rest of the machine.
 
 ## Options
 

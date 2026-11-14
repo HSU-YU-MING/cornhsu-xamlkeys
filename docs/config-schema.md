@@ -22,7 +22,7 @@
   "usedAtRuntime": ["Icon*", "Status.*"],
   "exclude": ["Generated", "ThirdParty"],
   "externalDictionaries": [
-    { "assembly": "HandyControl", "path": "../packages/HandyControl/Themes" }
+    { "assembly": "HandyControl", "path": "vendor/HandyControl/Themes" }
   ],
   "themeFiles": {
     "dark": ["Themes/Dark"],
@@ -45,7 +45,7 @@
 | `includeTests` | bool | `false` | 連測試專案與 fixture 資料夾一起掃。預設關：測試素材常常是**刻意寫壞的** XAML |
 | `usedAtRuntime` | string[] | `[]` | 視為「執行期會用到」的鍵樣式（結尾 `*` 萬用）。用來處理 `FindResource($"Icon{n}")` 這種組出來的鍵名。被蓋到的計入 `summary.suppressed` |
 | `exclude` | string[] | `[]` | 路徑**片段**比對（不是 glob）。內建的排除（`bin`、`obj`、`node_modules`、`packages`、`artifacts`、`TestResults`、點開頭的目錄）不需要寫 |
-| `externalDictionaries` | `{assembly, path}[]` | `[]` | 把第三方組件的字典指到磁碟上的目錄。指得到就解析進來，覆蓋率與 `unused` 的可信度跟著升級；指不到維持 external（不是錯誤） |
+| `externalDictionaries` | `{assembly, path}[]` | `[]` | 把第三方組件的字典指到**掃描範圍內**的目錄（vendored 的副本）；範圍外的路徑（含 `\\主機\分享`、絕對路徑、`../`）一律忽略 —— 設定檔是從被掃的 repo 撿的，不能讓它碰到範圍外。指得到就解析進來，覆蓋率與 `unused` 的可信度跟著升級；指不到維持 external（不是錯誤） |
 | `themeFiles.dark` / `.light` | string[] | `[]` | 把符合這些路徑片段的字典標成深／淺側。沒有 `ThemeDictionaries` 但用檔案分主題時用得上 |
 | `severities` | `{kind: level}` | 見下 | 逐類覆寫分級。kind 用 kebab-case，level 是 `fail`／`warn`／`info` |
 

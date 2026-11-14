@@ -185,6 +185,80 @@ public class HostileInputTests : IDisposable
         Assert.All(asked, p => Assert.StartsWith(root, p, StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(@"\\evil-host\share")]
+    [InlineData(@"//evil-host/share")]
+    [InlineData(@"C:\Users")]
+    [InlineData(@"..\..\..\packages\Vendor\Themes")]
+    public void An_externalDictionaries_entry_outside_the_scan_root_is_never_probed(string hostile)
+    {
+        // config 是從被掃的 repo 自動撿的：對方可以把目錄指到 \\主機\分享
+        var asked = new List<string>();
+        var resolver = new SourceResolver(_dir.FullName, [], new Dictionary<string, string> { ["Vendor"] = hostile },
+                                          p => { asked.Add(p); return true; });
+
+        Assert.Empty(asked);
+        Assert.True(resolver.Resolve("/Vendor;component/Themes/Generic.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+    }
+
+    [Fact]
+    public void An_externalDictionaries_entry_inside_the_scan_root_works()
+    {
+        // 正當用法：vendored 的函式庫副本（沒有 csproj，靠 config 對上組件名）
+        Put("vendor/Vendor/Themes/Generic.xaml", $"<ResourceDictionary {Ns}><SolidColorBrush x:Key=\"VendorBrush\" Color=\"Red\" /></ResourceDictionary>");
+        Put("App.xaml", $"""
+            <Application {Ns}><Application.Resources><ResourceDictionary>
+              <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="pack://application:,,,/Vendor;component/Themes/Generic.xaml" /></ResourceDictionary.MergedDictionaries>
+            </ResourceDictionary></Application.Resources></Application>
+            """);
+        Put("Main.xaml", $"<Window {Ns}><Border Background=\"{{StaticResource VendorBrush}}\" /></Window>");
+        Put("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+        var cfg = new Config();
+        cfg.ExternalDictionaries["Vendor"] = "vendor/Vendor";
+
+        var r = Analyzer.Run(_dir.FullName, cfg);
+
+        Assert.Empty(r.ExternalSources);
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.DanglingStatic or FindingKind.External);
+    }
+
+    [Fact]
+    public void A_path_through_a_symlink_or_junction_inside_the_root_is_never_probed()
+    {
+        var outside = Directory.CreateTempSubdirectory("xamlkeys-outside");
+        try
+        {
+            File.WriteAllText(Path.Combine(outside.FullName, "Theme.xaml"), "<ResourceDictionary />");
+            var link = Path.Combine(_dir.FullName, "Themes");
+            if (!TryLink(link, outside.FullName)) return;   // 這台機器建不了連結（沒有權限）：無從驗證
+
+            Put("App.xaml", "<Application />");
+            var asked = new List<string>();
+            var resolver = new SourceResolver(_dir.FullName, []) { Probe = p => { asked.Add(p); return true; } };
+
+            Assert.True(resolver.Resolve("Themes/Theme.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+            Assert.DoesNotContain(asked, p => p.Contains("Themes", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            var link = Path.Combine(_dir.FullName, "Themes");
+            if (Directory.Exists(link)) Directory.Delete(link);   // 只刪連結本身，不碰它指到的地方
+            outside.Delete(true);
+        }
+
+        static bool TryLink(string link, string target)
+        {
+            try { Directory.CreateSymbolicLink(link, target); return true; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            if (!OperatingSystem.IsWindows()) return false;
+            // Windows 沒有開發人員模式時建不了符號連結，但目錄接合點不需要權限
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            p!.WaitForExit();
+            return p.ExitCode == 0 && Directory.Exists(link);
+        }
+    }
+
     [Fact]
     public void A_Source_pointing_outside_the_scan_root_is_never_read()
     {
