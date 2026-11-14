@@ -35,6 +35,11 @@
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
     <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" Visible="false" Condition="Exists('$(MSBuildThisFileDirectory)icon.png')" />
 
+    <!-- ⚠ 套件內嵌了由 microsoft-ui-xaml（MIT）產生的資源鍵清單。
+         MIT 要求「在所有副本中附上著作權聲明」—— 聲明沒進套件就是沒遵守。
+         （2026-11-14 檢查 nupkg 時發現漏了這一條。） -->
+    <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" Visible="false" Condition="Exists('$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md')" />
+
     <!-- SourceLink 要 ExcludeAssets="runtime"，否則它的相依會把沒用到的
          System.IO.Hashing.dll 打包進 tool（2026-10 稽核的規矩） -->
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.403" PrivateAssets="All" ExcludeAssets="runtime" />

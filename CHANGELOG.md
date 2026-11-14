@@ -63,3 +63,19 @@ in [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md).
 
 Listed in the README with what the tool does about each. The short version: anything it cannot see
 is **counted and printed**, and too much of it produces `exit 3` rather than a green tick.
+
+### Hardening found by the post-build review
+
+- **DTDs are refused, not expanded.** `XDocument.Load`'s default settings expand internal DTD
+  entities — a probe confirmed a key declared through `<!ENTITY>` was resolved. External entities
+  were only being blocked by the fact that resource *values* are never printed. This tool scans
+  other people's repositories in CI, so `DtdProcessing` is now `Prohibit` and `XmlResolver` is
+  null; a DOCTYPE becomes a visible parse error.
+- **Too many unparsable files now produce `exit 3`.** A file that could not be read hides the
+  references inside it, which turns the keys it uses into false `unused` findings. Previously this
+  was a note at the end of the run and the exit code stayed 0 — another silent-degradation channel.
+- **`THIRD-PARTY-NOTICES.md` is packed into the NuGet package.** It was not, and the package
+  embeds data derived from microsoft-ui-xaml (MIT), whose licence requires the notice to travel
+  with every copy.
+- **Scope lookups are indexed and variant comparisons are cached.** ScreenToGif (121 files,
+  45,054 keys) went from 8.5s to 1.1s with identical output.

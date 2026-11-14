@@ -467,6 +467,72 @@ public class CorpusLessonTests : IDisposable
         Assert.True(with.Config.HasOverrides, "a config that changes the result must be visible in the summary");
     }
 
+    // ── 對抗性輸入（這個工具會在 CI 上掃別人的 repo） ───────────────────────
+
+    [Fact]
+    public void A_DTD_is_refused_rather_than_expanded()
+    {
+        // ⚠ XDocument.Load 的預設設定會展開內部 DTD 實體 —— 實測:用 <!ENTITY> 定義的
+        //   鍵名真的被解出來。外部實體則只靠「我們剛好不印資源的值」擋著,
+        //   哪天有人把值加進報告就變成任意讀檔。XAML 從來不用 DTD,直接禁掉。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Evil.xaml"] = """
+                <?xml version="1.0"?>
+                <!DOCTYPE foo [ <!ENTITY k "EntityExpandedKey"> ]>
+                <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <x:String x:Key="&k;">v</x:String>
+                </ResourceDictionary>
+                """,
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Key == "EntityExpandedKey");
+        Assert.Contains(r.ParseErrors, e => e.File.Contains("Evil.xaml"));
+    }
+
+    [Fact]
+    public void Too_many_unparsable_files_make_the_result_untrustworthy()
+    {
+        // 讀不進來的檔跟讀不到的字典一樣危險:它裡面的引用我們沒看到,
+        // 於是它用到的鍵會被報成「沒人用」。只印一行 note、退出碼照樣 0,
+        // 就是另一條「謊報健康」的通道。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = App("""<SolidColorBrush x:Key="Own" Color="#111" />"""),
+            ["Broken1.xaml"] = "<ResourceDictionary",
+            ["Broken2.xaml"] = "<ResourceDictionary",
+        });
+
+        Assert.True(r.Untrustworthy(out var reason));
+        Assert.Contains("could not be parsed", reason);
+    }
+
+    [Fact]
+    public void Non_ascii_keys_and_paths_work()
+    {
+        // 中文鍵名、emoji、以及帶空格的路徑都是真實會遇到的
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["with space/App.xaml"] = App("""
+                <x:String x:Key="標題.主要">中文鍵</x:String>
+                <x:String x:Key="emoji🔑">v</x:String>
+                """),
+            ["with space/Main.xaml"] = Window("""
+                <TextBlock Text="{StaticResource 標題.主要}" />
+                <TextBlock Text="{StaticResource emoji🔑}" />
+                """),
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.DanglingStatic
+                                                       or FindingKind.DanglingDynamic
+                                                       or FindingKind.Unused);
+    }
+
     // ── 自家專案（.claude/worktrees） ───────────────────────────────────────
 
     [Fact]

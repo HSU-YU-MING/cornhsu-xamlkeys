@@ -49,7 +49,18 @@ public sealed partial class XamlScanner
         XDocument doc;
         try
         {
-            doc = XDocument.Load(file, LoadOptions.SetLineInfo);
+            // ⚠ 這個工具會在 CI 上掃**別人的** repo。XDocument.Load 的預設設定會展開
+            //   內部 DTD 實體（實測：`<!ENTITY k "X">` 定義的鍵真的被解出來），
+            //   外部實體的解析也只靠「我們剛好不印資源的值」擋著 ——
+            //   哪天有人把值加進報告，這就變成任意讀檔。
+            //   XAML 從來不用 DTD，所以直接禁掉，並把 XmlResolver 關死。
+            using var reader = XmlReader.Create(file, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                IgnoreWhitespace = false,
+            });
+            doc = XDocument.Load(reader, LoadOptions.SetLineInfo);
         }
         catch (XmlException ex)
         {
@@ -158,8 +169,8 @@ public sealed partial class XamlScanner
                     // ⚠ 先把整組的鍵名收齊再分側："Default" 的意思取決於同組裡還有誰。
                     var group = child.Elements().Where(t => !IsIgnorable(t, ignorable)).ToList();
                     var names = group.Select(t => t.Attribute(XamlNs + "Key")?.Value)
-                                     .Where(n => n is not null)
-                                     .ToHashSet(StringComparer.Ordinal)!;
+                                     .OfType<string>()
+                                     .ToHashSet(StringComparer.Ordinal);
 
                     foreach (var t in group)
                     {

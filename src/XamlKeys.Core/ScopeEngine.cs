@@ -19,8 +19,16 @@ public sealed class ScopeEngine
     private readonly IReadOnlyList<ThemeSide> _sides;
     private readonly int[] _appScope;
 
-    /// <summary>每本字典的「查找順序」快取：第一個命中的就是贏家。</summary>
-    private readonly Dictionary<int, (List<KeyDefinition> Order, List<string> Externals)> _cache = [];
+    /// <summary>每本字典的「查找順序」快取：第一個命中的就是贏家。
+    /// ⚠ 另外存一份依鍵名分組的索引：ScreenToGif 有 45,054 個鍵、5,509 個引用，
+    /// 每次查找都線性掃過 order 是 2.5 億次比對（實測 8.5 秒）。
+    /// ByKey 的每個 list 維持 order 的先後，所以語意完全一樣。</summary>
+    private readonly Dictionary<int, Scope> _cache = [];
+
+    private sealed record Scope(
+        List<KeyDefinition> Order,
+        Dictionary<string, List<KeyDefinition>> ByKey,
+        List<string> Externals);
 
     public ScopeEngine(IReadOnlyList<ResourceDictionaryNode> dictionaries, XamlDialect dialect,
                        IReadOnlyList<ThemeSide>? sides = null)
@@ -52,16 +60,14 @@ public sealed class ScopeEngine
 
         foreach (var id in EffectiveChain(chain))
         {
-            var (order, externals) = OrderFor(id);
+            var scope = OrderFor(id);
 
-            foreach (var def in order)
-            {
-                if (!string.Equals(def.Key, key, StringComparison.Ordinal)) continue;
-                if (!SideMatches(def, side)) continue;
-                return new LookupResult(LookupStatus.Found, def);
-            }
+            if (scope.ByKey.TryGetValue(key, out var candidates))
+                foreach (var def in candidates)          // 已經是查找順序
+                    if (SideMatches(def, side))
+                        return new LookupResult(LookupStatus.Found, def);
 
-            if (firstExternal is null && externals.Count > 0) firstExternal = externals[0];
+            if (firstExternal is null && scope.Externals.Count > 0) firstExternal = scope.Externals[0];
         }
 
         return firstExternal is not null
@@ -86,7 +92,7 @@ public sealed class ScopeEngine
         return defSide == ThemeSide.Neutral || defSide == side;
     }
 
-    private (List<KeyDefinition> Order, List<string> Externals) OrderFor(int dictId)
+    private Scope OrderFor(int dictId)
     {
         if (_cache.TryGetValue(dictId, out var cached)) return cached;
 
@@ -94,7 +100,14 @@ public sealed class ScopeEngine
         var externals = new List<string>();
         Walk(dictId, [], order, externals);
 
-        var entry = (order, externals);
+        var byKey = new Dictionary<string, List<KeyDefinition>>(StringComparer.Ordinal);
+        foreach (var d in order)
+        {
+            if (!byKey.TryGetValue(d.Key, out var list)) byKey[d.Key] = list = [];
+            list.Add(d);
+        }
+
+        var entry = new Scope(order, byKey, externals);
         _cache[dictId] = entry;
         return entry;
     }
@@ -123,20 +136,21 @@ public sealed class ScopeEngine
     /// Dark 與 Light 各定義一次不是覆蓋，那是正常的雙主題寫法。</summary>
     public IEnumerable<(string Key, KeyDefinition Winner, List<KeyDefinition> Losers)> DuplicatesIn(int dictId)
     {
-        var (order, _) = OrderFor(dictId);
-        if (order.Count < 2) yield break;
+        var scope = OrderFor(dictId);
+        if (scope.Order.Count < 2) yield break;
 
         foreach (var side in _sides)
         {
-            var visible = order.Where(d => SideMatches(d, side)).ToList();
-
-            foreach (var group in visible.GroupBy(d => d.Key, StringComparer.Ordinal))
+            // 只有「同一個鍵名出現過兩次以上」的才需要看 —— 其餘直接跳過
+            foreach (var (key, defs) in scope.ByKey)
             {
-                var list = group.ToList();
-                if (list.Count < 2) continue;
+                if (defs.Count < 2) continue;
 
-                // order 已經是查找順序：第一個就是贏家
-                yield return (group.Key, list[0], list.Skip(1).ToList());
+                var visible = defs.Where(d => SideMatches(d, side)).ToList();
+                if (visible.Count < 2) continue;
+
+                // ByKey 的每個 list 維持 order 的先後：第一個就是贏家
+                yield return (key, visible[0], visible.Skip(1).ToList());
             }
         }
     }

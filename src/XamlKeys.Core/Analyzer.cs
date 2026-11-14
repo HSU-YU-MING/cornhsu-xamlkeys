@@ -68,6 +68,18 @@ public sealed class AnalysisResult
                      $"(minimum {Config.MinCoverage:F0}%) -- 'unused' cannot be trusted";
             return true;
         }
+
+        // ⚠ 讀不進來的檔跟讀不到的字典一樣危險：它裡面的引用我們沒看到,
+        //   於是它用到的鍵會被報成「沒人用」。之前這只是結尾的一行 note,
+        //   退出碼照樣 0 —— 那就是另一條「謊報健康」的通道。
+        var parsed = XamlFiles - ParseErrors.Count;
+        if (XamlFiles > 0 && 100.0 * parsed / XamlFiles < Config.MinCoverage)
+        {
+            reason = $"{ParseErrors.Count} of {XamlFiles} XAML file(s) could not be parsed " +
+                     $"(minimum {Config.MinCoverage:F0}% must parse) -- references inside them were not seen";
+            return true;
+        }
+
         reason = "";
         return false;
     }
@@ -221,6 +233,24 @@ public sealed class Analyzer
         public HashSet<string> DefinedNames { get; }
         public HashSet<string> ReferencedNames { get; }
         public Dictionary<string, HashSet<string>> DefinedByProject { get; }
+
+        /// <summary>兩兩的變體判定快取（見 AreVariants 的檔頭）。</summary>
+        public Dictionary<(int, int), bool> VariantVerdict { get; } = [];
+
+        private readonly Dictionary<int, HashSet<string>> _keySets = [];
+
+        /// <summary>一本字典自己的鍵名集合，建一次就好。</summary>
+        public HashSet<string> KeySetOf(int dictId)
+        {
+            if (_keySets.TryGetValue(dictId, out var set)) return set;
+
+            set = ById.TryGetValue(dictId, out var d)
+                ? d.OwnKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+
+            _keySets[dictId] = set;
+            return set;
+        }
 
         public ResourceDictionaryNode? DictOfRef(KeyReference r) =>
             r.ScopeChain.Count > 0 && ById.TryGetValue(r.ScopeChain[0], out var d) ? d : null;
@@ -437,18 +467,34 @@ public sealed class Analyzer
     }
 
     /// <summary>兩本字典是不是「同一組的替代品」（語系檔、深淺主題檔）？
-    /// 判準是鍵集合的重疊度：刻意的變體會幾乎一模一樣，意外的覆蓋只會撞到幾個。</summary>
+    /// 判準是鍵集合的重疊度：刻意的變體會幾乎一模一樣，意外的覆蓋只會撞到幾個。
+    ///
+    /// ⚠ 鍵集合與兩兩的判定結果都要快取。ScreenToGif 有 40 本語系字典、各約 1,200 個鍵，
+    /// 不快取的話每一個重複鍵都會重建兩份 HashSet —— 實測整個掃描 8.5 秒，這裡佔絕大部分。
+    /// </summary>
     private static bool AreVariants(Context ctx, int a, int b)
     {
         if (a == b) return false;
-        if (!ctx.ById.TryGetValue(a, out var da) || !ctx.ById.TryGetValue(b, out var db)) return false;
-        if (da.OwnKeys.Count < VariantMinKeys || db.OwnKeys.Count < VariantMinKeys) return false;
 
-        var sa = da.OwnKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
-        var sb = db.OwnKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+        var pair = a < b ? (a, b) : (b, a);
+        if (ctx.VariantVerdict.TryGetValue(pair, out var cached)) return cached;
 
-        var shared = sa.Count <= sb.Count ? sa.Count(sb.Contains) : sb.Count(sa.Contains);
-        return (double)shared / Math.Min(sa.Count, sb.Count) >= VariantOverlap;
+        var verdict = Compute();
+        ctx.VariantVerdict[pair] = verdict;
+        return verdict;
+
+        bool Compute()
+        {
+            var sa = ctx.KeySetOf(a);
+            var sb = ctx.KeySetOf(b);
+            if (sa.Count < VariantMinKeys || sb.Count < VariantMinKeys) return false;
+
+            var (small, large) = sa.Count <= sb.Count ? (sa, sb) : (sb, sa);
+            var shared = 0;
+            foreach (var k in small) if (large.Contains(k)) shared++;
+
+            return (double)shared / small.Count >= VariantOverlap;
+        }
     }
 
     /// <summary>
