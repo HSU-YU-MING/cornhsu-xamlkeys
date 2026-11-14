@@ -148,6 +148,13 @@ public static class ReportHtml
         if (r.KeysNamedNearDynamicLookups > 0)
             blind.Add($"{r.KeysNamedNearDynamicLookups} key(s) counted as used because their name appears as a string "
                     + "in a C# file that looks resources up by variable");
+        if (r.KeysNamedInCode > 0)
+            blind.Add($"{r.KeysNamedInCode} more key(s) counted as used because their name appears as a string in the same project's C#");
+        if (r.DynamicKeysNamedInCode > 0)
+            blind.Add($"{r.DynamicKeysNamedInCode} DynamicResource reference(s) not reported as dangling because C# names the key "
+                    + "(added to resources at runtime)");
+        if (r.KeyedDictionaries > 0)
+            blind.Add($"{r.KeyedDictionaries} keyed dictionar(ies) treated as runtime-selected alternatives");
         if (r.LibraryKeysNotChecked > 0)
             blind.Add($"{r.LibraryKeysNotChecked} key(s) in library projects were not checked for usage "
                     + "(a library's keys are its public API)");

@@ -98,6 +98,21 @@ public sealed partial class SourceResolver
                 if (File.Exists(abs)) return new(abs, null, null);
             }
 
+            // ms-appx:///組件名/路徑 —— WinUI 取用函式庫裡的資源就是這樣寫（第一段是組件名）。
+            // ⚠ 2026-11-15 實測 Dev Home（ms-appx:///DevHome.Dashboard/Styles/…）、
+            //   PowerToys（ms-appx:///PowerToys.Common.UI.Controls/Controls/…，組件名由 <AssemblyName> 覆寫）：
+            //   舊版當成同專案路徑，找不到就算 external，覆蓋率掉到 60%，觸發 exit 3。
+            // 不寫 ms-appx: 的 /組件名/路徑 也一樣（PowerToys 的 RegistryPreviewUILib/Themes/Generic.xaml）
+            if (src.StartsWith("ms-appx:", StringComparison.OrdinalIgnoreCase) || src.StartsWith('/'))
+            {
+                var slash = path.IndexOf('/');
+                if (slash > 0 && _assemblies.TryGetValue(path[..slash], out var asmDir))
+                {
+                    var inAsm = Path.GetFullPath(Path.Combine(asmDir, path[(slash + 1)..]));
+                    if (File.Exists(inAsm)) return new(inAsm, null, path[..slash]);
+                }
+            }
+
             return new(null, $"'{path}' not found from any project root", null);
         }
 

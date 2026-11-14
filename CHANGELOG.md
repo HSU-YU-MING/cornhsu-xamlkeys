@@ -159,6 +159,37 @@ coincidental name match.
   `Pic011`–`Pic016`, nine ScreenToGif strings and icons, and six MahApps menu strings that live in
   language dictionaries loaded by `$".../Languages/Strings.{language}.xaml"`.
 
+- **A fifth corpus round: seven projects never run before** (EarTrumpet, dnSpy, WalletWasabi, SukiUI,
+  Dev Home, dotnet-podcasts, PowerToys; 1,011 XAML files, all four frameworks). The first run produced
+  2,160 findings, most of them false; nine new rules bring it to 448, each remaining one attributed in
+  `docs/實查歸因-2026-11-14.md`. What the tool now understands:
+  - a keyed `<ResourceDictionary x:Key="Compact">` inside a dictionary is one of a set of alternatives the
+    app merges at runtime — its keys are visible and the alternatives never shadow each other
+    (`keyedDictionaries`);
+  - an Avalonia file whose root is `<Styles>` or `<Style>` is a dictionary (its `.Resources`, plus the
+    `<StyleInclude>`s and theme objects at its root); on an element with both `.Resources` and `.Styles`,
+    what the styles bring in has the lower priority, as in Avalonia;
+  - in .NET MAUI, an unkeyed `<ResourceDictionary Source="…"/>` inside a dictionary merges it;
+  - `ms-appx:///AssemblyName/…` and `/AssemblyName/…` resolve into that project (WinUI);
+  - a theme element such as `<suki:SukiTheme/>` whose class is an `x:Class` in the tree resolves to that
+    file, including through `[assembly: XmlnsDefinition]` (`classBackedDictionaries`);
+  - a key no XAML defines but C# writes into resources at runtime (`Resources["K"] = …`, a string handed
+    to a palette, `$"{name}75"`, `$"Prefix{name}Suffix"`) is not reported as a dangling `DynamicResource`
+    or C# lookup (`dynamicKeysNamedInCode`). `StaticResource` is never loosened this way;
+  - a key name handed to a helper method (`SetStyle("…")`, `BindBrush(…, "…")`) counts as used when it
+    appears as a string in a related project — the same project or one connected by `<ProjectReference>` —
+    but not in a file that writes resources by variable, where it is a definition (`keysNamedInCode`);
+  - a key that cannot be found is `external`, not dangling, when a dictionary of the same project that
+    merges this one also merges something unreadable;
+  - an app overriding a library's key is counted (`libraryKeyOverrides`), not reported as shadowed.
+
+  Three of these were wrong in their first version and the corpus caught it: names in code first rescued
+  every same-named key in the tree (one maui-samples app's `"Success"` hid another's unused `Success`) —
+  rules 31, 35 and 43 now mark definitions in related projects, not names; then they were limited to one
+  project, which brought back ten false `unused` in Flow Launcher whose theme is read by the Core project
+  it references; and the "merged above" rule first crossed projects. On the seventeen earlier projects
+  1,615 findings disappeared and 10 appeared; the 42 gated findings are unchanged.
+
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
   For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the

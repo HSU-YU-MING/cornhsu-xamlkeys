@@ -222,7 +222,8 @@ Avalonia and .NET MAUI, about 5,600 XAML files) — see
 | Dictionaries inside third-party assemblies | Their contents are invisible | Marked `external`, counted, and they lower the coverage figure |
 | Dictionaries merged by composed URIs in code | May look orphaned | Literal `.xaml` paths in C# are detected, and so are composed ones with a fixed part (`$"Themes/{name}.xaml"` loads every `Themes/*.xaml` in that project). `$"{name}.xaml"` and paths built with `+` are not |
 | Scope is a static approximation | A `UserControl`'s real parent is unknown | A key that exists elsewhere is `out-of-scope` (warn), never `dangling` (fail) |
-| `ComponentResourceKey`, `{x:Static …Key}` | Not string keys | Counted as unresolved sites, never graded |
+| `ComponentResourceKey`, `{x:Static …Key}` | Not string keys | Framework keys (`SystemColors.…Key`, `MenuItem.SeparatorStyleKey`) are recognised: never dangling, and redefining one is not unused. A project's own keys are matched by type and member (or type and `ResourceId`): duplicates, shadowing, out-of-scope use and unused definitions are graded. One that cannot be found stays an unresolved site, never dangling — it may be defined in C# or in another assembly |
+| Dictionaries linked into a project from elsewhere (`<Page Include="..\x.xaml" Link="…">`) | Merges of them cannot be resolved | Counted as external; the coverage figure drops |
 | Library projects | Their keys are public API | `unused` and `orphan-dictionary` are not evaluated there |
 | Symlinks and directory junctions | Their contents are skipped | Following them can loop forever when one points at an ancestor |
 | Avalonia custom theme variants (`x:Key="{x:Static …}"`) | Treated as a neutral side | Mutual exclusion still applies, so they never shadow each other |

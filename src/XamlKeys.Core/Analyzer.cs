@@ -34,6 +34,23 @@ public sealed class AnalysisResult
     /// ⚠ 放寬的路，一定要計數。</summary>
     public int KeysMatchingComposedLookups { get; set; }
 
+    /// <summary>名字以一般字串出現在同一個專案的 C# 裡（不是查找參數）而被算成有人用的鍵名數。
+    /// 鍵名交給自己寫的輔助方法時（<c>BindBrush(p, this, "FnBlade")</c>）就是這樣。⚠ 放寬的路，一定要計數。</summary>
+    public int KeysNamedInCode { get; set; }
+
+    /// <summary>XAML 沒有定義、但名字出現在 C# 字串裡的 DynamicResource 引用數 —— 程式在執行期把鍵寫進資源。
+    /// 不報懸空。⚠ 放寬的路，一定要計數。</summary>
+    public int DynamicKeysNamedInCode { get; set; }
+
+    /// <summary>字典裡有 x:Key 的子字典（執行期由程式挑一本合併）的個數。裡面的鍵當成可見、彼此互斥。</summary>
+    public int KeyedDictionaries { get; set; }
+
+    /// <summary>別的專案（使用函式庫的 App）蓋掉函式庫定義的鍵名數 —— 刻意的覆寫，不報 shadowed。</summary>
+    public int LibraryKeyOverrides { get; set; }
+
+    /// <summary>以元素寫法載入（<c>&lt;suki:SukiTheme/&gt;</c>）、而類別就在這棵樹裡的字典數 —— 原本會算成 external。</summary>
+    public int ClassBackedDictionaries { get; set; }
+
     /// <summary>重新定義了框架內建鍵（WinUI 的輕量樣式覆寫、System* 前綴）而沒有判「沒人用」的鍵名數。
     /// 框架自己的樣板在執行期會讀它們 —— 原始碼樹裡看不到這個引用。</summary>
     public int FrameworkKeyOverrides { get; set; }
@@ -162,7 +179,14 @@ public sealed class Analyzer
         var resolver = new SourceResolver(root, projFiles, config.ExternalDictionaries);
         var scanner = new XamlScanner(root, resolver);
         foreach (var f in xamlFiles) scanner.ScanFile(f);
+        foreach (var (url, clr) in CSharpScanner.ReadXmlnsDefinitions(csFiles))
+        {
+            if (!scanner.XmlnsMap.TryGetValue(url, out var list)) scanner.XmlnsMap[url] = list = [];
+            if (!list.Contains(clr)) list.Add(clr);
+        }
         scanner.LinkMergedDictionaries();
+        result.KeyedDictionaries = scanner.KeyedDictionaries;
+        result.ClassBackedDictionaries = scanner.ClassBackedDictionariesLinked;
 
         var cs = new CSharpScanner(root) { ProjectOf = projects.ProjectDirOf };
         foreach (var f in csFiles) cs.ScanFile(f);
@@ -224,19 +248,38 @@ public sealed class Analyzer
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
         foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
 
-        // 用變數查找的檔裡，跟某個鍵同名的字串 → 算成有人用（理由見 CSharpScanner.LiteralsNearDynamicLookups）。
+        // ⚠ 下面三條「C# 讓它算有人用」都只標**相關專案裡的那幾份定義**（同一個專案、或以 ProjectReference 連在一起的，
+        //   見 ProjectIndex.Related），不是把鍵名加進全樹的 ReferencedNames。
+        //   unused 以名字算（為了在地化），加名字等於全樹同名的定義一起赦免 —— 實測 maui-samples：
+        //   某個範例的 C# 有 "Success"，另一個範例 Colors.xaml 裡真的沒人用的 Success 就跟著消失了。
         // 只計「真的會被判 unused 的鍵」：函式庫的鍵本來就不判，算進來只會灌水。
         var appKeys = ctx.Definitions.Where(d => !ctx.InLibrary(ctx.ById[d.DictionaryId].File))
                                      .Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
-        foreach (var (text, _) in cs.LiteralsNearDynamicLookups)
+        var defsByProjectAndName = ctx.Definitions
+            .GroupBy(d => (ctx.ById[d.DictionaryId].ProjectDir ?? "", d.Key))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // 回傳這次新救回的鍵名（之前沒有任何引用、也還沒被別的規則救過、而且會被判 unused 的）
+        bool Rescue(KeyDefinition d)
         {
-            if (!ctx.DefinedNames.Contains(text)) continue;
-            ctx.CSharpNames.Add(text);
-            if (ctx.ReferencedNames.Add(text) && appKeys.Contains(text))
-                result.KeysNamedNearDynamicLookups++;
+            ctx.CSharpNames.Add(d.Key);
+            var fresh = !ctx.ReferencedNames.Contains(d.Key) && !ctx.UsedByCodeNames.Contains(d.Key) && appKeys.Contains(d.Key);
+            ctx.UsedByCode.Add(d);
+            return fresh;
         }
 
-        // 組出來但有固定開頭／結尾的鍵名（$"Icon{name}"、"Icon" + name）→ 同一個專案裡符合樣式的鍵算可能有人用。
+        // 規則 31：用變數查找的檔裡，跟某個鍵同名的字串（理由見 CSharpScanner.LiteralsNearDynamicLookups）
+        var near = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (text, loc) in cs.LiteralsNearDynamicLookups)
+            foreach (var proj in ctx.Projects.Related(ctx.Projects.ProjectDirOf(ctx.Abs(loc.File))))
+            {
+                if (!defsByProjectAndName.TryGetValue((proj, text), out var defs)) continue;
+                foreach (var d in defs) if (Rescue(d)) near.Add(d.Key);
+                ctx.UsedByCodeNames.UnionWith(defs.Select(d => d.Key));
+            }
+        result.KeysNamedNearDynamicLookups = near.Count;
+
+        // 規則 35：組出來但有固定開頭／結尾的鍵名（$"Icon{name}"、"Icon" + name）→ 同一個專案裡符合樣式的鍵。
         // ⚠ 這是一條放寬的路，所以：樣式要夠長（DynamicKeySite.MinPatternLength）、只比同一個專案、一定計數。
         var patterns = cs.DynamicSites.Where(s => s.HasPattern).ToList();
         if (patterns.Count > 0)
@@ -247,14 +290,32 @@ public sealed class Analyzer
                 var proj = ctx.ById[d.DictionaryId].ProjectDir;
                 if (!patterns.Any(p => p.Matches(d.Key)
                                     && (p.Project is null || proj is null
-                                        || string.Equals(p.Project, proj, StringComparison.OrdinalIgnoreCase))))
+                                        || ctx.Projects.Related(p.Project).Contains(proj))))
                     continue;
-
-                ctx.CSharpNames.Add(d.Key);
-                if (ctx.ReferencedNames.Add(d.Key) && appKeys.Contains(d.Key)) rescued.Add(d.Key);
+                if (Rescue(d)) rescued.Add(d.Key);
             }
+            ctx.UsedByCodeNames.UnionWith(rescued);
             result.KeysMatchingComposedLookups = rescued.Count;
         }
+
+        // 規則 43：名字以一般字串出現在同一個專案的 C# 裡（不是查找參數）。規則 31 的放寬版，理由見 CSharpScanner.NamesInCode。
+        var namedInCode = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (text, proj, inWriter) in cs.NamesInCode.Distinct())
+        {
+            if (inWriter) continue;   // 寫進資源的檔是在定義，不是在使用（見 CSharpScanner.NamesInCode）
+            foreach (var q in ctx.Projects.Related(proj))
+            {
+                if (!defsByProjectAndName.TryGetValue((q, text), out var defs)) continue;
+                foreach (var d in defs) if (Rescue(d)) namedInCode.Add(d.Key);
+            }
+        }
+        ctx.UsedByCodeNames.UnionWith(namedInCode);
+        result.KeysNamedInCode = namedInCode.Count;
+
+        // 懸空的 DynamicResource 判定用：整棵樹的字串（執行期寫進資源的鍵跨專案 —— dnSpy 的主程式寫、外掛的 XAML 讀）
+        ctx.NamesInCode.UnionWith(cs.NamesInCode.Select(n => n.Text));
+        ctx.ComposedSuffixesInCode.AddRange(cs.ComposedSuffixesInCode);
+        ctx.ComposedNamesInCode.AddRange(cs.ComposedNamesInCode);
 
         EmitDuplicateKeys(dicts, result, config);
         EmitReferenceFindings(ctx, sides, result);
@@ -325,6 +386,12 @@ public sealed class Analyzer
         /// C# 可以對任何一個元素呼叫 FindResource，所以這些名字的每一份定義都可能被用到。</summary>
         public HashSet<string> CSharpNames { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>因為 C# 而算成有人用的**定義**（規則 31／35／43）。以定義為單位、限同一個專案 ——
+        /// 見 Analyzer.Run 裡那三條規則上面的說明。</summary>
+        public HashSet<KeyDefinition> UsedByCode { get; } = [];
+        /// <summary>UsedByCode 涵蓋的鍵名（判 shadowed 時「這個名字有人用」）。</summary>
+        public HashSet<string> UsedByCodeNames { get; } = new(StringComparer.Ordinal);
+
         /// <summary>已經被報成「沒人用」的定義（以參考比較）。連帶判定從這裡往下推。</summary>
         public HashSet<KeyDefinition> UnusedDefs { get; } = [];
 
@@ -336,6 +403,26 @@ public sealed class Analyzer
 
         /// <summary>字典 Id -> 把它合併進來的那些「主題入口」（見 MutuallyExclusive）。</summary>
         public Dictionary<int, HashSet<int>> ThemeEntriesOf { get; }
+
+        /// <summary>整棵樹 C# 裡不是查找參數的字串（見 CSharpScanner.NamesInCode）。</summary>
+        public HashSet<string> NamesInCode { get; } = new(StringComparer.Ordinal);
+        public List<string> ComposedSuffixesInCode { get; } = [];
+        public List<(string Prefix, string Suffix)> ComposedNamesInCode { get; } = [];
+
+        /// <summary>鍵名本身、或「字串＋組出來的固定結尾」（"SukiAccentColor" ＋ $"{x}75"）出現在 C# 裡。</summary>
+        public bool IsNamedInCode(string key)
+        {
+            if (NamesInCode.Contains(key)) return true;
+            foreach (var s in ComposedSuffixesInCode)
+                if (key.Length >= s.Length + 3 && key.EndsWith(s, StringComparison.Ordinal)
+                    && NamesInCode.Contains(key[..^s.Length]))
+                    return true;
+            foreach (var (p, s) in ComposedNamesInCode)
+                if (key.Length > p.Length + s.Length && key.StartsWith(p, StringComparison.Ordinal)
+                    && key.EndsWith(s, StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
 
         /// <summary>兩兩的變體判定快取（見 AreVariants 的檔頭）。</summary>
         public Dictionary<(int, int), bool> VariantVerdict { get; } = [];
@@ -361,6 +448,54 @@ public sealed class Analyzer
 
         public ResourceDictionaryNode? DictOfRef(KeyReference r) =>
             r.ScopeChain.Count > 0 && ById.TryGetValue(r.ScopeChain[0], out var d) ? d : null;
+
+        /// <summary>
+        /// 合併了這條鏈上某本字典的「上層」（誰合併我、誰又合併它…）裡，第一個看不到的合併來源。
+        /// </summary>
+        /// <remarks>
+        /// ⚠ 2026-11-15 實測 SukiUI：DatePicker.axaml 引用 <c>SimpleDateTimePickerUpButton</c>，那是 Avalonia
+        ///   Simple 主題的鍵；SukiTheme.axaml 合併了 DatePicker 所在的字典，同一層也放了 <c>&lt;SimpleTheme/&gt;</c>。
+        ///   執行期的查找會往上走到那裡，但靜態作用域只有 DatePicker.axaml 自己 —— 36 筆報成懸空。
+        ///   上層合併了看不到的東西時，這個鍵可能就在那裡：是「沒看到」，不是「看到了、沒有」。
+        /// </remarks>
+        public string? ExternalAbove(IReadOnlyList<int> chain, string? project)
+        {
+            if (_parents is null)
+            {
+                _parents = new Dictionary<int, List<int>>();
+                foreach (var d in Dicts)
+                    foreach (var m in d.Merged)
+                        if (m.ResolvedDictionaryId is { } child)
+                        {
+                            if (!_parents.TryGetValue(child, out var list)) _parents[child] = list = [];
+                            list.Add(d.Id);
+                        }
+            }
+
+            var seen = new HashSet<int>(chain);
+            var queue = new Queue<int>();
+            foreach (var id in chain)
+                if (_parents.TryGetValue(id, out var ps))
+                    foreach (var p in ps) if (seen.Add(p)) queue.Enqueue(p);
+
+            while (queue.Count > 0)
+            {
+                var id = queue.Dequeue();
+                if (!ById.TryGetValue(id, out var node)) continue;
+                // ⚠ 只看**同一個專案**的上層。別的專案（使用這個函式庫的 App）合併了什麼，
+                //   不代表函式庫自己找得到 —— 實測 MaterialDesign：MahApps 整合專案同時合併了核心庫的
+                //   DataGrid.ComboBox.xaml 與 <MahAppsBundledTheme/>，不限專案的話，核心庫裡
+                //   一筆真的懸空（MaterialDesign.Brush.TextBox.ComboBoxHover）被降級成 external。
+                if (!string.Equals(node.ProjectDir, project, StringComparison.OrdinalIgnoreCase)) continue;
+                foreach (var m in node.Merged)
+                    if (m.IsExternal) return m.RawSource;
+                if (_parents.TryGetValue(id, out var ps))
+                    foreach (var p in ps) if (seen.Add(p)) queue.Enqueue(p);
+            }
+            return null;
+        }
+
+        private Dictionary<int, List<int>>? _parents;
 
         /// <summary>⚠ finding 與引用帶的是**相對於掃描根**的路徑（baseline 要跨 OS 可攜），
         /// 但 ProjectIndex 收的是絕對路徑。直接把相對路徑丟給 Path.GetFullPath 會對著
@@ -423,6 +558,10 @@ public sealed class Analyzer
             if (r.Kind == RefKind.CSharp)
             {
                 ctx.CSharpNames.Add(r.Key);
+                if (r.IsWrite) continue;   // 寫入是定義，不是查找
+                // 程式自己讀、也在別處以字串寫進資源的鍵（dnSpy 的 ToolTipBackground）：同 DynamicResource 的放寬
+                if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
+                { result.DynamicKeysNamedInCode++; continue; }
                 if (!ctx.DefinedNames.Contains(r.Key) && result.ExternalSources.Count == 0
                     && !ctx.InLibrary(r.Location.File))
                     result.Findings.Add(Make(FindingKind.DanglingDynamic, r, ThemeSide.Neutral, cfg,
@@ -462,6 +601,16 @@ public sealed class Analyzer
             if (ctx.InLibrary(r.Location.File)
                 && ctx.DefinedSomewhereInProjectOf(r.Location.File, r.Key)) continue;
 
+            // 程式在執行期把鍵寫進資源（dnSpy、wpfui、SukiUI）：XAML 沒定義、名字出現在 C# 字串裡的
+            // DynamicResource 不報懸空。排在 external 前面：「C# 寫進去的」比「也許在看不到的那本」準。
+            // ⚠ 只放寬 DynamicResource：它本來就是「執行期才有」的寫法、而且只到 warn；
+            //   StaticResource 是 gate 擋的那一級，語料裡也沒有看到這種情形，不碰。
+            if (r.Kind != RefKind.Static && !ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
+            {
+                result.DynamicKeysNamedInCode++;
+                continue;
+            }
+
             var unknown = failures.FirstOrDefault(f => f.Res.Status == LookupStatus.Unknown);
 
             if (unknown.Res is { Status: LookupStatus.Unknown })
@@ -481,6 +630,23 @@ public sealed class Analyzer
             }
 
             var side0 = allSidesFailed ? ThemeSide.Neutral : failures[0].Side;
+
+            // 合併我的上層合併了看不到的字典 → 鍵可能在那裡（見 Context.ExternalAbove）
+            if (!ctx.DefinedNames.Contains(r.Key) && ctx.ExternalAbove(r.ScopeChain, refProject) is { } above)
+            {
+                result.Findings.Add(new Finding
+                {
+                    Kind = FindingKind.External,
+                    Severity = cfg.SeverityFor(FindingKind.External),
+                    Key = r.Key,
+                    Location = r.Location,
+                    Side = side0,
+                    ExternalSource = above,
+                    Message = $"'{r.Key}' is not defined in this tree, but a dictionary that merges this one also merges " +
+                              $"'{above}' which could not be read -- not reported as dangling",
+                });
+                continue;
+            }
 
             if (ctx.DefinedNames.Contains(r.Key))
             {
@@ -572,13 +738,14 @@ public sealed class Analyzer
         var cfg = ctx.Config;
         var reported = new HashSet<string>(StringComparer.Ordinal);
         var variantPairs = new HashSet<(int, int)>();
+        var overridden = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var rootDict in ctx.Engine.RootDictionaries)
         {
             foreach (var (key, winner, losers) in ctx.Engine.DuplicatesIn(rootDict.Id))
             {
                 // 沒人引用的鍵被蓋掉不重要 —— 那種情形由 Unused 覆蓋，兩邊都報只是噪音。
-                if (!ctx.ReferencedNames.Contains(key)) continue;
+                if (!ctx.ReferencedNames.Contains(key) && !ctx.UsedByCodeNames.Contains(key)) continue;
 
                 foreach (var loser in losers)
                 {
@@ -588,6 +755,18 @@ public sealed class Analyzer
                     //   所以它們之間永遠不是覆蓋。這條比用鍵名去推穩健 ——
                     //   實測 Files 的 GridSplitter.xaml 是 Default ＋ HighContrast,靠鍵名會判錯。
                     if (MutuallyExclusive(ctx, winner.DictionaryId, loser.DictionaryId)) continue;
+
+                    // 使用者的 App 刻意蓋掉函式庫的預設值（輕量樣式覆寫）：函式庫那份在**別的**使用者那裡照樣會贏，
+                    // 報在函式庫的檔上說「永遠贏不了」是錯的。
+                    // ⚠ 2026-11-15 實測 FluentAvalonia：範例 App 的 Resources.axaml 刻意覆寫 NavigationViewContentMargin。
+                    var loserDict = ctx.ById[loser.DictionaryId];
+                    var winnerDict = ctx.ById[winner.DictionaryId];
+                    if (ctx.InLibrary(loserDict.File)
+                        && !string.Equals(loserDict.ProjectDir, winnerDict.ProjectDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        overridden.Add(key);
+                        continue;
+                    }
 
                     // ⚠ 語系檔／主題檔**刻意**定義同一組鍵，執行期才換。
                     //   實測：ScreenToGif 用 XAML 做在地化（四十種語言、各約 1200 個鍵），
@@ -629,6 +808,7 @@ public sealed class Analyzer
         }
 
         result.VariantDictionaryGroups = variantPairs.Count;
+        result.LibraryKeyOverrides = overridden.Count;
     }
 
     /// <summary>
@@ -741,6 +921,7 @@ public sealed class Analyzer
         foreach (var d in ctx.Definitions)
         {
             if (ctx.ReferencedNames.Contains(d.Key)) continue;
+            if (ctx.UsedByCode.Contains(d)) continue;
 
             var dict = ctx.ById[d.DictionaryId];
 
@@ -999,6 +1180,7 @@ public sealed class Analyzer
         foreach (var d in ctx.Dicts)
         {
             if (!d.IsStandaloneFile) continue;
+            if (d.IsStylesFile) continue;   // Avalonia 樣式檔不是字典，見 ResourceDictionaryNode.IsStylesFile
             if (merged.Contains(d.Id)) continue;
             if (d.OwnKeys.Count == 0) continue;
             // 程式在執行期載入的、以及框架隱含載入的主題字典，都不是孤兒（MarkRuntimeLoaded 標過）

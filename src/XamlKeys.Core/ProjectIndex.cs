@@ -35,6 +35,24 @@ public sealed partial class ProjectIndex
         // 最深的目錄排前面：巢狀專案要先比對到自己，不是父專案
         _projects.Sort((a, b) => b.Dir.Length.CompareTo(a.Dir.Length));
 
+        // <ProjectReference>：哪些專案在建置上連在一起（見 Related）
+        foreach (var proj in projectFiles)
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(proj));
+            if (dir is null) continue;
+            string text;
+            try { text = File.ReadAllText(proj); }
+            catch (IOException) { continue; }
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(text, """<ProjectReference\s+Include\s*=\s*"([^"]+)"""))
+            {
+                var target = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(dir, m.Groups[1].Value.Replace('\\', Path.DirectorySeparatorChar))));
+                if (target is null) continue;
+                AddEdge(dir, target);
+                AddEdge(target, dir);
+            }
+        }
+
         HasAnyApplication = _projects.Any(p => p.IsApplication);
         // 連一個 csproj 都沒有時（純資源資料夾、sparse clone），無從判斷 ——
         // 退回「當成應用程式」，因為那是比較常見的掃描對象。
@@ -77,6 +95,38 @@ public sealed partial class ProjectIndex
     }
 
     /// <summary>這個檔所屬的專案目錄（找不到回 null）。</summary>
+    private readonly Dictionary<string, HashSet<string>> _edges = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _related = new(StringComparer.OrdinalIgnoreCase);
+
+    private void AddEdge(string a, string b)
+    {
+        if (!_edges.TryGetValue(a, out var set)) _edges[a] = set = new(StringComparer.OrdinalIgnoreCase);
+        set.Add(b);
+    }
+
+    /// <summary>
+    /// 跟這個專案以 &lt;ProjectReference&gt; 連在一起（任一方向、可遞移）的所有專案，含自己。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 「C# 讓它算有人用」的規則要限在這個範圍，不能是整棵樹、也不能只有自己：
+    ///   maui-samples 的 231 個範例彼此獨立，一個範例的字串不能赦免另一個的鍵；
+    ///   但 Flow Launcher 的主題檔在 App 專案、讀它們的 Theme.cs 在 Flow.Launcher.Core（App 參考它）——
+    ///   只認同一個專案的話，SystemBG、WindowStyle 這些真的有人讀的鍵會被報成沒人用。
+    /// </remarks>
+    public IReadOnlySet<string> Related(string? projectDir)
+    {
+        var key = projectDir ?? "";
+        if (_related.TryGetValue(key, out var cached)) return cached;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key };
+        var stack = new Stack<string>();
+        stack.Push(key);
+        while (stack.Count > 0)
+            if (_edges.TryGetValue(stack.Pop(), out var next))
+                foreach (var n in next) if (seen.Add(n)) stack.Push(n);
+        _related[key] = seen;
+        return seen;
+    }
+
     public string? ProjectDirOf(string file)
     {
         var full = Path.GetFullPath(file);

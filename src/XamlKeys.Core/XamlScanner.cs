@@ -130,7 +130,41 @@ public sealed partial class XamlScanner
         {
             var dict = NewDictionary(file, owner: null, LineOf(root), standalone: true, appScope: false);
             _standaloneByPath[Path.GetFullPath(file)] = dict.Id;
+            RegisterClass(root, dict);
             ReadDictionaryElement(root, dict, [dict.Id], ignorable, null);
+        }
+        else if (root.Name.LocalName is "Styles" or "Style")
+        {
+            // Avalonia 的樣式檔：根元素是 <Styles>，資源在 <Styles.Resources>，
+            // 直接子層的 <StyleInclude>／主題物件（<SimpleTheme/>）也會帶資源進來。
+            // ⚠ 2026-11-15 之前只認 <X.Styles> 屬性元素，根是 <Styles> 的檔整份不算字典 ——
+            //   實測 WalletWasabi：App 用 <StyleInclude Source="avares://…/Styles.axaml"/> 合併它，
+            //   被判成「不是字典、讀不到」，131 筆鍵降級成 external；
+            //   SukiUI 的 SukiTheme.axaml 在根層放 <SimpleTheme/>，它帶的鍵被報成懸空。
+            // 根是單一個 <Style> 的檔也能被 StyleInclude（SukiUI 的 ColorTheme/ColorsStyles.xaml），資源在 <Style.Resources>。
+            var dict = NewDictionary(file, owner: null, LineOf(root), standalone: true, appScope: false);
+            dict.IsStylesFile = true;
+            _standaloneByPath[Path.GetFullPath(file)] = dict.Id;
+            RegisterClass(root, dict);
+            // <Style> 的子層是 Setter 之類，不是主題物件 —— 只有 <Styles> 才收 StyleInclude／主題物件
+            if (root.Name.LocalName == "Styles") AddStyleSources(root, dict, ignorable);
+
+            IReadOnlyList<int> chain = [dict.Id];
+            foreach (var child in root.Elements())
+            {
+                if (IsIgnorable(child, ignorable)) continue;
+                if (child.Name.LocalName == root.Name.LocalName + ".Resources")
+                {
+                    var wrapper = child.Elements().FirstOrDefault(e => e.Name.LocalName == "ResourceDictionary"
+                                                                    && !IsIgnorable(e, ignorable));
+                    if (wrapper is not null) ReadDictionaryElement(wrapper, dict, chain, ignorable, null);
+                    else ReadDictionaryBody(child, dict, chain, ignorable, null);
+                }
+                else if (child.Name.LocalName is not ("StyleInclude" or "StyleIncludes"))
+                {
+                    WalkElement(child, file, chain, ignorable, null);
+                }
+            }
         }
         else
         {
@@ -182,9 +216,19 @@ public sealed partial class XamlScanner
             else
                 ReadDictionaryBody(resProp, dict, chainHere, ignorable, suppressed);
 
-            // 同一個元素同時有 .Resources 與 .Styles 時，Styles 帶進來的資源也算這個作用域的
+            // 同一個元素同時有 .Resources 與 .Styles 時，Styles 帶進來的資源也算這個作用域的。
+            // ⚠ 但優先序**低於** .Resources：Avalonia 先查 Resources（含它合併的），查不到才查 Styles。
+            //   所以放在合併清單的最前面（WPF 式「後宣告的贏」裡，最前面＝最後才輪到）。
+            //   2026-11-15 實測 FluentAvalonia 的範例 App：Resources 裡刻意覆寫 NavigationViewContentMargin，
+            //   放在後面的話被判成「被函式庫的主題蓋掉」—— 方向剛好相反。
             if (stylesProp is not null && !IsIgnorable(stylesProp, ignorable))
+            {
+                var before = dict.Merged.Count;
                 AddStyleSources(stylesProp, dict, ignorable);
+                var added = dict.Merged.GetRange(before, dict.Merged.Count - before);
+                dict.Merged.RemoveRange(before, added.Count);
+                dict.Merged.InsertRange(0, added);
+            }
         }
 
         CollectRefs(el, file, chainHere, ignorable, suppressed);
@@ -214,6 +258,7 @@ public sealed partial class XamlScanner
         if (rdEl.Attribute("Source")?.Value is { Length: > 0 } ownSource)
             AddMerged(dict, ownSource, dict.File, LineOf(rdEl));
 
+        List<XElement>? keyed = null;
         foreach (var child in rdEl.Elements())
         {
             if (IsIgnorable(child, ignorable)) continue;
@@ -265,8 +310,52 @@ public sealed partial class XamlScanner
                 }
 
                 default:
+                    if (child.Name.LocalName == "ResourceDictionary")
+                    {
+                        if (XamlAttr(child, "Key") is { } k && !k.Value.TrimStart().StartsWith('{'))
+                        {
+                            keyed ??= [];
+                            keyed.Add(child);
+                            break;
+                        }
+
+                        // ⚠ .NET MAUI：沒有 x:Key 的 <ResourceDictionary Source="…"/> 直接放在字典裡，
+                        //   等於合併（Xamarin.Forms 3.0 起的簡寫）。WPF 不允許這種寫法，所以照合併讀不會誤判。
+                        //   2026-11-15 實測 dotnet-podcasts：整份主題這樣載入，舊版把它當成一個沒有鍵的項目 ——
+                        //   83 筆 out-of-scope、8 筆假 unused、主題檔本身被報成孤兒。
+                        if (XamlAttr(child, "Name") is null)
+                        {
+                            InlineMerged(child, dict, chain, ignorable, suppressed);
+                            break;
+                        }
+                    }
                     ReadResourceEntry(child, dict, chain, ignorable, suppressed);
                     break;
+            }
+        }
+
+        // 有 x:Key 的子字典（<ResourceDictionary x:Key="Compact">…）：程式在執行期挑一本合併，
+        // 跟 ThemeDictionaries 同樣是互斥的一組。
+        // ⚠ 2026-11-15 實測 SukiUI：Normal／Compact／SuperCompact／Big 四本各定義一份
+        //   SmallCornerRadius、MediumCornerRadius，舊版只把外層的鍵（"Compact"）當成一個資源，
+        //   裡面的鍵全部看不到 —— 41 筆假懸空。
+        if (keyed is not null)
+        {
+            var groupId = _nextThemeGroupId++;
+            foreach (var t in keyed)
+            {
+                var name = XamlAttr(t, "Key")!.Value.Trim();
+                var sub = NewDictionary(dict.File, $"ResourceDictionary[{name}]", LineOf(t),
+                                        standalone: false, appScope: false);
+                sub.ThemeGroupId = groupId;
+                ReadDictionaryElement(t, sub, Prepend(sub.Id, chain), ignorable, suppressed);
+                dict.Merged.Add(new MergedReference
+                {
+                    RawSource = $"ResourceDictionary[{name}] (selected at runtime)",
+                    Location = new SourceLocation(Rel(dict.File), LineOf(t)),
+                    ResolvedDictionaryId = sub.Id,
+                });
+                KeyedDictionaries++;
             }
         }
 
@@ -296,6 +385,7 @@ public sealed partial class XamlScanner
                 ExternalReason = $"'{m.Name.LocalName}' is a ResourceDictionary subclass supplied by a library; "
                                + "its contents are not visible in the source tree",
             });
+            LinkByClassLater(m, parent.Merged[^1]);
             return;
         }
 
@@ -505,7 +595,25 @@ public sealed partial class XamlScanner
             else
                 mref.ExternalReason ??= $"'{Rel(path)}' resolved to a file that is not a ResourceDictionary in scope";
         }
+
+        foreach (var (mref, ns, name) in _pendingClassLinks)
+        {
+            foreach (var clr in ClrNamespacesOf(ns))
+            {
+                if (clr.Length == 0 || !_dictionaryByClass.TryGetValue($"{clr}.{name}", out var id)) continue;
+                mref.ResolvedDictionaryId = id;
+                mref.ExternalReason = null;
+                ClassBackedDictionariesLinked++;
+                break;
+            }
+        }
     }
+
+    /// <summary>以元素寫法（&lt;suki:SukiTheme/&gt;）載入、而類別就在這棵樹裡的字典數。</summary>
+    public int ClassBackedDictionariesLinked { get; private set; }
+
+    /// <summary>字典裡有 x:Key 的 &lt;ResourceDictionary&gt;（執行期由程式挑一本合併）的個數。</summary>
+    public int KeyedDictionaries { get; private set; }
 
     private ResourceDictionaryNode NewDictionary(string file, string? owner, int line, bool standalone, bool appScope)
     {
@@ -544,6 +652,8 @@ public sealed partial class XamlScanner
         foreach (var e in stylesProp.Elements())
         {
             if (IsIgnorable(e, ignorable)) continue;
+            // 根是 <Styles> 時，<Styles.Resources> 這類屬性元素也是直接子層 —— 不是主題物件
+            if (e.Name.LocalName.Contains('.')) continue;
 
             if (e.Name.LocalName is "StyleInclude" or "StyleIncludes")
             {
@@ -564,8 +674,46 @@ public sealed partial class XamlScanner
                 ExternalReason = $"'{e.Name.LocalName}' is a theme object supplied by a library; "
                                + "the resources it brings are not visible in the source tree",
             });
+            LinkByClassLater(e, dict.Merged[^1]);
         }
     }
+
+    /// <summary>根元素有 x:Class 的字典／樣式檔：記下類別全名，讓 &lt;local:SukiTheme/&gt; 這種元素接得回來。</summary>
+    private void RegisterClass(XElement root, ResourceDictionaryNode dict)
+    {
+        if (XamlAttr(root, "Class")?.Value?.Trim() is { Length: > 0 } cls)
+            _dictionaryByClass[cls] = dict.Id;
+    }
+
+    /// <summary>
+    /// 主題物件或 ResourceDictionary 子類別寫成元素（&lt;suki:SukiTheme/&gt;、&lt;local:DefaultTheme/&gt;）時，
+    /// 它的類別如果就是掃描範圍裡某個檔的 x:Class，那本字典其實看得到 —— 不是 external。
+    /// ⚠ 2026-11-15 實測 SukiUI：示範 App 用 &lt;suki:SukiTheme/&gt; 載入主題，主題檔 SukiTheme.axaml
+    ///   就在同一棵樹裡（x:Class="SukiUI.SukiTheme"），舊版一律當成函式庫的、看不到。
+    /// 只接得到 clr-namespace:／using: 的命名空間；框架預設命名空間的（&lt;FluentTheme/&gt;）維持 external。
+    /// </summary>
+    private void LinkByClassLater(XElement e, MergedReference mref)
+    {
+        _pendingClassLinks.Add((mref, e.Name.NamespaceName, e.Name.LocalName));
+    }
+
+    /// <summary>XmlnsDefinition 對照：XML 命名空間 URL → CLR 命名空間（可多個）。由 Analyzer 從 C# 讀來。
+    /// ⚠ 2026-11-15 實測 SukiUI：示範 App 寫 xmlns:suki="https://github.com/kikipoulet/SukiUI"，
+    ///   靠 [assembly: XmlnsDefinition(…)] 對到 SukiUI 命名空間 —— 不認這個，&lt;suki:SukiTheme/&gt; 接不回主題檔。</summary>
+    public Dictionary<string, List<string>> XmlnsMap { get; } = new(StringComparer.Ordinal);
+
+    private IEnumerable<string> ClrNamespacesOf(string ns)
+    {
+        if (ns.StartsWith("clr-namespace:", StringComparison.Ordinal))
+            yield return ns["clr-namespace:".Length..].Split(';')[0].Trim();
+        else if (ns.StartsWith("using:", StringComparison.Ordinal))
+            yield return ns["using:".Length..].Trim();
+        else if (XmlnsMap.TryGetValue(ns, out var list))
+            foreach (var n in list) yield return n;
+    }
+
+    private readonly Dictionary<string, int> _dictionaryByClass = new(StringComparer.Ordinal);
+    private readonly List<(MergedReference Ref, string Ns, string Name)> _pendingClassLinks = [];
 
     private static IReadOnlyList<int> Prepend(int id, IReadOnlyList<int> chain)
     {

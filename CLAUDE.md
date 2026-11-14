@@ -58,6 +58,14 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   每個引用都記著它寫在哪個有鍵的資源裡（`KeyReference.Owner`）；一個鍵的**每一個**引用都在
   已判死的資源裡才算。它會讓 `unused` 多報，所以：起點必須已經通過全部例外、訊息一定要講出
   是被誰拖下水的。這原本是 README 的已知盲區（死掉的別名把目標養著），2026-11-14 補上。
+- **「C# 讓它算有人用」只標定義，不加名字**（規則 31／35／43，`ctx.UsedByCode`）。`unused` 是以**名字**算的，
+  把名字加進 `ReferencedNames` 等於全樹同名的定義一起赦免（maui-samples 一個範例的 `"Success"` 曾經藏掉另一個範例的）。
+  範圍是 `ProjectIndex.Related`：同一個專案、或以 `<ProjectReference>` 連著的 —— 只認自己會漏掉
+  Flow Launcher（主題在 App、讀它的 Theme.cs 在 Core）。用變數**寫入**資源的檔裡的字串是定義、不是使用。
+- **「名字出現在 C#」只放寬 DynamicResource 與 C# 查找的懸空**，StaticResource 不碰（那是 gate 擋的那一級）。
+  組法的樣式一定要有固定開頭（至少 3 個字）：只有結尾的 `$"{x}Background"` 會吃掉全樹每個 …Background。
+- **找不到的鍵先看「合併我的上層」有沒有看不到的東西**（`ExternalAbove`），而且只看同一個專案的上層 ——
+  別的專案（使用函式庫的 App）合併了什麼，不代表函式庫自己找得到。
 - **重新定義框架內建鍵不是沒人用**（WinUI 輕量樣式覆寫）。框架的樣板在執行期讀它，
   引用不在原始碼樹裡。計數在 `frameworkKeyOverrides`。
 

@@ -76,6 +76,42 @@ public sealed partial class CSharpScanner
     /// </remarks>
     public IReadOnlyList<(string Text, SourceLocation Location)> LiteralsNearDynamicLookups => _literalsNearDynamicLookups;
 
+    /// <summary>
+    /// C# 裡每一個像鍵名、而且**不是查找參數**的字串字面，連同它所在的專案。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-15 第五輪語料抓到的兩種形狀，鍵名都是一般字串、不在任何認得的查找呼叫裡：
+    /// <list type="bullet">
+    /// <item>程式在執行期把鍵**寫進**資源：dnSpy 的 <c>ResourceKey = "EnvironmentCommandBar"</c>（ColorInfos.cs）
+    ///   由 Theme.cs 的 <c>resources[kv.Item1] = kv.Item2</c> 寫入；wpfui 的
+    ///   <c>Resources["AccentFillColorDefault"] = …</c>；SukiUI 的 <c>AddColorWithOpacities(resources, "SukiAccentColor", …)</c>。
+    ///   XAML 端的 DynamicResource 因此被報成懸空 —— dnSpy 982 筆。</item>
+    /// <item>鍵名交給自己寫的輔助方法：dnSpy 的 <c>SetStyle(… ?? "FileTabGroupTabControlStyle")</c>、
+    ///   SukiUI 的 <c>BindBrush(prop, this, "FnBlade")</c>。定義端被報成沒人用。</item>
+    /// </list>
+    /// 查找參數（<c>FindResource("K")</c> 這種讀取）不算 —— 讀不到的鍵不能因為「程式讀它」就變成有定義。
+    /// </remarks>
+    /// <para>
+    /// <c>InWriter</c>：這個字串所在的檔用變數把鍵**寫進**資源（<c>Resources[key] = …</c>）。
+    /// 這種檔裡的鍵名是在「定義」，不是在「使用」—— Kindling 的 ThemeService 把整張色盤寫進資源，
+    /// 色盤裡的 AmberBorder 其實沒有人讀。判 unused 時不算它們；判懸空時算（那正是執行期定義）。
+    /// </para>
+    public IReadOnlyList<(string Text, string? Project, bool InWriter)> NamesInCode => _namesInCode;
+
+    /// <summary>
+    /// 組出來的鍵名的固定**結尾**（<c>$"{baseName}75"</c> → <c>75</c>）。跟 <see cref="NamesInCode"/> 配起來用：
+    /// SukiUI 寫入 <c>SukiAccentColor75</c> 的方式是字串 <c>"SukiAccentColor"</c> 傳進一個 <c>$"{baseName}75"</c>。
+    /// </summary>
+    public IReadOnlyCollection<string> ComposedSuffixesInCode => _composedSuffixes;
+
+    private readonly List<(string Text, string? Project, bool InWriter)> _namesInCode = [];
+    private readonly HashSet<string> _composedSuffixes = new(StringComparer.Ordinal);
+    private readonly HashSet<(string Prefix, string Suffix)> _composedNames = [];
+
+    /// <summary>C# 裡組鍵名的內插字串（<c>$"TEInherited{name}Foreground"</c>）的固定開頭與結尾 ——
+    /// 不限查找呼叫。dnSpy 用這種輔助方法把一整組鍵寫進資源。</summary>
+    public IReadOnlyCollection<(string Prefix, string Suffix)> ComposedNamesInCode => _composedNames;
+
     /// <summary>程式碼裡載入的字典路徑（new ResourceDictionary { Source = new Uri("…") }）。
     /// 用來避免把它們誤報成 orphan-dictionary。</summary>
     public IReadOnlyList<(string Path, string? Project)> LoadedDictionaryPaths => _loadedDictionaryPaths;
@@ -89,10 +125,36 @@ public sealed partial class CSharpScanner
         try { text = File.ReadAllText(file); }
         catch (IOException) { return; }
 
+        var code = StripComments(text);
+        var project = ProjectOf?.Invoke(file);
+
+        // 不是查找參數的字串字面（見 NamesInCode）。讀取的查找要排除；寫入（Resources["K"] = v）留著。
+        // ⚠ 這一段要對**每一個** C# 檔做：鍵名常常在跟資源完全無關的檔裡（dnSpy 的 TabGroup.cs 只寫了
+        //   SetStyle(… ?? "FileTabGroupTabControlStyle")，整個檔沒有「Resource」這個字）。
+        var writer = VariableWriteRegex().IsMatch(code);
+        var readSpans = new List<(int Start, int End)>();
+        foreach (var m in LiteralLookupRegex().Matches(code).Cast<Match>())
+            if (!WriteAfterRegex().IsMatch(code, m.Index + m.Length))
+                readSpans.Add((m.Index, m.Index + m.Length));
+        foreach (var m in KeyLikeLiteralRegex().Matches(code).Cast<Match>())
+            if (!readSpans.Any(s => m.Index >= s.Start && m.Index < s.End))
+                _namesInCode.Add((m.Groups["s"].Value, project, writer));
+        foreach (var m in ComposedSuffixRegex().Matches(code).Cast<Match>())
+            _composedSuffixes.Add(m.Groups["s"].Value);
+        // $"TEInherited{name}Foreground"（dnSpy）：只有一個洞、前後都是像鍵名的字，合計至少 3 個字
+        foreach (var m in ComposedNameRegex().Matches(code).Cast<Match>())
+        {
+            var pre = m.Groups["p"].Value;
+            var suf = m.Groups["s"].Value;
+            // ⚠ 開頭至少 3 個字：只有結尾的（$"{x}Background"）會把整棵樹每個 …Background 都算進來 ——
+            //   第一版就是這樣把 dnSpy 一筆真的懸空（AppSettingsTreeViewBackground）也吃掉了。
+            //   只有結尾的情形另外由 ComposedSuffixesInCode 處理，那邊要求開頭是一個 C# 字串。
+            if (pre.Length >= DynamicKeySite.MinPatternLength) _composedNames.Add((pre, suf));
+        }
+
         if (!text.Contains("Resource", StringComparison.Ordinal)
             && !text.Contains("xaml", StringComparison.OrdinalIgnoreCase)) return;   // 含 .axaml
 
-        var code = StripComments(text);
         var rel = Rel(file);
 
         foreach (var m in LiteralLookupRegex().Matches(code).Cast<Match>())
@@ -102,9 +164,8 @@ public sealed partial class CSharpScanner
                 Location = new SourceLocation(rel, LineAt(code, m.Index)),
                 Kind = RefKind.CSharp,
                 ScopeChain = [],   // 執行期沿真實樹查找，沒有靜態作用域
+                IsWrite = WriteAfterRegex().IsMatch(code, m.Index + m.Length),
             });
-
-        var project = ProjectOf?.Invoke(file);
 
         var dynamicBefore = _dynamicSites.Count;
         foreach (var m in DynamicLookupRegex().Matches(code).Cast<Match>())
@@ -355,6 +416,40 @@ public sealed partial class CSharpScanner
     //   路徑裡帶著 {…} —— 由 Analyzer.MarkRuntimeLoaded 當成樣式比對。
     [GeneratedRegex("""["'](?<p>[^"'\n]*\.a?xaml)["']""", RegexOptions.IgnoreCase)]
     private static partial Regex XamlPathRegex();
+
+    /// <summary>[assembly: XmlnsDefinition("網址", "CLR 命名空間")] —— 只讀含這個字的檔，便宜。</summary>
+    public static IEnumerable<(string Url, string Clr)> ReadXmlnsDefinitions(IEnumerable<string> files)
+    {
+        foreach (var f in files)
+        {
+            string text;
+            try { text = File.ReadAllText(f); }
+            catch (IOException) { continue; }
+            if (!text.Contains("XmlnsDefinition", StringComparison.Ordinal)) continue;
+
+            foreach (var m in XmlnsDefinitionRegex().Matches(StripComments(text)).Cast<Match>())
+                yield return (m.Groups["u"].Value, m.Groups["n"].Value);
+        }
+    }
+
+    [GeneratedRegex("""XmlnsDefinition(?:Attribute)?\s*\(\s*"(?<u>[^"]+)"\s*,\s*"(?<n>[^"]+)"\s*\)""")]
+    private static partial Regex XmlnsDefinitionRegex();
+
+    // 用變數當鍵把值寫進資源：Resources[key] = …、resources[kv.Item1] = …（不分大小寫的 resources）
+    [GeneratedRegex("""[Rr]esources\s*\[\s*(?!["\s])[^\]\n]{1,80}\]\s*=(?!=)""")]
+    private static partial Regex VariableWriteRegex();
+
+    // 緊接在查找後面的「= 值」—— 那是寫入，不是讀取（== 是比較，不算）
+    [GeneratedRegex("""\G\s*=(?!=)""")]
+    private static partial Regex WriteAfterRegex();
+
+    // $"Pre{x}Suf" —— 恰好一個洞、前後只有像鍵名的字元（有空白、冒號的是訊息字串，不是鍵）
+    [GeneratedRegex("""\$@?"(?<p>[A-Za-z0-9_.\-]*)\{[^{}"]{1,80}\}(?<s>[A-Za-z0-9_.\-]*)"(?!")""")]
+    private static partial Regex ComposedNameRegex();
+
+    // $"{baseName}75" —— 以洞開頭、固定結尾的內插字串，取結尾
+    [GeneratedRegex("""\$@?"\{[^{}"]{1,80}\}(?<s>[A-Za-z0-9_.\-]{1,30})"(?!")""")]
+    private static partial Regex ComposedSuffixRegex();
 
     // "Icon" + name —— 參數一開頭就是字串字面再接 +
     [GeneratedRegex("""^"(?<s>(?:[^"\\]|\\.)*)"\s*\+""")]

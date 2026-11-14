@@ -46,6 +46,11 @@ public static class Report
             w.WriteNumber("dynamicKeySites", r.DynamicKeySites.Count);
             w.WriteNumber("keysNamedNearDynamicLookups", r.KeysNamedNearDynamicLookups);
             w.WriteNumber("keysMatchingComposedLookups", r.KeysMatchingComposedLookups);
+            w.WriteNumber("keysNamedInCode", r.KeysNamedInCode);
+            w.WriteNumber("dynamicKeysNamedInCode", r.DynamicKeysNamedInCode);
+            w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
+            w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
+            w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
             w.WriteNumber("frameworkKeyOverrides", r.FrameworkKeyOverrides);
             w.WriteNumber("unusedOnlyViaUnused", r.UnusedOnlyViaUnused);
             w.WriteBoolean("configOverrides", r.Config.HasOverrides);
@@ -241,6 +246,18 @@ public static class Report
         if (r.KeysNamedNearDynamicLookups > 0)
             o.WriteLine($"note: {r.KeysNamedNearDynamicLookups} key(s) were counted as used because their name appears " +
                         $"as a string in a C# file that looks resources up by variable");
+        if (r.KeysNamedInCode > 0)
+            o.WriteLine($"note: {r.KeysNamedInCode} more key(s) were counted as used because their name appears as a string " +
+                        $"elsewhere in the same project's C# (for example passed to a helper method)");
+        if (r.DynamicKeysNamedInCode > 0)
+            o.WriteLine($"note: {r.DynamicKeysNamedInCode} DynamicResource reference(s) name a key no XAML defines but C# names " +
+                        $"as a string (a key added to resources at runtime) -- not reported as dangling");
+        if (r.LibraryKeyOverrides > 0)
+            o.WriteLine($"note: {r.LibraryKeyOverrides} library key(s) are overridden by another project in this tree " +
+                        $"(an app restyling the library) -- not reported as shadowed");
+        if (r.KeyedDictionaries > 0)
+            o.WriteLine($"note: {r.KeyedDictionaries} keyed ResourceDictionar(ies) inside a dictionary were treated as " +
+                        $"alternatives the app picks at runtime -- their keys count as defined");
         if (r.ParseErrors.Count > 0)
             o.WriteLine($"note: {r.ParseErrors.Count} file(s) failed to parse and were skipped");
         if (r.InvalidIgnores.Count > 0)
