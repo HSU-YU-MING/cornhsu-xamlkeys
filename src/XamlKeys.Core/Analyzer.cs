@@ -45,6 +45,16 @@ public sealed class AnalysisResult
     /// <summary>XAML 沒有定義、但 C# 用 Resources.Add／Resources[…] = 加進資源的鍵的引用數。不報懸空。</summary>
     public int KeysAddedInCode { get; set; }
 
+    /// <summary>UserControl 裡的 DynamicResource：自己的作用域沒有，但它在 XAML 裡**每一個**被放置的地方都有。
+    /// 不報 out-of-scope。⚠ 放寬的路，一定要計數。</summary>
+    public int KeysResolvedThroughHosts { get; set; }
+
+    /// <summary>寫在自訂控制項元素上（或裡面）的引用，由那個控制項類別自己的 &lt;X.Resources&gt; 提供。不報 out-of-scope。</summary>
+    public int KeysFromControlResources { get; set; }
+
+    /// <summary>為了在啟動時被建立而放在 App.xaml 資源裡的物件（Caliburn.Micro 的 &lt;local:Bootstrapper x:Key="…"/&gt;）。不報 unused。</summary>
+    public int StartupResources { get; set; }
+
     /// <summary>字典裡有 x:Key 的子字典（執行期由程式挑一本合併）的個數。裡面的鍵當成可見、彼此互斥。</summary>
     public int KeyedDictionaries { get; set; }
 
@@ -194,6 +204,7 @@ public sealed class Analyzer
             if (!list.Contains(clr)) list.Add(clr);
         }
         scanner.LinkMergedDictionaries();
+        scanner.ResolveElementTypes();
         result.KeyedDictionaries = scanner.KeyedDictionaries;
         result.ClassBackedDictionaries = scanner.ClassBackedDictionariesLinked;
 
@@ -204,6 +215,8 @@ public sealed class Analyzer
                 cs.WordsToFind.Add(member);
                 if (d.MarkupType is { } type) cs.TypesToFind.Add(type);
             }
+        foreach (var cls in scanner.UsesOfClass.Keys)
+            cs.ClassesToFind.Add(cls[(cls.LastIndexOf('.') + 1)..]);
         foreach (var f in csFiles) cs.ScanFile(f);
 
         result.ParseErrors.AddRange(scanner.Errors);
@@ -274,9 +287,13 @@ public sealed class Analyzer
         // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
+        ctx.ClassOfFile = scanner.ClassOfFile;
+        ctx.UsesOfClass = scanner.UsesOfClass;
+        ctx.ClassesCreatedInCode.UnionWith(cs.ClassesCreatedInCode);
         foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
         ctx.MarkupMembersInCode.UnionWith(cs.WordsFound);
         ctx.MarkupTypesInTree.UnionWith(cs.TypesDeclared);
+        ctx.QualifiedMarkupTypesInTree.UnionWith(cs.QualifiedTypesDeclared);
 
         // ⚠ 下面三條「C# 讓它算有人用」都只標**相關專案裡的那幾份定義**（同一個專案、或以 ProjectReference 連在一起的，
         //   見 ProjectIndex.Related），不是把鍵名加進全樹的 ReferencedNames。
@@ -426,6 +443,19 @@ public sealed class Analyzer
         public HashSet<string> MarkupMembersInCode { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ExternalLibraryKeyNames { get; } = new(StringComparer.Ordinal);
         public HashSet<string> MarkupTypesInTree { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> QualifiedMarkupTypesInTree { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>有 Application.Resources 的檔（App.xaml）。</summary>
+        public HashSet<string> AppScopeFiles => _appScopeFiles ??= Dicts.Where(d => d.IsApplicationScope)
+            .Select(d => d.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        private HashSet<string>? _appScopeFiles;
+
+        /// <summary>markup 鍵的型別宣告在這棵樹的 C# 裡嗎？XAML 寫明了命名空間就連命名空間一起比。</summary>
+        public bool MarkupTypeInTree(KeyDefinition d) =>
+            d.MarkupType is not { } type
+            || (d.MarkupTypeNamespace is { } ns ? QualifiedMarkupTypesInTree.Contains($"{ns}.{type}")
+                                                  || QualifiedMarkupTypesInTree.Contains(type)
+                                                : MarkupTypesInTree.Contains(type));
 
         /// <summary>因為 C# 而算成有人用的**定義**（規則 31／35／43）。以定義為單位、限同一個專案 ——
         /// 見 Analyzer.Run 裡那三條規則上面的說明。</summary>
@@ -497,6 +527,98 @@ public sealed class Analyzer
         /// <summary>這個鍵名在樹裡的第一個定義（給 out-of-scope 指路用）。</summary>
         public KeyDefinition? FirstDefinitionOf(string key) =>
             Definitions.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.Ordinal));
+
+        /// <summary>這個鍵名在「引用所在的專案」裡的第一個定義。
+        /// ⚠ 2026-11-15 第七輪：maui-samples 的 TabbedPageSVGIcons 引用自己 Colors.xaml 的 Primary，
+        ///   訊息卻指向另一個範例（BeginnersTask）的 Colors.xaml —— 跟著指路會改錯專案。</summary>
+        public KeyDefinition? FirstDefinitionInProjectOf(string file, string key)
+        {
+            var proj = Projects.ProjectDirOf(Abs(file));
+            return Definitions.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.Ordinal)
+                && string.Equals(Projects.ProjectDirOf(Abs(ById[d.DictionaryId].File)), proj, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public IReadOnlyDictionary<string, string> ClassOfFile { get; set; } = new Dictionary<string, string>();
+        public IReadOnlyDictionary<string, List<ElementUse>> UsesOfClass { get; set; } = new Dictionary<string, List<ElementUse>>();
+        public HashSet<string> ClassesCreatedInCode { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>引用寫在自訂控制項元素上或裡面，而那個控制項類別自己的資源有這個鍵（每一個失敗的側都要有）。</summary>
+        public bool ControlResourcesProvide(KeyReference r, IReadOnlyList<ThemeSide> sides, string? refProject)
+        {
+            if (r.EnclosingClassScopes is not { Count: > 0 } scopes) return false;
+            var related = Projects.Related(refProject);
+            var chain = scopes.Where(id => ById.TryGetValue(id, out var d) && related.Contains(d.ProjectDir ?? "")).ToList();
+            if (chain.Count == 0) return false;
+            var found = new List<KeyDefinition>();
+            foreach (var side in sides)
+            {
+                var res = Engine.Lookup(r.Key, chain, side, refProject);
+                if (res.Status != LookupStatus.Found || res.Definition is null) return false;
+                found.Add(res.Definition);
+            }
+            Reached.UnionWith(found);
+            return true;
+        }
+
+        /// <summary>
+        /// UserControl（有 x:Class 的畫面檔）裡的引用：它在 XAML 裡被放置的每一處，作用域都找得到這個鍵嗎？
+        /// </summary>
+        /// <returns>null：不知道（不是 x:Class 檔、沒有在 XAML 裡被放置、或 C# 也會建立它）。
+        /// 否則 All 表示每一處都有；不是的話 Missing 是第一個沒有的地方。</returns>
+        /// <remarks>
+        /// ⚠ 2026-11-15 第七輪實測 AvalonDock 的 AvalonDockCodeApp：Views/SearchView.xaml 等五個 UserControl 用
+        ///   DynamicResource 取 MainWindow.xaml 的 AppPanelBg…，MainWindow 在自己的資源裡用 DataTemplate 放
+        ///   &lt;views:SearchView/&gt;。執行期往上找得到；舊版報 57 筆 out-of-scope。
+        /// ⚠ 只給 DynamicResource 用（呼叫端判斷）：StaticResource 在控制項自己 InitializeComponent() 時就解析，
+        ///   那時它還沒被放進宿主，宿主的資源看不到。
+        /// ⚠ C# 也會 new 它（或 typeof、DI 註冊）的話，宿主不只這些 —— 不放寬。
+        /// </remarks>
+        public (bool All, ElementUse? Missing)? HostsProvide(KeyReference r, IReadOnlyList<ThemeSide> sides)
+        {
+            var file = Abs(r.Location.File);
+            return ClassOfFile.TryGetValue(file, out var cls)
+                ? HostsProvide(cls, r.Key, sides, Projects.ProjectDirOf(file), 0, [])
+                : null;
+        }
+
+        private (bool All, ElementUse? Missing)? HostsProvide(string cls, string key, IReadOnlyList<ThemeSide> sides,
+                                                              string? project, int depth, HashSet<string> path)
+        {
+            if (depth > 4 || path.Contains(cls)) return null;
+            if (ClassesCreatedInCode.Contains(cls[(cls.LastIndexOf('.') + 1)..])) return null;
+            if (!UsesOfClass.TryGetValue(cls, out var uses)) return null;
+
+            // 同名類別可能在不相干的專案裡各有一個（MAUI 與 Xamarin.Forms 版的同一個範例）：只認相關專案的放置處
+            var related = Projects.Related(project);
+            var mine = uses.Where(u => related.Contains(Projects.ProjectDirOf(Abs(u.Location.File)) ?? "")).ToList();
+            if (mine.Count == 0) return null;
+
+            var deeper = new HashSet<string>(path) { cls };
+            var found = new List<KeyDefinition>();
+            foreach (var u in mine)
+            {
+                var hostFile = Abs(u.Location.File);
+                var hostProject = Projects.ProjectDirOf(hostFile);
+                var here = true;
+                foreach (var side in sides)
+                {
+                    var res = Engine.Lookup(key, u.Chain, side, hostProject);
+                    if (res.Status == LookupStatus.Found && res.Definition is { } def) found.Add(def);
+                    else { here = false; break; }
+                }
+                if (here) continue;
+
+                // 宿主自己也是被放進別處的控制項：再往上一層
+                if (ClassOfFile.TryGetValue(hostFile, out var hostCls)
+                    && HostsProvide(hostCls, key, sides, hostProject, depth + 1, deeper) is { All: true })
+                    continue;
+
+                return (false, u);
+            }
+
+            Reached.UnionWith(found);
+            return (true, null);
+        }
 
         public ResourceDictionaryNode? DictOfRef(KeyReference r) =>
             r.ScopeChain.Count > 0 && ById.TryGetValue(r.ScopeChain[0], out var d) ? d : null;
@@ -707,7 +829,10 @@ public sealed class Analyzer
                     Location = r.Location,
                     Side = allSidesFailed ? ThemeSide.Neutral : unknown.Side,
                     ExternalSource = unknown.Res.ExternalSource,
-                    Message = $"'{r.Key}' is not defined in this tree, but the scope merges " +
+                    // ⚠ 鍵在樹裡別處有定義時，不能說「這棵樹沒有定義」（Uno Chefs 的 ChefsLogoWithIcon 在一本沒接上的字典裡）
+                    Message = $"'{r.Key}' is " + (ctx.DefinedNames.Contains(r.Key)
+                                  ? "not in the scope of this reference"
+                                  : "not defined in this tree") + ", but the scope merges " +
                               $"'{unknown.Res.ExternalSource}' which could not be read -- not reported as dangling",
                 });
                 continue;
@@ -744,9 +869,31 @@ public sealed class Analyzer
                     continue;
                 }
 
+                var failedSides = failures.Select(f => f.Side).ToList();
+
+                // 寫在自訂控制項元素上的引用，鍵在那個控制項自己的資源裡（MVVM-Samples 的 InteractiveSample）
+                if (ctx.ControlResourcesProvide(r, failedSides, refProject))
+                {
+                    result.KeysFromControlResources++;
+                    continue;
+                }
+
+                // UserControl 的 DynamicResource：每一個放置它的地方都有這個鍵（AvalonDock 的 SearchView）
+                ElementUse? missingHost = null;
+                if (r.Kind == RefKind.Dynamic && ctx.HostsProvide(r, failedSides) is { } hosts)
+                {
+                    if (hosts.All)
+                    {
+                        result.KeysResolvedThroughHosts++;
+                        continue;
+                    }
+                    missingHost = hosts.Missing;
+                }
+
                 // 鍵存在，只是不在這條鏈上。本工具的作用域是靜態近似 -- 可能是我們看漏。
                 // ⚠ 一定要講出它定義在哪：只說「在別處」等於要使用者自己去全專案搜尋。
-                var where = ctx.FirstDefinitionOf(r.Key);
+                //   而且要先找**同一個專案**的定義（見 FirstDefinitionInProjectOf）。
+                var where = ctx.FirstDefinitionInProjectOf(r.Location.File, r.Key) ?? ctx.FirstDefinitionOf(r.Key);
                 result.Findings.Add(new Finding
                 {
                     Kind = FindingKind.OutOfScope,
@@ -757,7 +904,9 @@ public sealed class Analyzer
                     Related = where?.Location,
                     Message = $"'{r.Key}' is defined at {where?.Location.ToString() ?? "another place in the tree"} " +
                               $"but that is not in the scope of this reference" +
-                              (allSidesFailed ? "" : $" on the {Finding.SideSlug(side0)} side"),
+                              (allSidesFailed ? "" : $" on the {Finding.SideSlug(side0)} side") +
+                              (missingHost is null ? "" : $"; this control is placed at {missingHost.Location}, " +
+                                                          "whose scope does not have it either"),
                 });
                 continue;
             }
@@ -1014,7 +1163,7 @@ public sealed class Analyzer
                 if (d.IsFrameworkKey) { ctx.FrameworkOverrideNames.Add(d.Key); continue; }
                 // 型別不在這棵樹的 C# 裡 = 別的組件（函式庫）的鍵，那個函式庫的樣板會讀它。
                 // ⚠ 2026-11-15 實測 dnSpy：{x:Static SharpTreeView.DefaultItemContainerStyleKey}（ICSharpCode.TreeView 套件）
-                if (d.MarkupType is { } type && !ctx.MarkupTypesInTree.Contains(type))
+                if (!ctx.MarkupTypeInTree(d))
                 {
                     if (ctx.ExternalLibraryKeyNames.Add(d.Key)) result.LibraryKeyOverrides++;
                     continue;
@@ -1023,6 +1172,16 @@ public sealed class Analyzer
             }
 
             var dict = ctx.ById[d.DictionaryId];
+
+            // Caliburn.Micro：App.xaml 的資源裡放 <local:Bootstrapper x:Key="bootstrapper"/>，沒有人引用 ——
+            // 它存在的目的就是在啟動時被建立。刪掉 App 就不會啟動。
+            // ⚠ 2026-11-15 第七輪 AvalonDock 的 CaliburnDockTestApp。
+            if (d.ElementName?.EndsWith("Bootstrapper", StringComparison.Ordinal) == true
+                && ctx.AppScopeFiles.Contains(dict.File))
+            {
+                result.StartupResources++;
+                continue;
+            }
 
             // ⚠ 函式庫的鍵是它的公開 API：使用者的專案才會引用。
             //   不認這條，MaterialDesignInXamlToolkit 的 3372 個鍵會被報掉 1767 個。
@@ -1155,7 +1314,11 @@ public sealed class Analyzer
             if (d.SuppressedReason is not null) { result.Suppressed++; continue; }
             if (cfg.UsedAtRuntime.Any(p => Config.MatchesGlob(d.Key, p))) { result.Suppressed++; continue; }
 
-            var usedCopy = ctx.Definitions.FirstOrDefault(o => o.Key == d.Key && ctx.Reached.Contains(o));
+            // ⚠ 先找同一個專案的那份：AvalonDock 的 BoolToVisibilityConverter 指到了另一個範例專案
+            var defProject = ctx.Projects.ProjectDirOf(ctx.Abs(dict.File));
+            var usedCopy = ctx.Definitions.FirstOrDefault(o => o.Key == d.Key && ctx.Reached.Contains(o)
+                               && string.Equals(ctx.Projects.ProjectDirOf(ctx.Abs(ctx.ById[o.DictionaryId].File)), defProject,
+                                                StringComparison.OrdinalIgnoreCase));
             var where = usedCopy is null ? "" : $"; the copy in {usedCopy.Location.File} is the one in use";
 
             result.UnusedDefinitions++;

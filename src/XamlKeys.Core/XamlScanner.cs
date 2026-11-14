@@ -125,6 +125,8 @@ public sealed partial class XamlScanner
         if (doc.Root is not { } root) return;
 
         var ignorable = IgnorablePrefixes(root);
+        if (XamlAttr(root, "Class")?.Value?.Trim() is { Length: > 0 } rootClass)
+            _classOfFile[Path.GetFullPath(file)] = rootClass;
 
         if (root.Name.LocalName == "ResourceDictionary")
         {
@@ -210,6 +212,7 @@ public sealed partial class XamlScanner
                                                    && !IsIgnorable(e, ignorable));
 
             chainHere = Prepend(dict.Id, chainHere);
+            if (el.Parent is null) _rootResourcesOfFile[Path.GetFullPath(file)] = dict.Id;
 
             if (wrapper is not null)
                 ReadDictionaryElement(wrapper, dict, chainHere, ignorable, suppressed);
@@ -231,24 +234,59 @@ public sealed partial class XamlScanner
             }
         }
 
-        CollectRefs(el, file, chainHere, ignorable, suppressed);
-
-        string? pendingIgnore = null;
-        foreach (var node in el.Nodes())
+        // 自訂型別的元素（<views:SearchView/>）：記下它被放在哪裡、當時的作用域 ——
+        // 那是 SearchView.xaml 的 DynamicResource 在執行期往上找得到的地方（見 Analyzer.HostsProvide）。
+        var custom = IsCustomTyped(el);
+        if (custom)
         {
-            if (node is XComment c)
+            _elementUses.Add((el.Name.NamespaceName, el.Name.LocalName,
+                              new SourceLocation(Rel(file), LineOf(el)), chainHere));
+            _typeStack.Add((el.Name.NamespaceName, el.Name.LocalName));
+        }
+
+        try
+        {
+            CollectRefs(el, file, chainHere, ignorable, suppressed);
+
+            string? pendingIgnore = null;
+            foreach (var node in el.Nodes())
             {
-                pendingIgnore = ParseIgnore(c, file) ?? pendingIgnore;
-                continue;
+                if (node is XComment c)
+                {
+                    pendingIgnore = ParseIgnore(c, file) ?? pendingIgnore;
+                    continue;
+                }
+
+                if (node is not XElement child) continue;
+                if (ReferenceEquals(child, FindResourcesProperty(el))) { pendingIgnore = null; continue; }
+
+                WalkElement(child, file, chainHere, ignorable, suppressed ?? pendingIgnore);
+                pendingIgnore = null;
             }
-
-            if (node is not XElement child) continue;
-            if (ReferenceEquals(child, FindResourcesProperty(el))) { pendingIgnore = null; continue; }
-
-            WalkElement(child, file, chainHere, ignorable, suppressed ?? pendingIgnore);
-            pendingIgnore = null;
+        }
+        finally
+        {
+            if (custom) _typeStack.RemoveAt(_typeStack.Count - 1);
         }
     }
+
+    /// <summary>框架自己的命名空間。其他命名空間的元素（clr-namespace:、using:、函式庫的 URL）可能是樹裡的類別。</summary>
+    private static readonly HashSet<string> FrameworkNamespaces = new(StringComparer.Ordinal)
+    {
+        "http://schemas.microsoft.com/winfx/2006/xaml/presentation",
+        "http://schemas.microsoft.com/winfx/2006/xaml",
+        "http://schemas.microsoft.com/winfx/2009/xaml",
+        "https://github.com/avaloniaui",
+        "http://schemas.microsoft.com/dotnet/2021/maui",
+        "http://xamarin.com/schemas/2014/forms",
+        "http://schemas.openxmlformats.org/markup-compatibility/2006",
+        "http://schemas.microsoft.com/expression/blend/2008",
+    };
+
+    private static bool IsCustomTyped(XElement el) =>
+        el.Name.NamespaceName.Length > 0
+        && !el.Name.LocalName.Contains('.')
+        && !FrameworkNamespaces.Contains(el.Name.NamespaceName);
 
     /// <summary>讀一個 &lt;ResourceDictionary&gt; 元素：Source、MergedDictionaries、ThemeDictionaries、以及自己的鍵。</summary>
     private void ReadDictionaryElement(XElement rdEl, ResourceDictionaryNode dict,
@@ -277,8 +315,20 @@ public sealed partial class XamlScanner
                         if (m.Attribute("Source")?.Value is { Length: > 0 } s)
                             AddMerged(dict, s, dict.File, LineOf(m));
                         else
+                        {
+                            // Uno 的主題物件用屬性帶進覆寫字典：
+                            //   <MaterialToolkitTheme ColorOverrideSource="ms-appx:///Styles/ColorPaletteOverride.xaml"
+                            //                         FontOverrideSource="ms-appx:///Styles/MaterialFontsOverride.xaml"/>
+                            // 覆寫的值蓋過主題，所以排在主題前面（WinUI 先宣告的贏）。
+                            // ⚠ 2026-11-15 第七輪 Uno Chefs：舊版把這兩本報成孤兒，裡面的 ChefsLogoWithIcon 等鍵變成 external。
+                            foreach (var a in m.Attributes())
+                                if (a.Name.Namespace == XNamespace.None
+                                    && a.Name.LocalName.EndsWith("OverrideSource", StringComparison.Ordinal)
+                                    && a.Value.Trim() is { Length: > 0 } ov && !ov.StartsWith('{'))
+                                    AddMerged(dict, ov, dict.File, LineOf(m));
                             // 行內合併：<ResourceDictionary> 直接寫在 MergedDictionaries 裡
                             InlineMerged(m, dict, chain, ignorable, suppressed);
+                        }
                     }
                     break;
 
@@ -451,6 +501,7 @@ public sealed partial class XamlScanner
                     IsFrameworkKey = markup?.Framework ?? false,
                     MemberName = markup?.Member,
                     MarkupType = markup?.TypeName,
+                    MarkupTypeNamespace = markup?.TypeNamespace,
                     Location = new SourceLocation(Rel(dict.File), LineOf(el)),
                     DictionaryId = dict.Id,
                     ElementName = el.Name.LocalName,
@@ -534,6 +585,7 @@ public sealed partial class XamlScanner
                 SuppressedReason = suppressed,
                 Owner = _owner,
             });
+            RememberEnclosingTypes(_references[^1]);
         }
 
         foreach (var attr in el.Attributes())
@@ -587,6 +639,15 @@ public sealed partial class XamlScanner
             SuppressedReason = suppressed,
             Owner = _owner,
         });
+        RememberEnclosingTypes(_references[^1]);
+    }
+
+    private void RememberEnclosingTypes(KeyReference r)
+    {
+        if (_typeStack.Count == 0) return;
+        var arr = _typeStack.ToArray();
+        Array.Reverse(arr);                       // 由內而外
+        _enclosingOfRef[r] = arr;
     }
 
     private readonly List<SourceLocation> _unresolvedSites = [];
@@ -635,6 +696,62 @@ public sealed partial class XamlScanner
                 ClassBackedDictionariesLinked++;
                 break;
             }
+        }
+    }
+
+    // ── 自訂控制項：它被放在哪裡、它自己帶的資源 ────────────────────────────
+
+    private readonly Dictionary<string, string> _classOfFile = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _rootResourcesOfFile = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(string Ns, string Name, SourceLocation Location, IReadOnlyList<int> Chain)> _elementUses = [];
+    private readonly List<(string Ns, string Name)> _typeStack = [];
+    private readonly Dictionary<KeyReference, (string Ns, string Name)[]> _enclosingOfRef =
+        new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>根元素的 x:Class：檔案（絕對路徑） → 類別全名。</summary>
+    public IReadOnlyDictionary<string, string> ClassOfFile => _classOfFile;
+
+    /// <summary>類別全名 → 它在 XAML 裡被當成元素放置的每一處（含當時的作用域鏈）。<see cref="ResolveElementTypes"/> 之後才有。</summary>
+    public Dictionary<string, List<ElementUse>> UsesOfClass { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 把元素名（命名空間＋名字）對回樹裡的 x:Class。要在 <see cref="XmlnsMap"/> 填好之後呼叫。
+    /// 同時替每個寫在自訂元素裡面的引用，記下那些元素的類別自己的 &lt;X.Resources&gt;（由內而外）。
+    /// </summary>
+    public void ResolveElementTypes()
+    {
+        var filesOfClass = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (file, cls) in _classOfFile)
+        {
+            if (!filesOfClass.TryGetValue(cls, out var list)) filesOfClass[cls] = list = [];
+            list.Add(file);
+        }
+
+        string? ClassOf(string ns, string name)
+        {
+            foreach (var clr in ClrNamespacesOf(ns))
+            {
+                var full = clr.Length == 0 ? name : $"{clr}.{name}";
+                if (filesOfClass.ContainsKey(full)) return full;
+            }
+            return null;
+        }
+
+        foreach (var (ns, name, loc, chain) in _elementUses)
+            if (ClassOf(ns, name) is { } cls)
+            {
+                if (!UsesOfClass.TryGetValue(cls, out var list)) UsesOfClass[cls] = list = [];
+                list.Add(new ElementUse(cls, loc, chain));
+            }
+
+        foreach (var (r, stack) in _enclosingOfRef)
+        {
+            List<int>? ids = null;
+            foreach (var (ns, name) in stack)
+                if (ClassOf(ns, name) is { } cls)
+                    foreach (var f in filesOfClass[cls])
+                        if (_rootResourcesOfFile.TryGetValue(f, out var id)) (ids ??= []).Add(id);
+            if (ids is not null) r.EnclosingClassScopes = ids;
         }
     }
 

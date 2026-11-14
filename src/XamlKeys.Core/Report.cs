@@ -49,6 +49,9 @@ public static class Report
             w.WriteNumber("keysNamedInCode", r.KeysNamedInCode);
             w.WriteNumber("dynamicKeysNamedInCode", r.DynamicKeysNamedInCode);
             w.WriteNumber("keysAddedInCode", r.KeysAddedInCode);
+            w.WriteNumber("keysResolvedThroughHosts", r.KeysResolvedThroughHosts);
+            w.WriteNumber("keysFromControlResources", r.KeysFromControlResources);
+            w.WriteNumber("startupResources", r.StartupResources);
             w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
             w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
             w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
@@ -226,7 +229,7 @@ public static class Report
             o.WriteLine($"note: {r.VariantDictionaryGroups} dictionary pair(s) look like locale/theme variants " +
                         $"(near-identical key sets) and were not reported as shadowing");
         if (r.FrameworkProvided > 0)
-            o.WriteLine($"note: {r.FrameworkProvided} reference(s) resolve to keys the WinUI framework provides");
+            o.WriteLine($"note: {r.FrameworkProvided} reference(s) resolve to keys the UI framework or a bundled theme list provides");
         if (r.Config.DialectMixed)
             o.WriteLine("note: this tree contains both WPF and WinUI projects, whose merge order is opposite; " +
                         "each dictionary was resolved with its own project's rules");
@@ -267,6 +270,15 @@ public static class Report
                         $"-- not reported as shadowed or unused");
         if (r.KeysAddedInCode > 0)
             o.WriteLine($"note: {r.KeysAddedInCode} reference(s) name a key that C# adds to resources (Resources.Add) -- not reported as dangling");
+        if (r.KeysResolvedThroughHosts > 0)
+            o.WriteLine($"note: {r.KeysResolvedThroughHosts} DynamicResource reference(s) in a UserControl resolve in every place " +
+                        $"the control is put in XAML -- not reported as out-of-scope");
+        if (r.StartupResources > 0)
+            o.WriteLine($"note: {r.StartupResources} App.xaml resource(s) exist to be created at startup (a Caliburn.Micro " +
+                        $"bootstrapper) -- not reported as unused");
+        if (r.KeysFromControlResources > 0)
+            o.WriteLine($"note: {r.KeysFromControlResources} reference(s) on a custom control resolve in that control's own " +
+                        $"resources -- not reported as out-of-scope");
         if (r.KeyedDictionaries > 0)
             o.WriteLine($"note: {r.KeyedDictionaries} keyed ResourceDictionar(ies) inside a dictionary were treated as " +
                         $"alternatives the app picks at runtime -- their keys count as defined");

@@ -176,7 +176,10 @@ public sealed partial class ProjectIndex
         try
         {
             var text = File.ReadAllText(proj);
+            // ⚠ 2026-11-15 第七輪 Uno Chefs：Uno 的單一專案格式只寫 <Project Sdk="Uno.Sdk">（UnoFeatures 帶進 WinUI），
+            //   csproj 裡沒有 UseWinUI 也沒有 Microsoft.UI.Xaml —— 舊版判成 WPF，Uno Material 的清單沒套上，93 筆 external。
             return text.Contains("<UseWinUI>true</UseWinUI>", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Sdk=\"Uno.Sdk", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("Microsoft.WindowsAppSDK", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("<TargetPlatformIdentifier>UAP", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("Microsoft.UI.Xaml", StringComparison.OrdinalIgnoreCase);

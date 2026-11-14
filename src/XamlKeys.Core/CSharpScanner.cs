@@ -121,18 +121,48 @@ public sealed partial class CSharpScanner
     /// <summary>WordsToFind 裡，在某個 C# 檔以完整的字出現過的。</summary>
     public HashSet<string> WordsFound { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>要找「在程式裡建立」的控制項類別（短名）。掃描前由 Analyzer 填：在 XAML 裡被放置過的 x:Class。</summary>
+    public HashSet<string> ClassesToFind { get; } = new(StringComparer.Ordinal);
+    /// <summary>ClassesToFind 裡，C# 有 <c>new X(</c>、<c>typeof(X)</c>、<c>&lt;X&gt;</c>（DI 註冊、導覽）的 ——
+    /// 它的宿主不只 XAML 裡看得到的那幾處。</summary>
+    public HashSet<string> ClassesCreatedInCode { get; } = new(StringComparer.Ordinal);
+
+    private void FindCreatedClasses(string code)
+    {
+        foreach (var c in ClassesToFind)
+        {
+            if (ClassesCreatedInCode.Contains(c) || !code.Contains(c, StringComparison.Ordinal)) continue;
+            var n = Regex.Escape(c);
+            if (Regex.IsMatch(code, $@"\bnew\s+(?:[\w.]+\.)?{n}\s*[({{]|\btypeof\s*\(\s*(?:[\w.]+\.)?{n}\s*\)|[<,]\s*(?:[\w.]+\.)?{n}\s*[>,]"))
+                ClassesCreatedInCode.Add(c);
+        }
+    }
+
     /// <summary>要找「宣告」的型別名（markup 鍵的型別）。只是用到不算 —— dnSpy 用了 SharpTreeView，但它在套件裡。</summary>
     public HashSet<string> TypesToFind { get; } = new(StringComparer.Ordinal);
     public HashSet<string> TypesDeclared { get; } = new(StringComparer.Ordinal);
+    /// <summary>同上，連命名空間（"Ns.Type"）。一個檔宣告了幾個命名空間就每個都記 —— 寧可多認（多認 = 照舊判 unused）。</summary>
+    /// <remarks>⚠ 2026-11-15 第七輪 AvalonDock：MLibTest 覆寫 ColorPickerLib.Themes.ResourceKeys 的鍵（函式庫在套件裡），
+    ///   但 AvalonDock 自己也有一個叫 ResourceKeys 的類別 —— 只比短名的話，10 個覆寫被報成沒人用。</remarks>
+    public HashSet<string> QualifiedTypesDeclared { get; } = new(StringComparer.Ordinal);
 
     private void FindTypes(string code)
     {
+        List<string>? namespaces = null;
         foreach (var t in TypesToFind)
         {
-            if (TypesDeclared.Contains(t) || !code.Contains(t, StringComparison.Ordinal)) continue;
-            if (Regex.IsMatch(code, $@"(?<![\w])(?:class|struct|record|interface|enum)\s+{Regex.Escape(t)}(?![\w])")) TypesDeclared.Add(t);
+            if (!code.Contains(t, StringComparison.Ordinal)) continue;
+            if (!Regex.IsMatch(code, $@"(?<![\w])(?:class|struct|record|interface|enum)\s+{Regex.Escape(t)}(?![\w])")) continue;
+            TypesDeclared.Add(t);
+            namespaces ??= NamespaceDeclRegex().Matches(code).Select(m => m.Groups["n"].Value).ToList();
+            foreach (var ns in namespaces) QualifiedTypesDeclared.Add($"{ns}.{t}");
+            // 檔裡看不到命名空間宣告（全域型別、或我們讀不懂的寫法）：不知道它在哪個命名空間，當成哪裡都對得上
+            if (namespaces.Count == 0) QualifiedTypesDeclared.Add(t);
         }
     }
+
+    [GeneratedRegex(@"(?<![\w])namespace\s+(?<n>[\w.]+)")]
+    private static partial Regex NamespaceDeclRegex();
 
     private void FindWords(string code)
     {
@@ -166,6 +196,7 @@ public sealed partial class CSharpScanner
         var project = ProjectOf?.Invoke(file);
         if (WordsToFind.Count > 0) FindWords(code);
         if (TypesToFind.Count > 0) FindTypes(code);
+        if (ClassesToFind.Count > 0) FindCreatedClasses(code);
 
         // 不是查找參數的字串字面（見 NamesInCode）。讀取的查找要排除；寫入（Resources["K"] = v）留著。
         // ⚠ 這一段要對**每一個** C# 檔做：鍵名常常在跟資源完全無關的檔裡（dnSpy 的 TabGroup.cs 只寫了

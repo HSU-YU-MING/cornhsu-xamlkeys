@@ -168,7 +168,7 @@ public static class ReportHtml
         if (r.VariantDictionaryGroups > 0)
             blind.Add($"{r.VariantDictionaryGroups} dictionary pair(s) look like locale/theme variants");
         if (r.FrameworkProvided > 0)
-            blind.Add($"{r.FrameworkProvided} reference(s) resolve to WinUI framework keys");
+            blind.Add($"{r.FrameworkProvided} reference(s) resolve to framework or bundled theme keys");
         if (r.ParseErrors.Count > 0)
             blind.Add($"{r.ParseErrors.Count} file(s) failed to parse and were skipped");
         if (r.Suppressed > 0)

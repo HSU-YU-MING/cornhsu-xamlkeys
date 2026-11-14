@@ -236,6 +236,28 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **A seventh corpus round, and a `UserControl`'s real parent** (Notepads, LiveCharts2, Avalonia.Samples,
+  Uno Chefs, XamlFlair, MVVM-Samples, AvalonDock): 468 findings on the first run, 285 after; 15 fewer in the
+  earlier 31 projects; the 43 gated findings unchanged. New:
+  - a `DynamicResource` in a `UserControl` that its own scope lacks is resolved when **every** place the
+    control is put in XAML (`<views:SearchView/>`, inside a `DataTemplate` too) has the key, following hosts
+    that are themselves placed controls. Only placements in related projects count; a control C# also creates
+    (`new X(`, `typeof(X)`, `<X>`) is not relaxed; if one placement lacks the key the finding stays and names
+    it (`keysResolvedThroughHosts`). `StaticResource` is never resolved this way: it is looked up when the
+    control loads, before it is placed;
+  - a reference on (or inside) an element whose class is an x:Class file sees that class's own root
+    resources, including a page whose root element is its XAML base page (`keysFromControlResources`);
+  - `out-of-scope` and dead-copy messages point at a definition in the same project first;
+  - two projects with the same assembly name: `/Asm;component/…` resolves in the referencing project first;
+  - `<Project Sdk="Uno.Sdk">` is a WinUI project, so the Uno theme lists apply;
+  - `{ComponentResourceKey}`/`{x:Static}` key types are matched with their namespace — a same-named class in
+    another namespace no longer makes a library key look like the project's own;
+  - a Caliburn.Micro `<local:Bootstrapper x:Key="…"/>` in App.xaml is not unused (`startupResources`);
+  - Uno theme objects' `ColorOverrideSource`/`FontOverrideSource` dictionaries are merged.
+
+  Wording: an `external` finding no longer says a key "is not defined in this tree" when it is defined
+  elsewhere in the tree, and the summary note on framework keys no longer says "WinUI" for every framework.
+
 - **Security: paths outside the scan root are never probed.** A merge path or a csproj `Include` comes from
   the repository being scanned. Checking whether `\\host\share\x.xaml` exists makes Windows open an SMB
   connection to that host and send NTLM credentials — on a CI runner, from a pull request. Every

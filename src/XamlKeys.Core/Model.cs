@@ -53,6 +53,8 @@ public sealed class KeyDefinition
     public string? MemberName { get; init; }
     /// <summary>markup 鍵的型別短名（C# 裡找不到 = 別的組件的鍵）。</summary>
     public string? MarkupType { get; init; }
+    /// <summary>markup 鍵的型別的 CLR 命名空間（XAML 寫明的才有）。有的話比對型別時連命名空間一起比。</summary>
+    public string? MarkupTypeNamespace { get; init; }
 
     /// <summary>資源別名：&lt;StaticResource x:Key="A" ResourceKey="B"/&gt; —— 定義 A 的同時引用 B。</summary>
     public string? AliasTarget { get; init; }
@@ -101,8 +103,19 @@ public sealed class KeyReference
     /// </remarks>
     public KeyDefinition? Owner { get; init; }
 
+    /// <summary>
+    /// 這個引用寫在哪些「樹裡有 x:Class 的自訂元素」裡面（含它所在的那個元素）：那些類別自己的
+    /// 根層 &lt;X.Resources&gt; 字典 Id，由內而外。執行期查找會經過那些實例，它們的資源在建構時就填好了。
+    /// </summary>
+    /// <remarks>2026-11-15 實測 MVVM-Samples：頁面寫 &lt;controls:InteractiveSample ControlTemplate="{StaticResource InteractiveSampleTemplate}"/&gt;，
+    /// 那個鍵定義在 InteractiveSample.xaml 自己的資源裡 —— 舊版報 13 筆 out-of-scope。</remarks>
+    public IReadOnlyList<int>? EnclosingClassScopes { get; set; }
+
     public override string ToString() => $"{{{Kind}Resource {Key}}} @ {Location}";
 }
+
+/// <summary>自訂控制項在 XAML 裡被放置的一處（&lt;views:SearchView/&gt;），與那個位置的作用域鏈。</summary>
+public sealed record ElementUse(string ClassName, SourceLocation Location, IReadOnlyList<int> Chain);
 
 /// <summary>合併進來的一本字典。解析不到來源時 ResolvedDictionaryId 是 null —— 那是 external。</summary>
 public sealed class MergedReference

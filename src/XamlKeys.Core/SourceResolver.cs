@@ -18,8 +18,12 @@ public readonly record struct SourceResolution(string? Path, string? ExternalRea
 public sealed partial class SourceResolver
 {
     private readonly string _root;
-    /// <summary>組件名（小寫） → 該專案的目錄。由掃描範圍內的 *.csproj 推出來。</summary>
-    private readonly Dictionary<string, string> _assemblies;
+    /// <summary>組件名（不分大小寫） → 用這個組件名的專案目錄（可能不只一個）。由掃描範圍內的 *.csproj 推出來。</summary>
+    /// <remarks>⚠ 2026-11-15 第七輪：WPF-Samples 有兩個專案都叫 ExpenseIt9（入門教學與完整範例）。
+    ///   舊版一個名字只記一個目錄（後讀到的蓋掉先讀到的），入門教學的 App.xaml 合併
+    ///   /ExpenseIt9;component/Styles.xaml 時接到了另一個專案的 Styles.xaml —— 報出 10 筆假 out-of-scope。
+    ///   同名時先用**引用所在的那個專案**。</remarks>
+    private readonly Dictionary<string, List<string>> _assemblies;
 
     public SourceResolver(string root, IEnumerable<string> projectFiles,
                           IReadOnlyDictionary<string, string>? externalDictionaries = null)
@@ -50,7 +54,8 @@ public sealed partial class SourceResolver
             }
             catch (IOException) { /* 讀不到就用檔名 */ }
 
-            _assemblies[name] = dir;
+            if (!_assemblies.TryGetValue(name, out var dirs)) _assemblies[name] = dirs = [];
+            if (!dirs.Contains(dir, StringComparer.OrdinalIgnoreCase)) dirs.Add(dir);
             ReadLinks(proj, dir);
         }
 
@@ -70,8 +75,17 @@ public sealed partial class SourceResolver
         {
             var dir = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(_root, path));
             if (!IsAllowed(dir + Path.DirectorySeparatorChar + "_")) continue;
-            if (directoryProbe(dir)) _assemblies[assembly] = dir;
+            if (directoryProbe(dir)) _assemblies[assembly] = [dir];
         }
+    }
+
+    /// <summary>用這個組件名的專案目錄：引用所在的那個專案排第一（最深的優先），其餘照讀到的順序。</summary>
+    private IEnumerable<string> AssemblyDirs(string assembly, string containingFile)
+    {
+        if (!_assemblies.TryGetValue(assembly, out var dirs)) return [];
+        if (dirs.Count == 1) return dirs;
+        var full = Path.GetFullPath(containingFile);
+        return dirs.OrderByDescending(d => full.StartsWith(d + Path.DirectorySeparatorChar, PathComparison) ? d.Length : -1);
     }
 
     /// <summary>
@@ -189,13 +203,15 @@ public sealed partial class SourceResolver
         // 跨組件
         if (assembly is not null)
         {
-            if (!_assemblies.TryGetValue(assembly, out var projDir))
+            if (!_assemblies.ContainsKey(assembly))
                 return new(null, $"assembly '{assembly}' is not in the scanned tree", assembly);
 
-            var crossed = Path.GetFullPath(Path.Combine(projDir, path));
-            return Exists(crossed)
-                ? new(crossed, null, assembly)
-                : new(null, $"'{path}' not found in assembly '{assembly}'", assembly);
+            foreach (var projDir in AssemblyDirs(assembly, containingFile))
+            {
+                var crossed = Path.GetFullPath(Path.Combine(projDir, path));
+                if (Exists(crossed)) return new(crossed, null, assembly);
+            }
+            return new(null, $"'{path}' not found in assembly '{assembly}'", assembly);
         }
 
         // 同組件：絕對路徑形式（/Themes/Dark.xaml）相對於「專案根」，
@@ -218,11 +234,12 @@ public sealed partial class SourceResolver
             if (src.StartsWith("ms-appx:", StringComparison.OrdinalIgnoreCase) || src.StartsWith('/'))
             {
                 var slash = path.IndexOf('/');
-                if (slash > 0 && _assemblies.TryGetValue(path[..slash], out var asmDir))
-                {
-                    var inAsm = Path.GetFullPath(Path.Combine(asmDir, path[(slash + 1)..]));
-                    if (Exists(inAsm)) return new(inAsm, null, path[..slash]);
-                }
+                if (slash > 0)
+                    foreach (var asmDir in AssemblyDirs(path[..slash], containingFile))
+                    {
+                        var inAsm = Path.GetFullPath(Path.Combine(asmDir, path[(slash + 1)..]));
+                        if (Exists(inAsm)) return new(inAsm, null, path[..slash]);
+                    }
             }
 
             return new(null, $"'{path}' not found from any project root", null);

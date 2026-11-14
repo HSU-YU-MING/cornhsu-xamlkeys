@@ -19,7 +19,9 @@ public static class MarkupKeys
     /// <param name="Framework">型別屬於框架（預設命名空間、或 System.*／Microsoft.UI.*／Avalonia.*／Microsoft.Maui.*）。</param>
     /// <param name="Member">在 C# 裡找得到就算有人用的名字（x:Static 的成員名、ComponentResourceKey 的 ResourceId）。</param>
     /// <param name="TypeName">型別的短名。C# 裡找不到它 = 型別在別的組件（函式庫的鍵，由函式庫自己的樣板讀）。</param>
-    public readonly record struct Canonical(string Key, bool Framework, string Member, string TypeName);
+    /// <param name="TypeNamespace">型別的 CLR 命名空間（clr-namespace:／using: 寫明的才有；網址命名空間是 null）。</param>
+    public readonly record struct Canonical(string Key, bool Framework, string Member, string TypeName,
+                                            string? TypeNamespace = null);
 
     private static readonly string[] PresentationNamespaces =
     [
@@ -59,7 +61,8 @@ public static class MarkupKeys
             if (dot <= 0 || dot == rest.Length - 1) return null;   // 一定要是 Type.Member
             var typePart = rest[..dot];
             return new Canonical($"{{x:Static {ns}{rest}}}", fw, rest[(dot + 1)..],
-                                 typePart.Contains('.') ? typePart[(typePart.LastIndexOf('.') + 1)..] : typePart);
+                                 typePart.Contains('.') ? typePart[(typePart.LastIndexOf('.') + 1)..] : typePart,
+                                 TypeNamespaceOf(ns, typePart));
         }
 
         if (local is "ComponentResourceKey" or "ComponentResourceKeyExtension")
@@ -107,10 +110,19 @@ public static class MarkupKeys
 
             var (ns, rest, fw) = Qualify(type, resolveNs);
             return new Canonical($"{{ComponentResourceKey {ns}{rest}, {id}}}", fw, id,
-                                 rest.Contains('.') ? rest[(rest.LastIndexOf('.') + 1)..] : rest);
+                                 rest.Contains('.') ? rest[(rest.LastIndexOf('.') + 1)..] : rest,
+                                 TypeNamespaceOf(ns, rest));
         }
 
         return null;
+    }
+
+    /// <summary>Qualify 給的前置字（"Ns."、""、"?p:"、網址）加上型別的寫法（可能是 Outer.Type）→ 完整的 CLR 命名空間；不確定就 null。</summary>
+    private static string? TypeNamespaceOf(string nsPrefix, string typeText)
+    {
+        if (nsPrefix.Length == 0 || !nsPrefix.EndsWith('.') || nsPrefix.Contains(':')) return null;
+        var full = nsPrefix + typeText;
+        return full[..full.LastIndexOf('.')];
     }
 
     /// <summary>「前綴:Type.Member」→（命名空間前置字、Type.Member、是不是框架）。</summary>
