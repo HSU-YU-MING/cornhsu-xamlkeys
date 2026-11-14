@@ -34,6 +34,9 @@ public sealed class AnalysisResult
     /// <summary>解析不到、但確認是框架提供的引用數。</summary>
     public int FrameworkProvided { get; set; }
 
+    /// <summary>這棵樹引用了 .NET 內建的 Fluent 主題（PresentationFramework.Fluent）。</summary>
+    public bool WpfFluentThemeInUse { get; set; }
+
     /// <summary>程式在執行期合併進來的字典數（主題切換）。</summary>
     public int RuntimeLoadedDictionaries { get; set; }
 
@@ -164,6 +167,10 @@ public sealed class Analyzer
         // 不是整棵樹的（見 ScopeEngine.EffectiveChain）。
         foreach (var d in dicts) d.ProjectDir = projects.ProjectDirOf(d.File);
 
+        // .NET 9 起 WPF 內建的 Fluent 主題是**選用**的 —— 只有真的被合併進來時,
+        // 它的 955 個鍵才算「框架提供」。沒用它的專案不該被這份清單遮掉真懸空。
+        result.WpfFluentThemeInUse = result.ExternalSources.Any(FrameworkKeys.IsWpfFluentSource);
+
         ApplyThemeSides(dicts, config);
         var themeEntries = PropagateThemeSides(dicts);
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
@@ -269,6 +276,10 @@ public sealed class Analyzer
             return set;
         }
 
+        /// <summary>這個鍵名在樹裡的第一個定義（給 out-of-scope 指路用）。</summary>
+        public KeyDefinition? FirstDefinitionOf(string key) =>
+            Definitions.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.Ordinal));
+
         public ResourceDictionaryNode? DictOfRef(KeyReference r) =>
             r.ScopeChain.Count > 0 && ById.TryGetValue(r.ScopeChain[0], out var d) ? d : null;
 
@@ -361,7 +372,8 @@ public sealed class Analyzer
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
             //    這一條必須排在查找**之後**：排在前面會把本來解析得到的引用也短路掉 ——
             //    實測 wpfui（WPF 專案，自己定義了同名的鍵）有 3021 筆被誤判成「框架提供」。
-            if (FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect)) { result.FrameworkProvided++; continue; }
+            if (FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.WpfFluentThemeInUse))
+            { result.FrameworkProvided++; continue; }
 
             // ⚠ 函式庫專案：它的字典是給**使用者**合併的，我們看不到使用者的作用域。
             //   只要鍵在同一個專案裡找得到，就當作它解析得到 —— 否則 wpfui 會冒出 1339 筆假 out-of-scope。
@@ -401,9 +413,20 @@ public sealed class Analyzer
                 }
 
                 // 鍵存在，只是不在這條鏈上。本工具的作用域是靜態近似 -- 可能是我們看漏。
-                result.Findings.Add(Make(FindingKind.OutOfScope, r, side0, cfg,
-                    $"'{r.Key}' is defined elsewhere in the tree but not in the scope of this reference" +
-                    (allSidesFailed ? "" : $" on the {Finding.SideSlug(side0)} side")));
+                // ⚠ 一定要講出它定義在哪：只說「在別處」等於要使用者自己去全專案搜尋。
+                var where = ctx.FirstDefinitionOf(r.Key);
+                result.Findings.Add(new Finding
+                {
+                    Kind = FindingKind.OutOfScope,
+                    Severity = cfg.SeverityFor(FindingKind.OutOfScope),
+                    Key = r.Key,
+                    Location = r.Location,
+                    Side = side0,
+                    Related = where?.Location,
+                    Message = $"'{r.Key}' is defined at {where?.Location.ToString() ?? "another place in the tree"} " +
+                              $"but that is not in the scope of this reference" +
+                              (allSidesFailed ? "" : $" on the {Finding.SideSlug(side0)} side"),
+                });
                 continue;
             }
 
@@ -412,8 +435,13 @@ public sealed class Analyzer
                 ? "StaticResource throws at load time"
                 : "DynamicResource silently falls back to the default value";
 
+            // 懸空的鍵絕大多數是打錯字或改名留下的 —— 講出最接近的那個名字,
+            // 使用者才看得懂發生了什麼事（實測 QuillNest 的 InverseBoolToVis）。
+            var hint = NearMiss.Suggest(r.Key, ctx.DefinedNames) is { } near
+                ? $". Did you mean '{near}'?" : "";
+
             var finding = Make(kind, r, side0, cfg,
-                $"'{r.Key}' is not defined anywhere in this tree; {consequence}");
+                $"'{r.Key}' is not defined anywhere in this tree; {consequence}{hint}");
 
             // ⚠ 函式庫／外掛專案：它的字典是給**別人**合併的,而那個「別人」會先合併什麼
             //   我們不可能知道。ModernWpf、MaterialDesignThemes.MahApps、Wpf.Ui、
@@ -434,7 +462,7 @@ public sealed class Analyzer
                     Location = r.Location,
                     Side = side0,
                     Message = $"'{r.Key}' is not defined anywhere in this library project; {consequence}. " +
-                              $"A library's consumer may supply it, so this is not gated",
+                              $"A library's consumer may supply it, so this is not gated{hint}",
                 };
                 result.LibraryUnresolvedReferences++;
             }
@@ -656,6 +684,11 @@ public sealed class Analyzer
                 ? ""
                 : $" ({all.Count} definitions, e.g. also {all[1].Location})";
 
+            // 改名留下的孤兒：另一半通常就在旁邊,而且**有人在用**。
+            // 只在「被引用過的鍵名」裡找,才不會拿另一個同樣沒人用的鍵去誤導。
+            var renamed = NearMiss.Suggest(group.Key, ctx.ReferencedNames) is { } other
+                ? $". A similarly named key '{other}' is referenced -- was this renamed?" : "";
+
             result.Findings.Add(new Finding
             {
                 Kind = FindingKind.Unused,
@@ -664,7 +697,7 @@ public sealed class Analyzer
                 Location = all[0].Location,
                 // ⚠ 執行期組出來的鍵名那條提醒刻意**不**放在每一筆 finding 上：
                 //   它會在每一行重複一次，使用者只會學會忽略它。位置在 summary 與 console 結尾。
-                Message = $"'{group.Key}' is defined but never referenced in XAML or code{where}",
+                Message = $"'{group.Key}' is defined but never referenced in XAML or code{where}{renamed}",
             });
         }
     }

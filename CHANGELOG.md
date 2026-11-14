@@ -170,3 +170,21 @@ Avalonia use `.../2006/xaml`. The 2006 URI was hard-coded, so every `x:Key` was 
 After the fix: 4,361 keys in maui-samples and 40 `fail`-level findings — **all of them real**;
 `ThemePrimary`, `TextPrimaryColor` and the rest are defined nowhere in that repository. eShop goes
 from 239 false danglings to zero. None of the fifteen existing projects changed by a single finding.
+
+### The built-in WPF Fluent theme, and naming hints
+
+- **`PresentationFramework.Fluent` keys are recognised** — 955 names generated from `dotnet/wpf`,
+  the same way the WinUI list is generated. It is **opt-in**: the list is only consulted when the
+  tree actually merges that theme, because WPF's Fluent theme is optional while WinUI's framework
+  resources are always present. Excusing those names unconditionally would hide real danglings in
+  every WPF project that does not use Fluent. `microsoft/WPF-Samples` goes from 448 `external`
+  findings to 16, and no other project in the corpus changes by a single finding.
+- **Dangling and unused findings name the closest key they can see.** Most of them are a typo or
+  the leftover half of a rename — QuillNest's `InverseBoolToVis` sat next to an
+  `InverseBoolToVisibilityConverter` that is referenced twelve times, and `microsoft/maui-samples`
+  references `CardBackgroundColor` where it defines `CardBackground`.
+  The comparison runs on the parts of the two names that actually differ, after the common prefix
+  and suffix are stripped: without that, `Vector.Back` suggests `Vector.Clock` and
+  `TextPrimaryColor` suggests `LightPrimaryColor`. A wrong suggestion is worse than none, so the
+  tests for this feature are mostly about **staying quiet**.
+- **`out-of-scope` now names where the key is defined** instead of saying "elsewhere in the tree".

@@ -24,8 +24,11 @@
     "libraryKeysNotChecked": 0,
     "variantDictionaryGroups": 0,
     "frameworkProvided": 0,
-    "winUiKeySource": "unknown",
+    "winUiKeySource": "microsoft/microsoft-ui-xaml@9402930972f25cfcad82abc9f82ecab29936f404",
     "winUiKeyCount": 3573,
+    "wpfFluentThemeInUse": false,
+    "wpfFluentKeySource": "dotnet/wpf@e7acf467c05e51901b17684b1f2c330e7dc5fc4d",
+    "wpfFluentKeyCount": 955,
     "runtimeLoadedDictionaries": 2,
     "implicitThemeDictionaries": 0,
     "runtimeSelectedFamilyFiles": 0,
@@ -80,7 +83,7 @@
       "file": "QuillNest/Views/NoteEditorWindow.xaml",
       "line": 14,
       "side": "neutral",
-      "message": "\u0027InverseBoolToVis\u0027 is defined but never referenced in XAML or code"
+      "message": "\u0027InverseBoolToVis\u0027 is defined but never referenced in XAML or code. A similarly named key \u0027InverseBoolToVisibilityConverter\u0027 is referenced -- was this renamed?"
     },
     {
       "kind": "unused",

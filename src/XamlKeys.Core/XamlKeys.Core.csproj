@@ -16,6 +16,7 @@
        產生方式見 scripts/regenerate-framework-keys.mjs；授權聲明在 THIRD-PARTY-NOTICES.md。 -->
   <ItemGroup>
     <EmbeddedResource Include="WinUiFrameworkKeys.json" LogicalName="XamlKeys.Core.WinUiFrameworkKeys.json" />
+    <EmbeddedResource Include="WpfFluentKeys.json" LogicalName="XamlKeys.Core.WpfFluentKeys.json" />
   </ItemGroup>
 
 </Project>

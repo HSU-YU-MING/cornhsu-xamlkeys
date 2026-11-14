@@ -53,19 +53,31 @@ done
 2026-11-14 的基準數字（第一版）記在 `docs/實查歸因-2026-11-14.md` 第 3 節。
 **任何一類的計數大幅變動都要能解釋**。
 
-## WinUI 框架鍵清單
+## 框架鍵清單（WinUI 與 WPF Fluent）
 
-`src/XamlKeys.Core/WinUiFrameworkKeys.json` 不是手抄的。重新產生：
+`WinUiFrameworkKeys.json`（3,573 個鍵）與 `WpfFluentKeys.json`（955 個鍵）都不是手抄的：
 
 ```bash
+# WinUI（microsoft/microsoft-ui-xaml）
 git clone --filter=blob:none --no-checkout --depth 1 \
   https://github.com/microsoft/microsoft-ui-xaml.git muxc
 (cd muxc && git sparse-checkout init --cone \
    && git sparse-checkout set --no-cone '/**/*.xaml' && git checkout)
-node scripts/regenerate-framework-keys.mjs muxc "$(cd muxc && git rev-parse HEAD)"
+node scripts/regenerate-framework-keys.mjs winui muxc "$(cd muxc && git rev-parse HEAD)"
+
+# WPF 內建的 Fluent 主題（dotnet/wpf，.NET 9 起）
+git clone --filter=blob:none --no-checkout --depth 1 https://github.com/dotnet/wpf.git dotnet-wpf
+(cd dotnet-wpf && git sparse-checkout init --cone \
+   && git sparse-checkout set --no-cone '/**/*.xaml' && git checkout)
+node scripts/regenerate-framework-keys.mjs fluent dotnet-wpf "$(cd dotnet-wpf && git rev-parse HEAD)"
 ```
 
-看 `git diff` 再 commit，**並且把 `THIRD-PARTY-NOTICES.md` 裡的 commit 一起更新**。
+看 `git diff` 再 commit，**並且把 `THIRD-PARTY-NOTICES.md` 裡對應的 commit 一起更新**。
+
+⚠ 兩份清單的適用條件不同：WinUI 的框架資源**一定在**，所以 WinUI 方言一律查；
+WPF 的 Fluent 主題是**選用**的，所以只有在真的有合併 `PresentationFramework.Fluent` 時才查
+（`FrameworkKeys.IsWpfFluentSource`）。不分條件地豁免，會把沒用 Fluent 的 WPF 專案裡的
+真懸空一起遮掉。
 
 ## 首次發佈（一次性設定，做過就不用再做）
 

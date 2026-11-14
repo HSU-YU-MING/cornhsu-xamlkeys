@@ -65,7 +65,7 @@ Themes/Override.xaml
 Views/MainWindow.xaml
      27  fail dangling-static    'MissingBrush' is not defined anywhere in this tree; StaticResource throws at load time
      30  warn dangling-dynamic   'MissingDynamicBrush' is not defined anywhere in this tree; DynamicResource silently falls back to the default value
-     42  warn out-of-scope       'OtherWindowLocal' is defined elsewhere in the tree but not in the scope of this reference
+     42  warn out-of-scope       'OtherWindowLocal' is defined at Views/OtherWindow.xaml:6 but that is not in the scope of this reference
 
 7 XAML file(s), 7 dictionar(ies), 19 key(s), 14 reference(s)
 merged dictionaries resolved: 2/3 (66.7%)
@@ -75,6 +75,21 @@ note: 1 merged dictionar(ies) could not be read -- 'unused' results are incomple
 note: 1 runtime-composed resource lookup(s) in C# -- keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)
 note: 1 finding(s) suppressed by ignore comments or config
 ```
+
+## It tells you what the name was probably meant to be
+
+Most dangling and unused keys are a typo or the leftover half of a rename, so the finding names the
+closest key it can see:
+
+```
+'InverseBoolToVis' is defined but never referenced in XAML or code.
+A similarly named key 'InverseBoolToVisibilityConverter' is referenced -- was this renamed?
+```
+
+The suggestion is deliberately quiet: it compares the parts of the two names that actually differ,
+after stripping the common prefix and suffix. Without that, every key in a `Vector.*` namespace
+looks like every other one, and a wrong suggestion is worse than none because it reads like an
+answer.
 
 ## Why merge order is the whole problem
 

@@ -1,24 +1,27 @@
-// 從 microsoft/microsoft-ui-xaml 的主題資源檔產生「WinUI 框架提供的資源鍵」清單。
+// 從上游的主題資源檔產生「框架提供的資源鍵」清單。
 //
-// 為什麼需要這份資料：WinUI 專案的 XAML 大量引用框架內建的鍵
-// （TextFillColorPrimaryBrush、ControlCornerRadius、BodyTextBlockStyle…）。
-// 那些鍵的定義不在使用者的 repo 裡 —— 沒有這份清單，WinUI Gallery 這種專案
-// 會被報出 195 個不重複的假懸空，工具第一天就被關掉。
+// 支援兩套：
+//   winui  —— microsoft/microsoft-ui-xaml      -> src/XamlKeys.Core/WinUiFrameworkKeys.json
+//   fluent —— dotnet/wpf 的 PresentationFramework.Fluent -> src/XamlKeys.Core/WpfFluentKeys.json
+//
+// 為什麼需要這份資料：那些專案的 XAML 大量引用框架內建的鍵
+// （TextFillColorPrimaryBrush、ControlCornerRadius、BodyTextBlockStyle…），
+// 定義不在使用者的 repo 裡 —— 沒有清單的話，WinUI Gallery 被報出 195 個不重複的
+// 假懸空，工具第一天就被關掉。
 //
 // ⚠ 資料不是手抄的。重新產生：
-//   1. sparse clone microsoft/microsoft-ui-xaml（只要 *.xaml）
-//   2. node scripts/regenerate-framework-keys.mjs <clone 目錄> <完整 SHA>
-//   3. 看 git diff 再 commit
+//   1. sparse clone 上游（只要 *.xaml）
+//   2. node scripts/regenerate-framework-keys.mjs <winui|fluent> <clone 目錄> <完整 SHA>
+//   3. 看 git diff 再 commit，**並且把 THIRD-PARTY-NOTICES.md 的 commit 一起更新**
 //
-// 授權：microsoft-ui-xaml 是 MIT。產出的是鍵名清單（事實資料），
-// THIRD-PARTY-NOTICES.md 仍要附上出處與授權。
+// 授權：兩個上游都是 MIT。產出的是鍵名清單（事實資料），聲明仍要附。
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, sep } from 'node:path';
 
-const [, , root, commit] = process.argv;
-if (!root || !commit) {
-  console.error('usage: node regenerate-framework-keys.mjs <muxc-clone-dir> <full-sha>');
+const [, , which, root, commit] = process.argv;
+if (!['winui', 'fluent'].includes(which) || !root || !commit) {
+  console.error('usage: node regenerate-framework-keys.mjs <winui|fluent> <clone-dir> <full-sha>');
   process.exit(2);
 }
 
@@ -38,15 +41,21 @@ function* walk(dir) {
   }
 }
 
-// 只收「會被合併進應用程式主題字典」的檔：
-//   - 任何 *themeresources*.xaml
-//   - generic.xaml
-//   - controls/dev 底下的控制項樣式檔（它們被 generic.xaml 合併）
+// 只收「會被合併進應用程式主題字典」的檔。
 function isThemeFile(path) {
+  const unix = path.split(sep).join('/');
+
+  if (which === 'fluent') {
+    // dotnet/wpf：整個 PresentationFramework.Fluent 主題（Resources/ 與 Styles/）
+    return unix.includes('/Themes/PresentationFramework.Fluent/');
+  }
+
+  // microsoft-ui-xaml：任何 *themeresources*.xaml、generic.xaml、
+  // 以及 controls/dev 底下的控制項樣式檔（它們被 generic.xaml 合併）
   const name = basename(path).toLowerCase();
   if (name.includes('themeresources')) return true;
   if (name === 'generic.xaml') return true;
-  return path.split(sep).join('/').includes('/controls/dev/');
+  return unix.includes('/controls/dev/');
 }
 
 const KEY_RE = /\bx:Key\s*=\s*"([^"]+)"/g;
@@ -68,14 +77,18 @@ for (const file of walk(root)) {
   }
 }
 
+const repo = which === 'fluent' ? 'dotnet/wpf' : 'microsoft/microsoft-ui-xaml';
+const target = which === 'fluent'
+  ? 'src/XamlKeys.Core/WpfFluentKeys.json'
+  : 'src/XamlKeys.Core/WinUiFrameworkKeys.json';
+
 const out = {
-  source: `microsoft/microsoft-ui-xaml@${commit}`,
+  source: `${repo}@${commit}`,
   license: 'MIT',
   generatedBy: 'scripts/regenerate-framework-keys.mjs',
   files,
   keys: [...keys].sort(),
 };
 
-const target = 'src/XamlKeys.Core/WinUiFrameworkKeys.json';
 writeFileSync(target, JSON.stringify(out, null, 1) + '\n');
 console.log(`${out.keys.length} keys from ${files} files -> ${target}`);

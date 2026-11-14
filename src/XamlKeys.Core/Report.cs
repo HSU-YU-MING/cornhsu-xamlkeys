@@ -52,8 +52,11 @@ public static class Report
             w.WriteNumber("frameworkProvided", r.FrameworkProvided);
             // 框架鍵清單的來源版本。⚠ 它會過期而且不會有任何東西變紅 ——
             //    放進報告讓使用者看得到它多舊（重產方式見 RELEASING.md）。
-            w.WriteString("winUiKeySource", FrameworkKeys.SourceCommit);
+            w.WriteString("winUiKeySource", FrameworkKeys.WinUiKeySource);
             w.WriteNumber("winUiKeyCount", FrameworkKeys.Count);
+            w.WriteBoolean("wpfFluentThemeInUse", r.WpfFluentThemeInUse);
+            w.WriteString("wpfFluentKeySource", FrameworkKeys.WpfFluentKeySource);
+            w.WriteNumber("wpfFluentKeyCount", FrameworkKeys.WpfFluentCount);
             w.WriteNumber("runtimeLoadedDictionaries", r.RuntimeLoadedDictionaries);
             w.WriteNumber("implicitThemeDictionaries", r.ImplicitThemeDictionaries);
             w.WriteNumber("runtimeSelectedFamilyFiles", r.RuntimeSelectedFamilyFiles);

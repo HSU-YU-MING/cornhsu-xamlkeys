@@ -18,7 +18,12 @@ namespace XamlKeys.Core;
 /// </summary>
 public static class FrameworkKeys
 {
-    private static readonly Lazy<HashSet<string>> WinUi = new(Load);
+    private static readonly Lazy<HashSet<string>> WinUi =
+        new(() => Load("XamlKeys.Core.WinUiFrameworkKeys.json", s => WinUiSource = s));
+
+    /// <summary>.NET 9 起 WPF 內建的 Fluent 主題（PresentationFramework.Fluent）的鍵。</summary>
+    private static readonly Lazy<HashSet<string>> WpfFluent =
+        new(() => Load("XamlKeys.Core.WpfFluentKeys.json", s => WpfFluentSource = s));
 
     /// <summary>執行期由系統決定的鍵：使用者的強調色、系統色。
     /// 清單產不出來（它們不寫在 XAML 裡），用前綴認。</summary>
@@ -30,7 +35,14 @@ public static class FrameworkKeys
         "SystemChrome",
     ];
 
-    public static string SourceCommit { get; private set; } = "unknown";
+    public static string SourceCommit => WinUiSource;
+
+    private static string WinUiSource = "unknown";
+    private static string WpfFluentSource = "unknown";
+
+    public static string WinUiKeySource { get { _ = WinUi.Value; return WinUiSource; } }
+    public static string WpfFluentKeySource { get { _ = WpfFluent.Value; return WpfFluentSource; } }
+    public static int WpfFluentCount => WpfFluent.Value.Count;
 
     /// <summary>
     /// 這個鍵是不是框架／平台提供的？
@@ -44,13 +56,24 @@ public static class FrameworkKeys
     ///   - **WinUI 的 3,573 個具名鍵**只在 WinUI 方言查 —— 那些名字在別的生態系
     ///     可能是使用者自己定義的。
     /// </summary>
-    public static bool IsProvidedByFramework(string key, XamlDialect dialect)
+    /// <param name="wpfFluentInUse">這棵樹有沒有真的引用 .NET 內建的 Fluent 主題
+    /// （<c>PresentationFramework.Fluent</c>）。
+    /// ⚠ WPF 的 Fluent 主題是**選用**的，WinUI 的框架資源則是一定在 ——
+    /// 所以 Fluent 的 955 個鍵只在真的有引用時才豁免。
+    /// 不分條件地豁免，會把沒用 Fluent 的 WPF 專案裡的真懸空一起遮掉。</param>
+    public static bool IsProvidedByFramework(string key, XamlDialect dialect, bool wpfFluentInUse = false)
     {
         foreach (var p in RuntimePrefixes)
             if (key.StartsWith(p, StringComparison.Ordinal)) return true;
 
-        return dialect == XamlDialect.WinUi && WinUi.Value.Contains(key);
+        if (dialect == XamlDialect.WinUi && WinUi.Value.Contains(key)) return true;
+
+        return wpfFluentInUse && WpfFluent.Value.Contains(key);
     }
+
+    /// <summary>合併來源字串看起來是在引用 .NET 內建的 Fluent 主題嗎？</summary>
+    public static bool IsWpfFluentSource(string source) =>
+        source.Contains("PresentationFramework.Fluent", StringComparison.OrdinalIgnoreCase);
 
     public static int Count => WinUi.Value.Count;
 
@@ -64,19 +87,18 @@ public static class FrameworkKeys
     /// </summary>
     public const string RegenerateHint = "scripts/regenerate-framework-keys.mjs";
 
-    private static HashSet<string> Load()
+    private static HashSet<string> Load(string resourceName, Action<string> setSource)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
 
-        using var stream = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream("XamlKeys.Core.WinUiFrameworkKeys.json");
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
         if (stream is null) return set;
 
         using var doc = JsonDocument.Parse(stream);
         var root = doc.RootElement;
 
         if (root.TryGetProperty("source", out var src) && src.GetString() is { } s)
-            SourceCommit = s;
+            setSource(s);
 
         if (root.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Array)
             foreach (var k in keys.EnumerateArray())
