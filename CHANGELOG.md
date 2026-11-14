@@ -228,6 +228,10 @@ coincidental name match.
   root — outside ones never worked anyway, since only XAML under the root is read, and the documented
   example `../packages/…` is replaced; and a path whose string is under the root but passes through a
   symlink or directory junction is not probed (each component's own attributes are read, never followed).
+  A third review tightened that check: it fails closed (a component whose attributes cannot be read counts
+  as a link; only "does not exist" does not), a colon after the root is rejected (Windows alternate data
+  streams, `::$INDEX_ALLOCATION`), and path comparison follows the file system — case-sensitive on Linux,
+  where `/repo` and `/REPO` are different directories.
 
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.

@@ -90,10 +90,16 @@ public sealed partial class SourceResolver
     /// <summary>真正去查檔案系統的那一步。測試換成記錄器，確認範圍外的路徑**從來沒被查過**。</summary>
     internal Func<string, bool> Probe { get; set; } = File.Exists;
 
+    /// <summary>讀一段路徑自己的屬性（不跟著連結走）。測試換掉它來模擬「讀不到」。</summary>
+    internal Func<string, FileAttributes> Attributes { get; set; } = File.GetAttributes;
+
     private bool IsAllowed(string full)
     {
         var root = _root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!full.StartsWith(root + Path.DirectorySeparatorChar, PathComparison)) return false;
+
+        // 根之後不能有冒號：Windows 的替代資料流（x.xaml:s）與 Themes::$INDEX_ALLOCATION 會繞過逐段檢查
+        if (full.IndexOf(':', root.Length + 1) >= 0) return false;
 
         // ⚠ 字串在範圍內，不代表檔案在範圍內：中間任何一段是符號連結或目錄接合點，就可能指到範圍外
         //   （包括 \\主機\分享）。只讀那一段**自己**的屬性 —— 不跟著連結走 —— 是連結就整條不碰。
@@ -109,12 +115,21 @@ public sealed partial class SourceResolver
         return true;
     }
 
-    private readonly Dictionary<string, bool> _notALink = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>路徑比較跟著檔案系統走：Windows／macOS 不分大小寫，其他分。
+    /// ⚠ 在 Linux 上一律不分大小寫的話，/repo 與 /REPO 是兩個目錄卻會被當成同一個，
+    ///   快取裡 themes（真目錄）的結果也會被拿去當 Themes（連結）的答案。</summary>
+    private static readonly StringComparison PathComparison =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private static bool IsLink(string path)
+    private readonly Dictionary<string, bool> _notALink =
+        new(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+    /// <summary>這一段是不是連結。**判不出來就當成是**（fail closed）：只有「不存在」才算不是。</summary>
+    private bool IsLink(string path)
     {
-        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }   // 不存在：沒有東西可跟
+        try { return (Attributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { return false; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return true; }
     }
 
     /// <summary>

@@ -192,6 +192,9 @@ public class HostileInputTests : IDisposable
     [InlineData(@"..\..\..\packages\Vendor\Themes")]
     public void An_externalDictionaries_entry_outside_the_scan_root_is_never_probed(string hostile)
     {
+        // 反斜線、磁碟代號只在 Windows 是路徑：在 Linux 上那只是掃描根底下一個奇怪的檔名，查了也無害
+        if (!OperatingSystem.IsWindows() && (hostile.Contains('\\') || hostile.Contains(':'))) return;
+
         // config 是從被掃的 repo 自動撿的：對方可以把目錄指到 \\主機\分享
         var asked = new List<string>();
         var resolver = new SourceResolver(_dir.FullName, [], new Dictionary<string, string> { ["Vendor"] = hostile },
@@ -199,6 +202,63 @@ public class HostileInputTests : IDisposable
 
         Assert.Empty(asked);
         Assert.True(resolver.Resolve("/Vendor;component/Themes/Generic.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+    }
+
+    [Theory]
+    [InlineData("Theme.xaml:stream")]
+    [InlineData("Themes::$INDEX_ALLOCATION/Theme.xaml")]
+    public void A_colon_after_the_root_is_never_probed(string tricky)
+    {
+        Put("App.xaml", "<Application />");
+        var asked = new List<string>();
+        var resolver = new SourceResolver(_dir.FullName, []) { Probe = p => { asked.Add(p); return true; } };
+
+        Assert.True(resolver.Resolve(tricky, Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+        Assert.Empty(asked);
+    }
+
+    [Fact]
+    public void A_component_whose_attributes_cannot_be_read_counts_as_a_link()
+    {
+        // fail closed：讀不到屬性（權限不足之類）不能當成「不是連結」
+        Put("App.xaml", "<Application />");
+        var asked = new List<string>();
+        var resolver = new SourceResolver(_dir.FullName, [])
+        {
+            Probe = p => { asked.Add(p); return true; },
+            Attributes = _ => throw new UnauthorizedAccessException(),
+        };
+
+        Assert.True(resolver.Resolve("Themes/Theme.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+        Assert.Empty(asked);
+    }
+
+    [Fact]
+    public void On_a_case_sensitive_file_system_a_differently_cased_root_is_outside()
+    {
+        // Linux：/tmp/repo 與 /tmp/REPO 是兩個目錄。不分大小寫比的話，後者會被當成在範圍內
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) return;
+
+        Put("App.xaml", "<Application />");
+        var asked = new List<string>();
+        var resolver = new SourceResolver(_dir.FullName, []) { Probe = p => { asked.Add(p); return true; } };
+        var other = Path.Combine(Path.GetDirectoryName(_dir.FullName)!, Path.GetFileName(_dir.FullName).ToUpperInvariant(), "Theme.xaml");
+
+        Assert.True(resolver.Resolve(other, Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+        Assert.DoesNotContain(asked, p => p.StartsWith(Path.GetDirectoryName(other)!, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_component_that_does_not_exist_is_not_a_link()
+    {
+        Put("App.xaml", "<Application />");
+        var resolver = new SourceResolver(_dir.FullName, [])
+        {
+            Probe = _ => true,
+            Attributes = _ => throw new DirectoryNotFoundException(),
+        };
+
+        Assert.False(resolver.Resolve("Themes/Theme.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
     }
 
     [Fact]
