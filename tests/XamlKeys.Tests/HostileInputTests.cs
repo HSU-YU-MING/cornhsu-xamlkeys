@@ -242,10 +242,12 @@ public class HostileInputTests : IDisposable
         Put("App.xaml", "<Application />");
         var asked = new List<string>();
         var resolver = new SourceResolver(_dir.FullName, []) { Probe = p => { asked.Add(p); return true; } };
-        var other = Path.Combine(Path.GetDirectoryName(_dir.FullName)!, Path.GetFileName(_dir.FullName).ToUpperInvariant(), "Theme.xaml");
+        // 從根往上走一層、再走進只差大小寫的同名目錄（以 / 開頭的路徑在 XAML 裡是「相對於專案根」，不能用）
+        var upper = Path.GetFileName(_dir.FullName).ToUpperInvariant();
+        var otherDir = Path.Combine(Path.GetDirectoryName(_dir.FullName)!, upper);
 
-        Assert.True(resolver.Resolve(other, Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
-        Assert.DoesNotContain(asked, p => p.StartsWith(Path.GetDirectoryName(other)!, StringComparison.Ordinal));
+        Assert.True(resolver.Resolve($"../{upper}/Theme.xaml", Path.Combine(_dir.FullName, "App.xaml")).IsExternal);
+        Assert.DoesNotContain(asked, p => p.StartsWith(otherDir, StringComparison.Ordinal));
     }
 
     [Fact]
