@@ -1,52 +1,125 @@
-name: Release
+name: release
 
 on:
   push:
-    tags:
-      # ⚠ 只認三段式的版本 tag。移動 tag（v0、v1）前移時不會觸發這條。
-      - 'v[0-9]*.[0-9]*.[0-9]*'
-
-permissions:
-  contents: read
-  # NuGet Trusted Publishing：用 OIDC 換臨時金鑰,沒有長效 API key、沒有 repo secret
-  id-token: write
+    # 只認三段式版號 tag（v1.2.3）。刻意不用 'v*'：1.0 起若維護移動式 major tag（v1，每個 1.x 發版後前移），
+    # 它也符合 'v*'，每次前移都會誤觸發一次注定失敗的 release（Parity 踩過兩次）
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
 
 jobs:
-  publish:
-    runs-on: ubuntu-24.04
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 建 GitHub Release
+      id-token: write   # Trusted Publishing：GitHub 簽發 OIDC token 與 NuGet 交換臨時金鑰
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # ⚠ SourceLink 需要完整 git 歷史，淺複製會產生空的來源連結
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
-      # ⚠ 版本號的唯一真相源是 tag。csproj 裡固定寫 0.0.0-dev,這裡用 -p:Version 覆寫。
+      # ⚠ 版本號的唯一真相源是 tag。csproj 裡固定寫 0.0.0-dev，這裡用 -p:Version 覆寫。
       #    不要回頭去改 csproj —— 改了就是重新製造漂移。
-      - name: Derive the version from the tag
-        id: v
+      - name: Derive version from tag
+        id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build
-        run: dotnet build XamlKeys.slnx -c Release -p:Version=${{ steps.v.outputs.version }}
-
-      - name: Test
-        run: dotnet test XamlKeys.slnx -c Release --no-build
-
-      - name: Pack
+      # CHANGELOG 是「推 tag 之前」的版本真相源（Release 的說明也取自它）。兩者不一致就別發：
+      # 擋在這裡的代價是「tag 已推、但沒發出去」—— 刪 tag 重來即可；
+      # 相對地，CHANGELOG 沒寫就發到 nuget.org 是**沒有反悔機會的**（套件刪不掉，只能取消列出）
+      - name: Assert CHANGELOG top entry matches the tag
+        env:
+          XK_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          dotnet pack src/XamlKeys.Cli/XamlKeys.Cli.csproj -c Release --no-build \
-            -p:Version=${{ steps.v.outputs.version }} -o ./artifacts
+          set -euo pipefail
+          top=$(grep -m1 -oE '^## +\[?[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+          if [ "$top" != "$XK_VERSION" ]; then
+            echo "✗ tag 是 v$XK_VERSION，但 CHANGELOG.md 最上面那個版本是 ${top:-（沒有）}。"
+            echo "  先補上 ## $XK_VERSION 的段落再重推 tag。"
+            exit 1
+          fi
+          # Release 的內容就是從這一節抽出來的。抽取放在這裡，是因為這裡還在「推上 nuget.org 之前」——
+          # 抽不到就是「標題寫了但底下沒內容」，此時刪 tag 重來還救得回來。
+          notes=$(awk -v v="$XK_VERSION" '
+            /^## / {
+              if (found) exit
+              line = $0; sub(/^## +\[?/, "", line)
+              if (index(line, v) == 1) {
+                rest = substr(line, length(v) + 1)
+                if (rest !~ /^[0-9.]/) { found = 1; next }
+              }
+              next
+            }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "✗ CHANGELOG.md 有 ## $XK_VERSION 的標題，但底下沒有內容。"
+            echo "  使用者被要求在 0.x pin 確切版本時，Releases 頁是他們唯一看得到這版改了什麼的地方。"
+            exit 1
+          fi
+          printf '%s\n' "$notes" > "$RUNNER_TEMP/release-notes.md"
+          echo "✓ CHANGELOG 頂端 $top 與 tag 一致，Release 內容已備妥（$(printf '%s\n' "$notes" | wc -l) 行）"
 
-      - name: NuGet login (Trusted Publishing)
+      - run: dotnet restore XamlKeys.slnx
+      - run: dotnet build XamlKeys.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
+      - run: dotnet test XamlKeys.slnx -c Release --no-build
+
+      # 發佈前的最後一道守門：示範專案是刻意做壞的，必須如預期 exit 3
+      # （覆蓋率 66.7% 低於預設下限，而「不可信」優先於「有違規」）。
+      # 跑出別的碼 = 工具沒看到 demo，或退出碼的判定順序被動到了 —— 中止發佈。
+      - name: Audit the demo (expects exit 3)
+        run: |
+          set +e
+          dotnet run --project src/XamlKeys.Cli -c Release --no-build -- samples/demo
+          code=$?
+          set -e
+          [ "$code" -eq 3 ] || { echo "✗ demo 未如預期 exit 3（實際 $code），中止發佈"; exit 1; }
+
+      - name: Audit the demo with the floor lowered (expects exit 1)
+        run: |
+          set +e
+          dotnet run --project src/XamlKeys.Cli -c Release --no-build -- samples/demo --min-coverage 0
+          code=$?
+          set -e
+          [ "$code" -eq 1 ] || { echo "✗ demo 未如預期 exit 1（實際 $code），中止發佈"; exit 1; }
+
+      - run: dotnet pack src/XamlKeys.Cli/XamlKeys.Cli.csproj -c Release --no-build -p:Version=${{ steps.ver.outputs.version }} -o ./artifacts
+
+      # Trusted Publishing：用 GitHub OIDC 向 nuget.org 換一把只活 1 小時的臨時金鑰，
+      # 不需保管長效 API key、也不需 repo secret（需先在 nuget.org 設好 trusted publisher 政策）
+      - name: NuGet login (OIDC -> temp API key)
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:
-          user: Cornhsu
+          user: Cornhsu   # nuget.org 使用者名稱（不是 email）
 
-      - name: Push
+      - name: Push to NuGet
+        run: >
+          dotnet nuget push "./artifacts/*.nupkg"
+          -k ${{ steps.login.outputs.NUGET_API_KEY }}
+          -s https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      # 建 GitHub Release。使用者被要求在 0.x pin 確切版本，Releases 頁是他們唯一
+      # 看得到「這版改了什麼」的地方。內容直接取自 CHANGELOG（單一事實來源）。
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          dotnet nuget push ./artifacts/*.nupkg \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
-            --skip-duplicate
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          # 內容在前面那一步就抽好了。抽取刻意不放在這裡：這一步跑到的時候套件已經推上
+          # nuget.org、不可逆了 —— 那時才發現 CHANGELOG 是空的，失敗也救不回任何東西。
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          [ -s "$notes_file" ] || { echo "✗ 找不到前面備妥的 Release 內容：$notes_file"; exit 1; }
+          # 冪等：重跑 job 時改成更新既有 Release，而不是報錯
+          if gh release view "v$v" >/dev/null 2>&1; then
+            gh release edit "v$v" --notes-file "$notes_file"
+            echo "✔ 已更新既有 Release v$v"
+          else
+            gh release create "v$v" --title "v$v" --notes-file "$notes_file" --verify-tag
+            echo "✔ 已建立 Release v$v"
+          fi
