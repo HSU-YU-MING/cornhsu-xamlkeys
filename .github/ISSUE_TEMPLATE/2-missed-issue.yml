@@ -1,0 +1,53 @@
+name: Missed issue — something is broken and it said nothing
+description: The app throws on a missing resource, uses the wrong one, or carries a dead key, and XamlKeys didn't report it.
+labels: ["missed"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks — every rule in this tool came from a real project, and a miss is exactly how new
+        rules get found. Mask names freely; the shape of the XAML is what matters.
+
+        Write in English or 中文, whichever is easier.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `xamlkeys --version`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: ["WPF", "WinUI 3 / Windows App SDK", "UWP", "Avalonia", ".NET MAUI", "Other / mixed"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens in the running app
+      description: The exception text if it throws (for example "Cannot find resource named …"), or what looks wrong.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest XAML (and C#) that reproduces it
+      render: xml
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: What XamlKeys printed for that project
+      description: The console output, or at least the last few lines (the summary and notes).
+      render: text
+    validations:
+      required: false

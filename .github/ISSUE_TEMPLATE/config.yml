@@ -1,0 +1,17 @@
+# 檔名的數字前綴是排序用的：GitHub 照檔名字母排。順序是價值由高到低 ——
+# 「工具判斷錯了」比「工具壞了」值錢，最常見的那種要放最前面（照 XamlContrast 的做法）。
+# 新增表單時記得加前綴，否則它會排到最前面。
+#
+# 空白 issue 保持開啟：表單不可能涵蓋所有情況，而「沒有適合的表單」是人放棄回報最常見的理由。
+# 1.0 的條件之一就是外部回報，不該為了格式整齊把人擋在門外。
+blank_issues_enabled: true
+contact_links:
+  - name: Known limitations — check here first
+    url: https://github.com/HSU-YU-MING/cornhsu-xamlkeys#known-limitations
+    about: Some gaps are deliberate and documented. Reports about them are still welcome — it just saves the diagnosis.
+  - name: How to write a report that can be reproduced
+    url: https://github.com/HSU-YU-MING/cornhsu-xamlkeys/blob/main/CONTRIBUTING.md
+    about: What to include, and why a false alarm is taken more seriously here than a missed finding.
+  - name: Security issue — report privately
+    url: https://github.com/HSU-YU-MING/cornhsu-xamlkeys/security/advisories/new
+    about: A crafted file that makes the tool hang, crash, or read or write outside its paths. Please don't open a public issue for these.

@@ -1,0 +1,42 @@
+name: Bug — the tool itself misbehaves
+description: A crash, a wrong exit code, a broken report file, a flag that doesn't do what --help says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the problem is that a finding is wrong or missing, the two forms above get it fixed faster.
+        For anything that looks like a security problem, please use the private report link instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `xamlkeys --version`
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: The command you ran
+      placeholder: "xamlkeys src --sarif xamlkeys.sarif --baseline xamlkeys-baseline.json"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Where it ran
+      options: ["Windows", "Linux", "macOS", "GitHub Actions (action.yml)", "Other CI"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: Include the exit code (`echo $?` / `$LASTEXITCODE`) and any stack trace.
+      render: text
+    validations:
+      required: true

@@ -1,0 +1,90 @@
+name: False alarm — it reported something that isn't wrong
+description: XamlKeys says a key is unused, missing, out of scope or shadowed, but the running app disagrees.
+labels: ["false-alarm"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable report this project receives. An `unused` finding gets people to
+        delete things — a false one is a more serious defect here than a miss.
+
+        **Mask what you would not post publicly** (product names, internal paths, real keys). Renaming
+        keys and files is fine — the *shape* of the XAML is what matters.
+
+        Write in English or 中文, whichever is easier.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `xamlkeys --version`
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which finding is wrong?
+      options:
+        - "unused — but the key is used"
+        - "dangling-static / dangling-dynamic — but the key exists at runtime"
+        - "out-of-scope — but the reference does resolve"
+        - "shadowed — wrong winner, or not actually shadowed"
+        - "duplicate-key"
+        - "orphan-dictionary — but the dictionary is loaded"
+        - "external / exit 3 — it should have been able to read this"
+        - "Something else"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: ["WPF", "WinUI 3 / Windows App SDK", "UWP", "Avalonia", ".NET MAUI", "Other / mixed"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: finding
+    attributes:
+      label: The finding line, exactly as printed
+      description: Copy the whole line. The message names the scope, the side and the related location, which often shows where the logic went wrong.
+      render: text
+      placeholder: |
+        Themes/Base.xaml
+             23  warn unused             'NobodyUsesThis' is defined but never referenced in XAML or code
+    validations:
+      required: true
+
+  - type: textarea
+    id: reality
+    attributes:
+      label: Why it's wrong
+      description: >
+        Where is the key actually used or defined at runtime? (looked up from C# with a variable,
+        read by a library or framework template, a dictionary merged from code, a theme loaded at
+        startup…) Point at the file and line if you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest XAML (and C#) that reproduces it
+      description: Strip everything unrelated. Include the dictionary that defines the key and the place that uses it.
+      render: xml
+    validations:
+      required: false
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: The summary block from `xamlkeys <path> --json report.json`
+      description: >
+        Only the `summary` object. It records what the tool could and couldn't see (unreadable
+        dictionaries, runtime lookups, library projects) — that alone often explains a finding.
+      render: json
+    validations:
+      required: false

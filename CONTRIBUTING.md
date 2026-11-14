@@ -24,7 +24,7 @@
 
 假警報對本工具來說**比漏報嚴重**：這個工具的 finding 會讓人去刪檔案。
 
-開 issue 時請附上：
+請用 GitHub 的「False alarm」表單開 issue（會引導你填下面這些）。開 issue 時請附上：
 
 - `xamlkeys <path> --json report.json` 的 `summary` 區塊
 - 那一筆 finding
