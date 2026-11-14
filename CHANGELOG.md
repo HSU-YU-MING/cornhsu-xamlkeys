@@ -99,6 +99,9 @@ names, the baseline file — is somebody else's input. Three things were found b
   Scanned text in plain-text output is now escaped to a single line (`\n`, `\u001B`, ...), `##vso[`
   and `##[` are defused, and a path that would start a line with `::` is printed as `./::...`.
   JSON, SARIF and baseline files keep the key exactly as it is — their serialisers already escape.
+  The same applies to the two other places that echo file content: the `--stale` list (a baseline
+  entry can be any string, and GitHub strips leading whitespace before looking for `::`, so each
+  entry now follows a fixed `- `) and config/baseline error messages, which quote property names.
 - **A deeply nested file crashed the whole run.** About 8,000 nested elements (100 KB) overflowed
   the stack: an uncatchable crash, an exit code outside the documented 0-3, and every other file's
   result lost with it. At 80,000 levels `XDocument.Load` alone took 18 seconds. Nesting is now

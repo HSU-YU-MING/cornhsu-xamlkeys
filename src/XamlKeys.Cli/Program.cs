@@ -157,7 +157,7 @@ try
 }
 catch (ConfigException ex)
 {
-    Console.Error.WriteLine(ex.Message);
+    Console.Error.WriteLine(Report.OneLine(ex.Message));
     return 2;
 }
 
@@ -206,7 +206,7 @@ if (baselinePath is not null)
     }
     catch (ConfigException ex)
     {
-        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine(Report.OneLine(ex.Message));
         return 2;
     }
 }
@@ -244,7 +244,9 @@ if (baseline is not null)
         if (stale.Count > 0)
         {
             Console.WriteLine($"{stale.Count} baseline entr(ies) no longer occur -- regenerate with --write-baseline:");
-            foreach (var s in stale) Console.WriteLine($"  {Report.OneLine(s)}");
+            // ⚠ baseline 檔是 PR 的內容，項目可以是任何字串。GitHub Actions 會先去掉行首空白
+            //   再判斷 `::` 指令，所以只縮排不夠 —— 前面要有一個固定的非空白字元。
+            foreach (var s in stale) Console.WriteLine($"  - {Report.OneLine(s)}");
         }
         else Console.WriteLine("every baseline entry still occurs; nothing to tighten");
     }

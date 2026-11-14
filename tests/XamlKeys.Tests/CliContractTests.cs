@@ -396,4 +396,53 @@ public class CliContractTests
         }
         finally { dir.Delete(true); }
     }
+
+    // ── baseline 與設定檔也是 PR 的內容 ───────────────────────────────────
+
+    private static void AssertNoWorkflowCommand(string output)
+    {
+        foreach (var line in output.Split('\n'))
+            Assert.False(line.TrimStart().StartsWith("::", StringComparison.Ordinal),
+                         $"a line GitHub Actions would run as a command: {line}");
+    }
+
+    [Fact]
+    public void A_hostile_baseline_entry_cannot_become_a_workflow_command_in_the_stale_list()
+    {
+        // baseline 的項目可以是任何字串，而且不存在的項目一定會被列成「已過期」。
+        // GitHub 會先去掉行首空白再判斷 `::`，所以「縮排兩格」擋不住。
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-stale-hostile");
+        try
+        {
+            var bl = Path.Combine(dir.FullName, "b.json");
+            File.WriteAllText(bl, """{"keyVersion":1,"toolVersion":"x","entries":["::error::forged","a\n::add-mask::xaml"]}""");
+
+            var (_, stdout, stderr) = Run("--min-coverage", "0", "--baseline", bl, "--stale", TestPaths.Demo);
+
+            Assert.Contains("::error::forged", stdout);     // 還是要列出來，只是不能在行首
+            AssertNoWorkflowCommand(stdout);
+            AssertNoWorkflowCommand(stderr);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void A_hostile_config_cannot_inject_lines_through_its_error_message()
+    {
+        // 設定檔的錯誤訊息會引用檔案裡的屬性名與值
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-cfg-hostile");
+        try
+        {
+            var cfg = Path.Combine(dir.FullName, "c.json");
+            File.WriteAllText(cfg, """{"nope\n::error::forged":1}""");
+
+            var (exit, stdout, stderr) = Run("--config", cfg, TestPaths.Demo);
+
+            Assert.Equal(2, exit);
+            Assert.Contains("unknown config property", stderr);
+            AssertNoWorkflowCommand(stdout);
+            AssertNoWorkflowCommand(stderr);
+        }
+        finally { dir.Delete(true); }
+    }
 }
