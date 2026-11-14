@@ -11,7 +11,11 @@
 - [x] M2 C# 側用法掃描：字面 vs 組出來的鍵名、`usedAtRuntime` allowlist
 - [x] M3 輸出合約：JSON（summary + findings）、SARIF、`--msbuild`、退出碼四碼、全 ASCII 輸出
 - [x] M4 導入模式：baseline／ratchet、ignore 註解（理由必填）、`suppressed` 計數
-- [ ] M5 發佈：GitHub repo 公開、CI、`action.yml`、nuget.org Trusted Publishing 政策、`v0.1.0`
+- [x] M5a repo 公開、CI 第一次實跑 —— 2026-11-14。
+      ubuntu-24.04 與 windows-latest 兩個 job **第一次就全綠**，
+      含示範專案的退出碼斷言、`jq` 計數斷言、SARIF 檢查與 README 範例檢查。
+      「解析是純 XML、Linux 也跑得動」這句話到此才真的有證據
+- [ ] M5b nuget.org 的 Trusted Publishing 政策（**只有維護者的帳號能建**）＋ 推 `v0.1.0`
 
 ## 0.x（介面凍結前）
 

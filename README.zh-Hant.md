@@ -18,8 +18,8 @@ dotnet tool install -g Cornhsu.XamlKeys
 xamlkeys path/to/your/wpf/project
 ```
 
-> 需要 **.NET 10 runtime**。解析本身是純 XML、不依賴 WPF，設計上 Linux CI 也跑得動 ——
-> 但**還沒有在真的 Linux 上跑過**（CI 第一次 push 就會驗，見 ROADMAP）。
+> 需要 **.NET 10 runtime**。解析本身是純 XML、不依賴 WPF，Linux CI 一樣跑得動 ——
+> 這個 repo 自己的 CI 就是在 `ubuntu-24.04` 上建置、測試與守門的。
 
 ## 它會找出什麼
 
