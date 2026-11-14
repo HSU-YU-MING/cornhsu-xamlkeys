@@ -155,4 +155,79 @@ public class HostileInputTests : IDisposable
         Assert.NotEmpty(interpolations);
         Assert.All(interpolations, l => Assert.Matches(envLine, l));
     }
+
+    // ── 掃描範圍外的路徑 ────────────────────────────────────────────────
+    // 合併路徑與 csproj 的 Include 都是被掃的 repo 寫的。指到範圍外（絕對路徑、\\主機\分享）的一律不碰：
+    // 查檔案存不存在本身就會讓 Windows 對 UNC 主機發 SMB 連線、送出 NTLM 認證。
+
+    [Theory]
+    [InlineData(@"\\evil-host\share\Theme.xaml")]
+    [InlineData(@"\\?\UNC\evil-host\share\Theme.xaml")]
+    [InlineData(@"//evil-host/share/Theme.xaml")]
+    [InlineData(@"C:\Windows\System32\drivers\etc\Theme.xaml")]
+    [InlineData(@"..\..\..\outside\Theme.xaml")]
+    public void The_file_system_is_never_asked_about_a_path_outside_the_scan_root(string hostile)
+    {
+        Put("App.csproj", $"<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><Page Include=\"{hostile}\" Link=\"Themes\\Linked.xaml\" /></ItemGroup></Project>");
+        Put("App.xaml", "<Application />");
+        var asked = new List<string>();
+        var resolver = new SourceResolver(_dir.FullName, [Path.Combine(_dir.FullName, "App.csproj")])
+        {
+            Probe = p => { asked.Add(p); return false; },
+        };
+        var from = Path.Combine(_dir.FullName, "App.xaml");
+
+        Assert.True(resolver.Resolve(hostile, from).IsExternal);
+        Assert.True(resolver.Resolve("/Themes/Linked.xaml", from).IsExternal);   // 經由 csproj 的 Link
+        Assert.True(resolver.Resolve("Themes/Linked.xaml", from).IsExternal);
+
+        var root = Path.GetFullPath(_dir.FullName) + Path.DirectorySeparatorChar;
+        Assert.All(asked, p => Assert.StartsWith(root, p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_Source_pointing_outside_the_scan_root_is_never_read()
+    {
+        var outside = Directory.CreateTempSubdirectory("xamlkeys-outside");
+        try
+        {
+            var secret = Path.Combine(outside.FullName, "Secret.xaml");
+            File.WriteAllText(secret, $"<ResourceDictionary {Ns}><SolidColorBrush x:Key=\"LeakedKeyName\" Color=\"Red\" /></ResourceDictionary>");
+
+            Put("App.xaml", $"""
+                <Application {Ns}><Application.Resources><ResourceDictionary>
+                  <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="{secret}" /></ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary></Application.Resources></Application>
+                """);
+            var r = Analyze();
+
+            Assert.Contains(secret, r.ExternalSources);
+            Assert.DoesNotContain(r.Findings, f => f.Key == "LeakedKeyName");
+            Assert.Equal(0, r.KeysDefined);
+        }
+        finally { outside.Delete(true); }
+    }
+
+    [Fact]
+    public void A_csproj_Link_pointing_outside_the_scan_root_is_never_read()
+    {
+        var outside = Directory.CreateTempSubdirectory("xamlkeys-outside");
+        try
+        {
+            var secret = Path.Combine(outside.FullName, "Secret.xaml");
+            File.WriteAllText(secret, $"<ResourceDictionary {Ns}><SolidColorBrush x:Key=\"LeakedKeyName\" Color=\"Red\" /></ResourceDictionary>");
+
+            Put("App.xaml", $"""
+                <Application {Ns}><Application.Resources><ResourceDictionary>
+                  <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Themes/Secret.xaml" /></ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary></Application.Resources></Application>
+                """);
+            Put("App.csproj", $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup><ItemGroup><Page Include=\"{secret}\" Link=\"Themes\\Secret.xaml\" /></ItemGroup></Project>");
+            var r = Analyzer.Run(_dir.FullName, new Config());
+
+            Assert.Contains("/Themes/Secret.xaml", r.ExternalSources);
+            Assert.Equal(0, r.KeysDefined);
+        }
+        finally { outside.Delete(true); }
+    }
 }

