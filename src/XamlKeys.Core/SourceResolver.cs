@@ -45,6 +45,7 @@ public sealed partial class SourceResolver
             catch (IOException) { /* 讀不到就用檔名 */ }
 
             _assemblies[name] = dir;
+            ReadLinks(proj, dir);
         }
 
         // config 的 externalDictionaries：把第三方組件的字典指到磁碟上的目錄。
@@ -60,6 +61,46 @@ public sealed partial class SourceResolver
             if (Directory.Exists(dir)) _assemblies[assembly] = dir;
         }
     }
+
+    /// <summary>
+    /// csproj 裡從別處連結進來的 XAML：(專案目錄, 連結後的相對路徑) → 實際的檔。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-15 實測 PowerToys：QuickAccess 用
+    ///   <c>&lt;Page Include="..\Settings.UI\SettingsXAML\Styles\Button.xaml"&gt;&lt;Link&gt;Resources\Styles\Button.xaml&lt;/Link&gt;&lt;/Page&gt;</c>
+    ///   借用設定頁的樣式，App.xaml 寫 <c>Source="/Resources/Styles/Button.xaml"</c> —— 那個路徑在磁碟上不存在，
+    ///   只存在於建置後的套件裡。Link 可以是屬性也可以是子元素。
+    ///   Include 有萬用字元或 $(屬性) 的靜態算不出來 —— 那種路徑在磁碟上不存在，Linked() 的 File.Exists 會擋掉，不猜。
+    /// </remarks>
+    private readonly Dictionary<(string Project, string Link), string> _links = [];
+
+    private void ReadLinks(string proj, string dir)
+    {
+        System.Xml.Linq.XDocument doc;
+        try { doc = System.Xml.Linq.XDocument.Load(proj); }
+        catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { return; }
+
+        foreach (var item in doc.Descendants())
+        {
+            var include = item.Attribute("Include")?.Value;
+            if (include is null) continue;
+            if (!include.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase)
+                && !include.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var link = item.Attribute("Link")?.Value
+                    ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Link")?.Value;
+            if (string.IsNullOrWhiteSpace(link) || link.Contains("%(")) continue;
+
+            var target = Path.GetFullPath(Path.Combine(dir, include.Replace('\\', Path.DirectorySeparatorChar)));
+            _links[(dir, NormalizeLink(link))] = target;
+        }
+    }
+
+    private static string NormalizeLink(string p) => p.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
+
+    /// <summary>這個專案目錄底下的相對路徑，是不是連結進來的檔？</summary>
+    private string? Linked(string projectDir, string relative) =>
+        _links.TryGetValue((projectDir, NormalizeLink(relative)), out var target) && File.Exists(target) ? target : null;
 
     public SourceResolution Resolve(string rawSource, string containingFile)
     {
@@ -96,6 +137,7 @@ public sealed partial class SourceResolver
             {
                 var abs = Path.GetFullPath(Path.Combine(baseDir, path));
                 if (File.Exists(abs)) return new(abs, null, null);
+                if (Linked(baseDir, path) is { } linked) return new(linked, null, null);
             }
 
             // ms-appx:///組件名/路徑 —— WinUI 取用函式庫裡的資源就是這樣寫（第一段是組件名）。
@@ -126,6 +168,8 @@ public sealed partial class SourceResolver
         {
             var abs = Path.GetFullPath(Path.Combine(baseDir, path));
             if (File.Exists(abs)) return new(abs, null, null);
+            // 連結進來的檔：相對於引用它的檔、換算成專案內的路徑再查
+            if (Linked(baseDir, Path.GetRelativePath(baseDir, rel)) is { } linked) return new(linked, null, null);
         }
 
         return new(null, $"'{path}' not found", null);

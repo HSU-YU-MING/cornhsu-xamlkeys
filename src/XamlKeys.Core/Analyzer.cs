@@ -58,6 +58,12 @@ public sealed class AnalysisResult
     /// <summary>因為「只被沒人用的資源引用」而連帶判成沒人用的鍵名數（含在 unused 計數裡）。</summary>
     public int UnusedOnlyViaUnused { get; set; }
     public List<string> ExternalSources { get; } = [];
+
+    /// <summary>內容已知的主題合併來源（鍵名有清單）：算進覆蓋率的「解析得到」，見 FrameworkKeys.IsKnownThemeSource。</summary>
+    public List<string> KnownThemeSources { get; } = [];
+
+    /// <summary>這棵樹合併了的選用主題套件（avalonia-fluent、community-toolkit…）。</summary>
+    public IReadOnlySet<string> ThemePacksInUse { get; set; } = new HashSet<string>();
     public bool HasApplication { get; set; }
     public List<ThemeSide> Sides { get; } = [];
 
@@ -206,13 +212,22 @@ public sealed class Analyzer
         result.Dictionaries = dicts.Count;
         result.KeysDefined = scanner.Definitions.Count;
 
+        var allExternal = new List<string>();
         foreach (var d in dicts)
             foreach (var m in d.Merged)
             {
                 result.MergeEdges++;
                 if (m.IsExternal)
                 {
-                    if (!result.ExternalSources.Contains(m.RawSource)) result.ExternalSources.Add(m.RawSource);
+                    if (!allExternal.Contains(m.RawSource)) allExternal.Add(m.RawSource);
+                    // 內容已知的主題（WinUI 的 XamlControlsResources、Avalonia 的 FluentTheme、CommunityToolkit…）：
+                    // 鍵名都在清單裡，不算「讀不到」。查找時仍是看不到的合併（不在清單的鍵照舊是 external）。
+                    if (FrameworkKeys.IsKnownThemeSource(m.RawSource))
+                    {
+                        result.MergeEdgesResolved++;
+                        if (!result.KnownThemeSources.Contains(m.RawSource)) result.KnownThemeSources.Add(m.RawSource);
+                    }
+                    else if (!result.ExternalSources.Contains(m.RawSource)) result.ExternalSources.Add(m.RawSource);
                 }
                 else result.MergeEdgesResolved++;
             }
@@ -223,7 +238,8 @@ public sealed class Analyzer
 
         // .NET 9 起 WPF 內建的 Fluent 主題是**選用**的 —— 只有真的被合併進來時,
         // 它的 955 個鍵才算「框架提供」。沒用它的專案不該被這份清單遮掉真懸空。
-        result.WpfFluentThemeInUse = result.ExternalSources.Any(FrameworkKeys.IsWpfFluentSource);
+        result.ThemePacksInUse = FrameworkKeys.PacksUsedBy(allExternal);
+        result.WpfFluentThemeInUse = result.ThemePacksInUse.Contains("wpf-fluent");
 
         ApplyThemeSides(dicts, config);
         var themeEntries = PropagateThemeSides(dicts);
@@ -572,6 +588,9 @@ public sealed class Analyzer
             {
                 ctx.CSharpNames.Add(r.Key);
                 if (r.IsWrite) continue;   // 寫入是定義，不是查找
+                if (!ctx.DefinedNames.Contains(r.Key)
+                    && FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.ThemePacksInUse))
+                { result.FrameworkProvided++; continue; }
                 // 程式自己讀、也在別處以字串寫進資源的鍵（dnSpy 的 ToolTipBackground）：同 DynamicResource 的放寬
                 if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
                 { result.DynamicKeysNamedInCode++; continue; }
@@ -615,7 +634,7 @@ public sealed class Analyzer
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
             //    這一條必須排在查找**之後**：排在前面會把本來解析得到的引用也短路掉 ——
             //    實測 wpfui（WPF 專案，自己定義了同名的鍵）有 3021 筆被誤判成「框架提供」。
-            if (FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.WpfFluentThemeInUse))
+            if (FrameworkKeys.IsProvidedByFramework(r.Key, cfg.Dialect, result.ThemePacksInUse))
             { result.FrameworkProvided++; continue; }
 
             // ⚠ 函式庫專案：它的字典是給**使用者**合併的，我們看不到使用者的作用域。
@@ -974,7 +993,7 @@ public sealed class Analyzer
             //   框架的樣板在執行期用 {ThemeResource ButtonBackground} 讀它 —— 那個引用在框架裡，
             //   不在使用者的原始碼樹。實測 Files 的 80 筆 unused 有 33 筆是這種、WinUI Gallery 42 筆裡 16 筆，
             //   全部是「叫人刪掉有用的東西」。
-            if (FrameworkKeys.IsProvidedByFramework(d.Key, dict.Dialect, result.WpfFluentThemeInUse))
+            if (FrameworkKeys.IsProvidedByFramework(d.Key, dict.Dialect, result.ThemePacksInUse))
             { ctx.FrameworkOverrideNames.Add(d.Key); continue; }
 
             candidates.Add(d);

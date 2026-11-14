@@ -190,7 +190,7 @@ public class FrozenContractTests
             "runtimeLoadedDictionaries", "implicitThemeDictionaries", "runtimeSelectedFamilyFiles",
             "libraryUnresolvedReferences", "unusedDefinitions", "crossProjectReferences",
             "testFilesExcluded", "winUiKeySource", "winUiKeyCount", "wpfFluentThemeInUse",
-            "wpfFluentKeySource", "wpfFluentKeyCount", "sides", "externalSources", "counts", "severities",
+            "wpfFluentKeySource", "wpfFluentKeyCount", "sides", "externalSources", "knownThemeSources", "themePacksInUse", "counts", "severities",
         })
             Assert.True(actual.Contains(field), $"summary.{field} is part of the frozen contract");
     }

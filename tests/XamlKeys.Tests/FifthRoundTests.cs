@@ -107,11 +107,19 @@ public class FifthRoundTests : IDisposable
                   </ResourceDictionary.MergedDictionaries></ResourceDictionary></Styles.Resources>
                 </Styles>
                 """,
-            ["Lib/Picker.axaml"] = Dict(Ava, """<ControlTheme x:Key="PickerTheme" TargetType="Button"><Setter Property="Theme" Value="{StaticResource SimpleDateTimePickerUpButton}" /></ControlTheme>"""),
+            ["Lib/Picker.axaml"] = Dict(Ava, """
+                <ControlTheme x:Key="PickerTheme" TargetType="Button">
+                  <Setter Property="Theme" Value="{StaticResource SimpleDateTimePickerUpButton}" />
+                  <Setter Property="Tag" Value="{StaticResource NotOnAnyList}" />
+                </ControlTheme>
+                """),
         });
 
         Assert.Empty(Keys(r, FindingKind.DanglingStatic));
-        Assert.Contains("SimpleDateTimePickerUpButton", Keys(r, FindingKind.External));
+        // Simple 主題的鍵在內建清單裡（2026-11-15 起）：算框架提供；不在清單的才是 external
+        Assert.DoesNotContain("SimpleDateTimePickerUpButton", Keys(r, FindingKind.External));
+        Assert.Contains("NotOnAnyList", Keys(r, FindingKind.External));
+        Assert.Contains("avalonia-simple", r.ThemePacksInUse);
     }
 
     [Fact]

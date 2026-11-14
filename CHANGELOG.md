@@ -200,6 +200,21 @@ coincidental name match.
   assembly — and one whose type is not declared in the tree belongs to that library (`libraryKeyOverrides`).
   Unresolved sites across the corpus fell by 750; one finding appeared (a layered MahApps style set).
 
+- **Key lists for Avalonia's themes and the Windows Community Toolkit; csproj `Link` items resolve.**
+  Generated from upstream like the WinUI and WPF Fluent lists (MIT, notices included): Avalonia's
+  Fluent, Fluent2, Simple, ColorPicker, DataGrid and TreeDataGrid themes, and CommunityToolkit for WinUI.
+  Each applies only when the tree merges that theme (`themePacksInUse`). A merged theme whose key names are
+  known — these, WinUI's `XamlControlsResources` and WPF Fluent — counts as resolved in the coverage figure
+  (`knownThemeSources`) instead of unreadable; keys not on its list are still `external`. XAML linked into
+  a project with `<Page Include="…" Link="…">` (attribute or element) now resolves at its linked path.
+  PowerToys' coverage went from 73.6% to 98.6% (exit 3 → 0); 169 `external` and 5 false `unused`
+  (CommunityToolkit lightweight-styling keys) disappeared. Two findings appeared: Avalonia's own Simple-theme
+  TabbedPage references `ThemeForegroundMidColor` and `ThemeDisabledColor`, which nothing in Avalonia defines.
+
+  **Upgrading:** `coverage` now counts known themes as resolved, so a tree that leaned on WinUI's
+  `XamlControlsResources` or CommunityToolkit reports a higher figure and exits 3 less often.
+  `externalSources` no longer lists those themes; they are in `knownThemeSources`.
+
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
   For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the

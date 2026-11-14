@@ -17,6 +17,13 @@
   <ItemGroup>
     <EmbeddedResource Include="WinUiFrameworkKeys.json" LogicalName="XamlKeys.Core.WinUiFrameworkKeys.json" />
     <EmbeddedResource Include="WpfFluentKeys.json" LogicalName="XamlKeys.Core.WpfFluentKeys.json" />
+    <EmbeddedResource Include="AvaloniaFluentKeys.json" LogicalName="XamlKeys.Core.AvaloniaFluentKeys.json" />
+    <EmbeddedResource Include="AvaloniaFluent2Keys.json" LogicalName="XamlKeys.Core.AvaloniaFluent2Keys.json" />
+    <EmbeddedResource Include="AvaloniaSimpleKeys.json" LogicalName="XamlKeys.Core.AvaloniaSimpleKeys.json" />
+    <EmbeddedResource Include="AvaloniaColorPickerKeys.json" LogicalName="XamlKeys.Core.AvaloniaColorPickerKeys.json" />
+    <EmbeddedResource Include="AvaloniaDataGridKeys.json" LogicalName="XamlKeys.Core.AvaloniaDataGridKeys.json" />
+    <EmbeddedResource Include="AvaloniaTreeDataGridKeys.json" LogicalName="XamlKeys.Core.AvaloniaTreeDataGridKeys.json" />
+    <EmbeddedResource Include="CommunityToolkitKeys.json" LogicalName="XamlKeys.Core.CommunityToolkitKeys.json" />
   </ItemGroup>
 
 </Project>

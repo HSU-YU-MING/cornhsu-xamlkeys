@@ -69,6 +69,10 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **`{x:Static …}`／`ComponentResourceKey` 的鍵換成身分字串**（`MarkupKeys`，例如 `{x:Static MyApp.Keys.A}`）。
   框架的鍵：引用算框架提供、定義不算沒人用也不算死副本。專案的鍵找不到時**不報懸空**（可能在 C# 或別的組件）。
   「型別在不在這棵樹」要找**宣告**（`class X`），只是用到不算。
+- **主題套件的鍵名清單是選用的**（`FrameworkKeys.Packs`）：只有樹裡真的合併了那個主題才算。
+  新增清單照 `scripts/regenerate-framework-keys.mjs` 的表加一列、`.csproj` 加 EmbeddedResource、
+  **THIRD-PARTY-NOTICES 加一節（授權全文從上游 `git show` 拿，不要手抄）**。內容已知的主題在覆蓋率裡算解析得到，
+  但查找時仍是看不到的合併 —— 清單外的鍵照舊 external，別改成懸空（清單只收 XAML 裡寫出來的鍵，C# 產生的不在裡面）。
 - **重新定義框架內建鍵不是沒人用**（WinUI 輕量樣式覆寫）。框架的樣板在執行期讀它，
   引用不在原始碼樹裡。計數在 `frameworkKeyOverrides`。
 

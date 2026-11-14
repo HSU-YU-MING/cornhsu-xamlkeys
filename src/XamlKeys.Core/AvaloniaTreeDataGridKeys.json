@@ -1,0 +1,21 @@
+{
+ "source": "AvaloniaUI/Avalonia.Controls.TreeDataGrid@914572f49ac4b51a2e1ea037a86ff3a494385a5f",
+ "license": "MIT",
+ "generatedBy": "scripts/regenerate-framework-keys.mjs",
+ "files": 2,
+ "keys": [
+  "TreeDataGridExpandCollapseChevron",
+  "TreeDataGridGridLinesBrush",
+  "TreeDataGridHeaderBackgroundPointerOverBrush",
+  "TreeDataGridHeaderBackgroundPressedBrush",
+  "TreeDataGridHeaderBorderBrushPointerOverBrush",
+  "TreeDataGridHeaderBorderBrushPressedBrush",
+  "TreeDataGridHeaderForegroundPointerOverBrush",
+  "TreeDataGridHeaderForegroundPressedBrush",
+  "TreeDataGridItemCollapsedChevronPathData",
+  "TreeDataGridItemExpandedChevronPathData",
+  "TreeDataGridSelectedCellBackgroundBrush",
+  "TreeDataGridSortIconAscendingPath",
+  "TreeDataGridSortIconDescendingPath"
+ ]
+}

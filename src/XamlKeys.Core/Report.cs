@@ -83,6 +83,12 @@ public static class Report
             w.WriteStartArray("externalSources");
             foreach (var s in r.ExternalSources) w.WriteStringValue(s);
             w.WriteEndArray();
+            w.WriteStartArray("knownThemeSources");
+            foreach (var s in r.KnownThemeSources) w.WriteStringValue(s);
+            w.WriteEndArray();
+            w.WriteStartArray("themePacksInUse");
+            foreach (var s in r.ThemePacksInUse.Order(StringComparer.Ordinal)) w.WriteStringValue(s);
+            w.WriteEndArray();
 
             w.WriteStartObject("counts");
             foreach (FindingKind k in Enum.GetValues<FindingKind>())
@@ -229,6 +235,9 @@ public static class Report
         if (r.TestFilesExcluded > 0)
             o.WriteLine($"note: {r.TestFilesExcluded} XAML file(s) under test paths were skipped " +
                         $"(set includeTests in the config to scan them)");
+        if (r.KnownThemeSources.Count > 0)
+            o.WriteLine($"note: {r.KnownThemeSources.Count} merged theme(s) are read from bundled key lists ({string.Join(", ", r.ThemePacksInUse.Order(StringComparer.Ordinal).DefaultIfEmpty("winui"))}) " +
+                        $"-- counted as resolved; keys not on a list are still external");
         if (r.ExternalSources.Count > 0)
             o.WriteLine($"note: {r.ExternalSources.Count} merged dictionar(ies) could not be read -- " +
                         $"'unused' results are incomplete for keys they may define");

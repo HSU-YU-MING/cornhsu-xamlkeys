@@ -1,31 +1,81 @@
-// 從上游的主題資源檔產生「框架提供的資源鍵」清單。
+// 從上游的主題資源檔產生「框架／函式庫主題提供的資源鍵」清單。
 //
-// 支援兩套：
-//   winui  —— microsoft/microsoft-ui-xaml      -> src/XamlKeys.Core/WinUiFrameworkKeys.json
-//   fluent —— dotnet/wpf 的 PresentationFramework.Fluent -> src/XamlKeys.Core/WpfFluentKeys.json
+//   pack                    上游                                     產出
+//   winui                   microsoft/microsoft-ui-xaml              WinUiFrameworkKeys.json
+//   fluent                  dotnet/wpf（PresentationFramework.Fluent） WpfFluentKeys.json
+//   avalonia-fluent         AvaloniaUI/Avalonia（Themes.Fluent）      AvaloniaFluentKeys.json
+//   avalonia-fluent2        AvaloniaUI/Avalonia（Themes.Fluent2）     AvaloniaFluent2Keys.json
+//   avalonia-simple         AvaloniaUI/Avalonia（Themes.Simple）      AvaloniaSimpleKeys.json
+//   avalonia-colorpicker    AvaloniaUI/Avalonia（Controls.ColorPicker）AvaloniaColorPickerKeys.json
+//   avalonia-datagrid       AvaloniaUI/Avalonia.Controls.DataGrid     AvaloniaDataGridKeys.json
+//   avalonia-treedatagrid   AvaloniaUI/Avalonia.Controls.TreeDataGrid AvaloniaTreeDataGridKeys.json
+//   toolkit                 CommunityToolkit/Windows                  CommunityToolkitKeys.json
 //
-// 為什麼需要這份資料：那些專案的 XAML 大量引用框架內建的鍵
-// （TextFillColorPrimaryBrush、ControlCornerRadius、BodyTextBlockStyle…），
+// 為什麼需要這份資料：專案的 XAML 大量引用框架或主題套件內建的鍵
+// （TextFillColorPrimaryBrush、ControlCornerRadius、SettingsCardWrapThreshold…），
 // 定義不在使用者的 repo 裡 —— 沒有清單的話，WinUI Gallery 被報出 195 個不重複的
-// 假懸空，工具第一天就被關掉。
+// 假懸空，工具第一天就被關掉。除了 winui 之外都是**選用**的：只在那棵樹真的合併了那個主題時才算。
 //
 // ⚠ 資料不是手抄的。重新產生：
-//   1. sparse clone 上游（只要 *.xaml）
-//   2. node scripts/regenerate-framework-keys.mjs <winui|fluent> <clone 目錄> <完整 SHA>
+//   1. sparse clone 上游（只要 *.xaml、*.axaml）
+//   2. node scripts/regenerate-framework-keys.mjs <pack> <clone 目錄> <完整 SHA>
 //   3. 看 git diff 再 commit，**並且把 THIRD-PARTY-NOTICES.md 的 commit 一起更新**
 //
-// 授權：兩個上游都是 MIT。產出的是鍵名清單（事實資料），聲明仍要附。
+// 授權：所有上游都是 MIT。產出的是鍵名清單（事實資料），聲明仍要附。
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, sep } from 'node:path';
 
+const PACKS = {
+  winui: {
+    repo: 'microsoft/microsoft-ui-xaml', out: 'WinUiFrameworkKeys.json',
+    // 任何 *themeresources*.xaml、generic.xaml、以及 controls/dev 底下的控制項樣式檔（它們被 generic.xaml 合併）
+    take: (unix, name) => name.includes('themeresources') || name === 'generic.xaml' || unix.includes('/controls/dev/'),
+  },
+  fluent: {
+    repo: 'dotnet/wpf', out: 'WpfFluentKeys.json',
+    take: unix => unix.includes('/Themes/PresentationFramework.Fluent/'),
+  },
+  'avalonia-fluent': {
+    repo: 'AvaloniaUI/Avalonia', out: 'AvaloniaFluentKeys.json',
+    take: unix => unix.includes('/src/Avalonia.Themes.Fluent/'),
+  },
+  'avalonia-fluent2': {
+    repo: 'AvaloniaUI/Avalonia', out: 'AvaloniaFluent2Keys.json',
+    take: unix => unix.includes('/src/Avalonia.Themes.Fluent2/'),
+  },
+  'avalonia-simple': {
+    repo: 'AvaloniaUI/Avalonia', out: 'AvaloniaSimpleKeys.json',
+    take: unix => unix.includes('/src/Avalonia.Themes.Simple/'),
+  },
+  'avalonia-colorpicker': {
+    repo: 'AvaloniaUI/Avalonia', out: 'AvaloniaColorPickerKeys.json',
+    take: unix => unix.includes('/src/Avalonia.Controls.ColorPicker/Themes/'),
+  },
+  'avalonia-datagrid': {
+    repo: 'AvaloniaUI/Avalonia.Controls.DataGrid', out: 'AvaloniaDataGridKeys.json',
+    take: unix => unix.includes('/Themes/'),
+  },
+  'avalonia-treedatagrid': {
+    repo: 'AvaloniaUI/Avalonia.Controls.TreeDataGrid', out: 'AvaloniaTreeDataGridKeys.json',
+    take: unix => unix.includes('/Themes/'),
+  },
+  toolkit: {
+    repo: 'CommunityToolkit/Windows', out: 'CommunityToolkitKeys.json',
+    // 每個元件的 src/（控制項樣式與 lightweight styling 鍵）；samples、tests 不算
+    take: unix => unix.includes('/components/') && unix.includes('/src/'),
+  },
+};
+
 const [, , which, root, commit] = process.argv;
-if (!['winui', 'fluent'].includes(which) || !root || !commit) {
-  console.error('usage: node regenerate-framework-keys.mjs <winui|fluent> <clone-dir> <full-sha>');
+const pack = PACKS[which];
+if (!pack || !root || !commit) {
+  console.error(`usage: node regenerate-framework-keys.mjs <${Object.keys(PACKS).join('|')}> <clone-dir> <full-sha>`);
   process.exit(2);
 }
 
-const SKIP = ['TestUI', 'Tests', 'RegressionProjects', 'InteractionTests', 'ApiTests', 'DevTests'];
+const SKIP = ['TestUI', 'Tests', 'tests', 'RegressionProjects', 'InteractionTests', 'ApiTests', 'DevTests',
+              'samples', 'Samples', '.git'];
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
@@ -35,27 +85,10 @@ function* walk(dir) {
     if (st.isDirectory()) {
       if (SKIP.includes(entry)) continue;
       yield* walk(p);
-    } else if (entry.toLowerCase().endsWith('.xaml')) {
+    } else if (/\.a?xaml$/i.test(entry)) {
       yield p;
     }
   }
-}
-
-// 只收「會被合併進應用程式主題字典」的檔。
-function isThemeFile(path) {
-  const unix = path.split(sep).join('/');
-
-  if (which === 'fluent') {
-    // dotnet/wpf：整個 PresentationFramework.Fluent 主題（Resources/ 與 Styles/）
-    return unix.includes('/Themes/PresentationFramework.Fluent/');
-  }
-
-  // microsoft-ui-xaml：任何 *themeresources*.xaml、generic.xaml、
-  // 以及 controls/dev 底下的控制項樣式檔（它們被 generic.xaml 合併）
-  const name = basename(path).toLowerCase();
-  if (name.includes('themeresources')) return true;
-  if (name === 'generic.xaml') return true;
-  return unix.includes('/controls/dev/');
 }
 
 const KEY_RE = /\bx:Key\s*=\s*"([^"]+)"/g;
@@ -64,7 +97,8 @@ const keys = new Set();
 let files = 0;
 
 for (const file of walk(root)) {
-  if (!isThemeFile(file)) continue;
+  const unix = file.split(sep).join('/');
+  if (!pack.take(unix, basename(file).toLowerCase())) continue;
   files++;
 
   const text = readFileSync(file, 'utf8');
@@ -77,13 +111,9 @@ for (const file of walk(root)) {
   }
 }
 
-const repo = which === 'fluent' ? 'dotnet/wpf' : 'microsoft/microsoft-ui-xaml';
-const target = which === 'fluent'
-  ? 'src/XamlKeys.Core/WpfFluentKeys.json'
-  : 'src/XamlKeys.Core/WinUiFrameworkKeys.json';
-
+const target = `src/XamlKeys.Core/${pack.out}`;
 const out = {
-  source: `${repo}@${commit}`,
+  source: `${pack.repo}@${commit}`,
   license: 'MIT',
   generatedBy: 'scripts/regenerate-framework-keys.mjs',
   files,

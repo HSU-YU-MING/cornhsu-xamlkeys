@@ -51,6 +51,8 @@
       "neutral"
     ],
     "externalSources": [],
+    "knownThemeSources": [],
+    "themePacksInUse": [],
     "counts": {
       "danglingStatic": 0,
       "danglingDynamic": 0,

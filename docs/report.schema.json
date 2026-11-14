@@ -75,6 +75,8 @@
 
         "sides": { "type": "array", "items": { "enum": ["neutral", "dark", "light", "high-contrast"] } },
         "externalSources": { "type": "array", "items": { "type": "string" } },
+        "knownThemeSources": { "type": "array", "items": { "type": "string" }, "description": "Merged theme sources the tool cannot read but whose key names it knows from a bundled list (WinUI's XamlControlsResources, Avalonia's FluentTheme/SimpleTheme/ColorPicker/DataGrid/TreeDataGrid themes, CommunityToolkit for WinUI, .NET's WPF Fluent theme). Counted as resolved in coverage; a key not on the list is still reported as external." },
+        "themePacksInUse": { "type": "array", "items": { "type": "string" }, "description": "Optional key lists that apply to this tree because it merges that theme: wpf-fluent, avalonia-fluent, avalonia-fluent2, avalonia-simple, avalonia-colorpicker, avalonia-datagrid, avalonia-treedatagrid, community-toolkit." },
 
         "counts": {
           "type": "object",
