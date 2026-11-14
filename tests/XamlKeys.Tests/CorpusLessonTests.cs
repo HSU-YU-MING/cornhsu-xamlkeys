@@ -903,6 +903,74 @@ public class CorpusLessonTests : IDisposable
         Assert.Equal(2, r.FrameworkProvided);
     }
 
+    // ── 第四輪語料：.NET MAUI（maui-samples / eShop） ──────────────────────
+
+    [Fact]
+    public void The_2009_xaml_namespace_is_recognised()
+    {
+        // ⚠ 教訓來源：.NET MAUI 用 http://schemas.microsoft.com/winfx/2009/xaml
+        //   （dotnet/maui-samples 的 1,238 個檔裡有 1,122 個是 2009），
+        //   WPF／WinUI／Avalonia 則是 2006。只認 2006 的話,MAUI 專案的 x:Key
+        //   一個都看不到 —— 實測是 0 個鍵、19,157 筆假懸空。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.xaml"] = """
+                <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+                  <Application.Resources>
+                    <ResourceDictionary>
+                      <ResourceDictionary.MergedDictionaries>
+                        <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+                      </ResourceDictionary.MergedDictionaries>
+                    </ResourceDictionary>
+                  </Application.Resources>
+                </Application>
+                """,
+            ["Resources/Styles/Colors.xaml"] = """
+                <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+                  <Color x:Key="Primary">#512BD4</Color>
+                </ResourceDictionary>
+                """,
+            ["MainPage.xaml"] = """
+                <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+                  <Label TextColor="{StaticResource Primary}" />
+                </ContentPage>
+                """,
+        });
+
+        Assert.Equal(1, r.KeysDefined);
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.DanglingStatic or FindingKind.Unused);
+    }
+
+    [Fact]
+    public void A_dictionary_loaded_from_code_is_only_exempt_inside_its_own_project()
+    {
+        // ⚠ 教訓來源：dotnet/maui-samples 有 231 個獨立的範例專案。
+        //   只比對檔名的話，任何一個範例的 C# 提到 "Colors.xaml"，
+        //   其餘 230 份 Colors.xaml 都會被當成「程式會載入」而豁免孤兒檢查。
+        var r = Analyze(new()
+        {
+            ["A/A.csproj"] = AppProj,
+            ["A/App.xaml"] = App("""<SolidColorBrush x:Key="OwnA" Color="#111" />"""),
+            ["A/Loader.cs"] = """
+                var d = new ResourceDictionary { Source = new Uri("Themes/Colors.xaml", UriKind.Relative) };
+                """,
+            ["A/Themes/Colors.xaml"] = Dict("""<SolidColorBrush x:Key="InA" Color="#222" />"""),
+
+            // B 專案有一本同名的字典,但 B 的程式碼沒有載入它
+            ["B/B.csproj"] = AppProj,
+            ["B/App.xaml"] = App("""<SolidColorBrush x:Key="OwnB" Color="#333" />"""),
+            ["B/Themes/Colors.xaml"] = Dict("""<SolidColorBrush x:Key="InB" Color="#444" />"""),
+        });
+
+        var orphans = r.Findings.Where(f => f.Kind == FindingKind.OrphanDictionary).ToList();
+        Assert.Single(orphans);
+        Assert.Contains("B/", orphans[0].Location.File);
+    }
+
     // ── 對抗性輸入（這個工具會在 CI 上掃別人的 repo） ───────────────────────
 
     [Fact]

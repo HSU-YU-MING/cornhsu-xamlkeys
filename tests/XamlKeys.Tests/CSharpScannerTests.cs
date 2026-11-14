@@ -112,7 +112,7 @@ public class CSharpScannerTests
             var s = new CSharpScanner(dir.FullName);
             s.ScanFile(file);
 
-            Assert.Contains("Themes/DarkTheme.xaml", s.LoadedDictionaryPaths);
+            Assert.Contains(s.LoadedDictionaryPaths, e => e.Path == "Themes/DarkTheme.xaml");
         }
         finally { dir.Delete(true); }
     }

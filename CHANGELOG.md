@@ -152,3 +152,21 @@ siblings — erring towards under-reporting instead of towards false positives.
 
 All three Avalonia projects now report zero `fail`-level findings, and re-running the twelve
 WPF/WinUI projects shows no finding lost or changed.
+
+### .NET MAUI, and the namespace that made every key invisible
+
+A probe of a fourth ecosystem — `dotnet/maui-samples` (1,238 XAML files across 231 separate sample
+projects) and `dotnet/eShop` — found **zero keys** and **19,395 false danglings**. One cause:
+MAUI's `x:` namespace is `http://schemas.microsoft.com/winfx/2009/xaml`, while WPF, WinUI and
+Avalonia use `.../2006/xaml`. The 2006 URI was hard-coded, so every `x:Key` was invisible.
+
+- **Both XAML language namespaces are recognised** for `x:Key` and `x:Name`.
+- **"Loaded from code" is matched per project.** With 231 samples in one repository, matching a
+  dictionary by filename alone meant that one sample mentioning `Colors.xaml` in C# exempted the
+  other 230 from the orphan check.
+- **Symlinks and directory junctions are skipped**, because following one that points at an
+  ancestor never terminates. Noted in the README's limitations.
+
+After the fix: 4,361 keys in maui-samples and 40 `fail`-level findings — **all of them real**;
+`ThemePrimary`, `TextPrimaryColor` and the rest are defined nowhere in that repository. eShop goes
+from 239 false danglings to zero. None of the fifteen existing projects changed by a single finding.

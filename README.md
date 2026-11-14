@@ -1,6 +1,6 @@
 # XamlKeys
 
-**Static scope audit for XAML resource keys. WPF, WinUI and Avalonia. No app launch, whole project, CI exit codes.**
+**Static scope audit for XAML resource keys. WPF, WinUI, Avalonia and .NET MAUI. No app launch, whole project, CI exit codes.**
 
 [![NuGet](https://img.shields.io/nuget/v/Cornhsu.XamlKeys)](https://www.nuget.org/packages/Cornhsu.XamlKeys)
 [![CI](https://github.com/HSU-YU-MING/cornhsu-xamlkeys/actions/workflows/ci.yml/badge.svg)](https://github.com/HSU-YU-MING/cornhsu-xamlkeys/actions)
@@ -198,6 +198,7 @@ Every one of these was found by running the tool over seven public projects — 
 | Scope is a static approximation | A `UserControl`'s real parent is unknown | A key that exists elsewhere is `out-of-scope` (warn), never `dangling` (fail) |
 | `ComponentResourceKey`, `{x:Static …Key}` | Not string keys | Counted as unresolved sites, never graded |
 | Library projects | Their keys are public API | `unused` and `orphan-dictionary` are not evaluated there |
+| Symlinks and directory junctions | Their contents are skipped | Following them can loop forever when one points at an ancestor |
 | Avalonia custom theme variants (`x:Key="{x:Static …}"`) | Treated as a neutral side | Mutual exclusion still applies, so they never shadow each other |
 
 ## License

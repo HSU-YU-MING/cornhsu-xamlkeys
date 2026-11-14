@@ -25,7 +25,7 @@ public sealed partial class CSharpScanner
     private readonly string _root;
     private readonly List<KeyReference> _references = [];
     private readonly List<DynamicKeySite> _dynamicSites = [];
-    private readonly List<string> _loadedDictionaryPaths = [];
+    private readonly List<(string Path, string? Project)> _loadedDictionaryPaths = [];
 
     public CSharpScanner(string root) => _root = Path.GetFullPath(root);
 
@@ -34,7 +34,10 @@ public sealed partial class CSharpScanner
 
     /// <summary>程式碼裡載入的字典路徑（new ResourceDictionary { Source = new Uri("…") }）。
     /// 用來避免把它們誤報成 orphan-dictionary。</summary>
-    public IReadOnlyList<string> LoadedDictionaryPaths => _loadedDictionaryPaths;
+    public IReadOnlyList<(string Path, string? Project)> LoadedDictionaryPaths => _loadedDictionaryPaths;
+
+    /// <summary>掃描前先告訴它每個檔屬於哪個專案 —— 載入字典的比對要限定在同一個專案裡。</summary>
+    public Func<string, string?>? ProjectOf { get; set; }
 
     public void ScanFile(string file)
     {
@@ -62,8 +65,9 @@ public sealed partial class CSharpScanner
                 new SourceLocation(rel, LineAt(code, m.Index)),
                 Shorten(m.Value)));
 
+        var project = ProjectOf?.Invoke(file);
         foreach (var m in XamlPathRegex().Matches(code).Cast<Match>())
-            _loadedDictionaryPaths.Add(m.Groups["p"].Value);
+            _loadedDictionaryPaths.Add((m.Groups["p"].Value, project));
     }
 
     /// <summary>把註解換成等長的空白 —— 位移不變，行號才算得準。</summary>

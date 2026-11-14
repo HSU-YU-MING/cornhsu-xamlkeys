@@ -19,7 +19,33 @@ public sealed partial class XamlScanner
 {
     public const string IgnoreMarker = "xamlkeys-ignore";
 
-    private static readonly XNamespace XamlNs = "http://schemas.microsoft.com/winfx/2006/xaml";
+    /// <summary>
+    /// XAML 語言命名空間（x:Key、x:Name、x:Type…）。
+    ///
+    /// ⚠ **有兩個**。WPF／WinUI／Avalonia 用 2006，**.NET MAUI 用 2009**
+    /// （實測 dotnet/maui-samples 的 1,238 個檔裡有 1,122 個是 2009）。
+    /// 只認 2006 的話，MAUI 專案的 x:Key 一個都看不到 —— 實測是 0 個鍵、19,157 筆假懸空。
+    /// </summary>
+    private static readonly XNamespace[] XamlNamespaces =
+    [
+        "http://schemas.microsoft.com/winfx/2006/xaml",
+        "http://schemas.microsoft.com/winfx/2009/xaml",
+    ];
+
+    /// <summary>取 x: 指令屬性（Key／Name），兩個 XAML 命名空間都認。</summary>
+    private static XAttribute? XamlAttr(XElement el, string local)
+    {
+        foreach (var ns in XamlNamespaces)
+            if (el.Attribute(ns + local) is { } a) return a;
+        return null;
+    }
+
+    private static bool IsXamlDirective(XName name, string local)
+    {
+        foreach (var ns in XamlNamespaces)
+            if (name == ns + local) return true;
+        return false;
+    }
     private static readonly XNamespace McNs = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
     private readonly string _root;
@@ -195,7 +221,7 @@ public sealed partial class XamlScanner
 
                     foreach (var t in group)
                     {
-                        var themeKey = t.Attribute(XamlNs + "Key")?.Value;
+                        var themeKey = XamlAttr(t, "Key")?.Value;
                         var themeDict = NewDictionary(dict.File, $"ThemeDictionaries[{themeKey}]",
                                                       LineOf(t), standalone: false, appScope: false);
                         themeDict.Side = SideOf(themeKey);
@@ -281,7 +307,7 @@ public sealed partial class XamlScanner
         // ⚠ 資源字典項目沒有 x:Key 時，x:Name 就是它的鍵（XAML 規格）。
         //   實查（WinUI Gallery、wpfui）：ImplicitAnimationSet、轉換器、Layout 常這樣寫 ——
         //   漏掉這條會把它們的引用全部報成懸空，而且定義端也會被算成「沒有鍵」。
-        var keyAttr = el.Attribute(XamlNs + "Key") ?? el.Attribute(XamlNs + "Name");
+        var keyAttr = XamlAttr(el, "Key") ?? XamlAttr(el, "Name");
         if (keyAttr is not null)
         {
             var raw = keyAttr.Value.Trim();
@@ -338,7 +364,7 @@ public sealed partial class XamlScanner
     {
         // 屬性元素形式：<StaticResource ResourceKey="K"/>（沒有 x:Key 的那種，有的話已在上面當別名處理）
         if (el.Name.LocalName is "StaticResource" or "DynamicResource" or "ThemeResource"
-            && el.Attribute(XamlNs + "Key") is null && el.Attribute(XamlNs + "Name") is null
+            && XamlAttr(el, "Key") is null && XamlAttr(el, "Name") is null
             && el.Attribute("ResourceKey")?.Value is { Length: > 0 } rk)
         {
             // ⚠ ResourceKey 的值也可以是 markup extension：
@@ -371,7 +397,7 @@ public sealed partial class XamlScanner
             if (attr.IsNamespaceDeclaration) continue;
             if (IsIgnorableName(attr.Name, ignorable)) continue;
             // x:Key 是定義不是引用；Source 由合併解析處理
-            if (attr.Name == XamlNs + "Key") continue;
+            if (IsXamlDirective(attr.Name, "Key")) continue;
 
             foreach (var r in MarkupExtensions.Scan(attr.Value))
                 AddExtensionRef(r, file, LineOf(attr), chain, suppressed);
@@ -609,7 +635,7 @@ public sealed partial class XamlScanner
 
         foreach (var a in el.Attributes()
                             .Where(a => !a.IsNamespaceDeclaration
-                                     && a.Name != XamlNs + "Key" && a.Name != XamlNs + "Name")
+                                     && !IsXamlDirective(a.Name, "Key") && !IsXamlDirective(a.Name, "Name"))
                             .OrderBy(a => a.Name.ToString(), StringComparer.Ordinal))
             clone.SetAttributeValue(a.Name, a.Value);
 

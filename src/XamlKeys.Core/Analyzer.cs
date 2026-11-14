@@ -138,7 +138,7 @@ public sealed class Analyzer
         foreach (var f in xamlFiles) scanner.ScanFile(f);
         scanner.LinkMergedDictionaries();
 
-        var cs = new CSharpScanner(root);
+        var cs = new CSharpScanner(root) { ProjectOf = projects.ProjectDirOf };
         foreach (var f in csFiles) cs.ScanFile(f);
 
         result.ParseErrors.AddRange(scanner.Errors);
@@ -737,18 +737,31 @@ public sealed class Analyzer
     /// <summary>程式碼裡出現過的 .xaml 路徑 -> 那本字典在執行期會被合併進 Application.Resources。
     /// 比對用檔名（程式裡寫的是 pack URI 或相對路徑，形式不一定對得起來）。</summary>
     private static void MarkRuntimeLoaded(IReadOnlyList<ResourceDictionaryNode> dicts,
-                                          IReadOnlyList<string> loadedPaths, AnalysisResult result)
+                                          IReadOnlyList<(string Path, string? Project)> loadedPaths,
+                                          AnalysisResult result)
     {
-        var names = loadedPaths
-            .Select(p => Path.GetFileName(p.Replace('\\', '/')))
-            .Where(n => n.Length > 0)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // ⚠ 檔名比對要**限定在同一個專案裡**。
+        //   實測（dotnet/maui-samples，231 個範例專案）：只比檔名的話，
+        //   任何一個範例的 C# 提到 "Colors.xaml"，其餘 230 份 Colors.xaml 都會被
+        //   當成「程式會載入」而豁免孤兒檢查 —— 一次跨專案的大赦。
+        var byProject = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, project) in loadedPaths)
+        {
+            var name = Path.GetFileName(path.Replace('\\', '/'));
+            if (name.Length == 0) continue;
+
+            var key = project ?? "";
+            if (!byProject.TryGetValue(key, out var set))
+                byProject[key] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            set.Add(name);
+        }
 
         foreach (var d in dicts)
         {
             if (!d.IsStandaloneFile) continue;
 
-            var loaded = names.Contains(Path.GetFileName(d.File));
+            var loaded = byProject.TryGetValue(d.ProjectDir ?? "", out var names)
+                      && names.Contains(Path.GetFileName(d.File));
             var implicitTheme = IsImplicitThemeDictionary(d.File);
             if (!loaded && !implicitTheme) continue;
 
@@ -885,6 +898,10 @@ public sealed class Analyzer
             RecurseSubdirectories = true,
             IgnoreInaccessible = true,
             MatchCasing = MatchCasing.CaseInsensitive,
+            // ⚠ 跳過重解析點（符號連結、目錄接合點）。.NET 的遞迴列舉預設會跟著走，
+            //   指回祖先的接合點會讓掃描永遠跑不完 —— 掃到別人的 repo 時這不是假設性風險。
+            //   代價是連結進來的原始碼會被略過，這一條寫進 README 的已知盲區。
+            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
         }))
         {
             var verdict = Classify(f, root, cfg);

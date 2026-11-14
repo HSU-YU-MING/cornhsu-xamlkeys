@@ -24,6 +24,12 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   `shadowed` 的贏家與輸家對調。
 - **輸出一律 ASCII。** Windows 主控台（cp950）會把 `——` 印成亂碼。
   `OutputContractTests.All_console_and_report_text_is_ascii` 守這條。
+- **`x:` 有兩個命名空間。** WPF／WinUI／Avalonia 是 `winfx/2006/xaml`，
+  **.NET MAUI 是 `winfx/2009/xaml`**。寫死 2006 的那一版，MAUI 專案是 0 個鍵、
+  19,157 筆假懸空。要取 `x:Key`／`x:Name` 一律走 `XamlAttr()`／`IsXamlDirective()`。
+- **跨專案的比對一律要先限定專案。** 已經踩過三次：作用域鏈（wpfui）、
+  方言（ModernWpf）、程式載入的字典（maui-samples）。只比檔名或只看「這棵樹裡有沒有」，
+  在多專案的 repo 上就是一次大赦。
 - **`baseline` 的比對鍵不含行號。** 含了的話一次格式化就讓整份失效。
 - **ignore 註解按行比對定義** —— 同一行有兩個 `x:Key` 時會一起壓掉（已知盲區）。
 

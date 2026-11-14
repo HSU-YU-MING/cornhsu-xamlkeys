@@ -40,6 +40,19 @@
 
 實測結果：三個專案的 `fail` 級 finding 都是 0。
 
+## .NET MAUI（2026-11-14 完成）
+
+白老鼠：**dotnet/maui-samples（1,238 個 xaml、231 個獨立範例專案）與 dotnet/eShop**。
+
+- MAUI 的 `x:` 命名空間是 **`winfx/2009/xaml`**，不是 WPF／WinUI／Avalonia 的 2006。
+  只認 2006 的話，MAUI 專案的 `x:Key` **一個都看不到** —— 實測是 0 個鍵、19,157 筆假懸空。
+- 合併語意與 WPF 相同（`<ResourceDictionary Source="…"/>` ＋ MergedDictionaries）。
+- `{AppThemeBinding Light={StaticResource …}, Dark={StaticResource …}}` 裡的巢狀引用
+  由既有的 markup extension 掃描器處理，不需要特別支援。
+
+實測之後，`maui-samples` 的 40 筆 `fail` 都是**真的**：`ThemePrimary`、`TextPrimaryColor`
+之類的鍵在整個 repo 都沒有定義。
+
 ## 1.x+
 - `ComponentResourceKey` 與 `{x:Static …Key}`（目前計入 unresolved，不評）
 - 自動修（刪除未使用的資源）。**不做** —— 見規劃書第 3 節，
