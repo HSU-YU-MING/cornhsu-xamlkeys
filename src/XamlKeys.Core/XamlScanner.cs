@@ -98,9 +98,24 @@ public sealed partial class XamlScanner
         if (IsIgnorable(el, ignorable)) return;
 
         var chainHere = chain;
+        var resProp0 = FindResourcesProperty(el);
+        var stylesProp = FindStylesProperty(el);
+
+        // Avalonia：<X.Styles> 底下的 <StyleInclude Source="…"/> 與函式庫主題元素
+        // （<semi:SemiTheme/>、<FluentAvaloniaTheme/>…）都會把資源帶進這個作用域。
+        // 它們不在 <X.Resources> 裡,不認的話那些資源等於不存在。
+        if (stylesProp is not null && !IsIgnorable(stylesProp, ignorable) && resProp0 is null
+            && stylesProp.Elements().Any(e => BringsResources(e)))
+        {
+            var sd = NewDictionary(file, $"{el.Name.LocalName}.Styles", LineOf(stylesProp),
+                                   standalone: false,
+                                   appScope: el.Name.LocalName.EndsWith("Application", StringComparison.Ordinal));
+            AddStyleSources(stylesProp, sd, ignorable);
+            chainHere = Prepend(sd.Id, chain);
+        }
 
         // 這個元素自己的 <X.Resources>
-        if (FindResourcesProperty(el) is { } resProp && !IsIgnorable(resProp, ignorable))
+        if (resProp0 is { } resProp && !IsIgnorable(resProp, ignorable))
         {
             var isApp = el.Name.LocalName.EndsWith("Application", StringComparison.Ordinal);
             var dict = NewDictionary(file, $"{el.Name.LocalName}.Resources", LineOf(resProp),
@@ -111,12 +126,16 @@ public sealed partial class XamlScanner
                                  .FirstOrDefault(e => e.Name.LocalName == "ResourceDictionary"
                                                    && !IsIgnorable(e, ignorable));
 
-            chainHere = Prepend(dict.Id, chain);
+            chainHere = Prepend(dict.Id, chainHere);
 
             if (wrapper is not null)
                 ReadDictionaryElement(wrapper, dict, chainHere, ignorable, suppressed);
             else
                 ReadDictionaryBody(resProp, dict, chainHere, ignorable, suppressed);
+
+            // 同一個元素同時有 .Resources 與 .Styles 時，Styles 帶進來的資源也算這個作用域的
+            if (stylesProp is not null && !IsIgnorable(stylesProp, ignorable))
+                AddStyleSources(stylesProp, dict, ignorable);
         }
 
         CollectRefs(el, file, chainHere, ignorable, suppressed);
@@ -156,6 +175,11 @@ public sealed partial class XamlScanner
                     foreach (var m in child.Elements())
                     {
                         if (IsIgnorable(m, ignorable)) continue;
+
+                        // ⚠ Avalonia 用 <ResourceInclude Source="…"/>（舊版是 MergeResourceInclude），
+                        //    不是 <ResourceDictionary Source="…"/>。兩者語意一樣：
+                        //    把那本合併進來,而且 Avalonia 的查找也是反向走合併清單（後宣告的贏）——
+                        //    這點與 WPF 相同,查證自 Avalonia.Base/Controls/ResourceDictionary.cs。
                         if (m.Attribute("Source")?.Value is { Length: > 0 } s)
                             AddMerged(dict, s, dict.File, LineOf(m));
                         else
@@ -166,12 +190,7 @@ public sealed partial class XamlScanner
 
                 case "ResourceDictionary.ThemeDictionaries":
                 {
-                    // ⚠ 先把整組的鍵名收齊再分側："Default" 的意思取決於同組裡還有誰。
                     var group = child.Elements().Where(t => !IsIgnorable(t, ignorable)).ToList();
-                    var names = group.Select(t => t.Attribute(XamlNs + "Key")?.Value)
-                                     .OfType<string>()
-                                     .ToHashSet(StringComparer.Ordinal);
-
                     var groupId = _nextThemeGroupId++;
 
                     foreach (var t in group)
@@ -179,7 +198,7 @@ public sealed partial class XamlScanner
                         var themeKey = t.Attribute(XamlNs + "Key")?.Value;
                         var themeDict = NewDictionary(dict.File, $"ThemeDictionaries[{themeKey}]",
                                                       LineOf(t), standalone: false, appScope: false);
-                        themeDict.Side = SideOf(themeKey, names);
+                        themeDict.Side = SideOf(themeKey);
                         themeDict.ThemeGroupId = groupId;
 
                         if (t.Attribute("Source")?.Value is { Length: > 0 } ts)
@@ -215,6 +234,9 @@ public sealed partial class XamlScanner
         //    它們的內容在組件裡，靜態看不到。
         //    舊版直接 return —— 等於把一本看不到的字典當成「不存在」，
         //    正好違反第一不變量。實測：QuillLook 因此多出 117 筆假 dangling-dynamic。
+        // Avalonia 的 <ResourceInclude>／<MergeResourceInclude> 沒有 Source 時是空的,不是外部字典
+        if (m.Name.LocalName is "ResourceInclude" or "MergeResourceInclude") return;
+
         if (m.Name.LocalName != "ResourceDictionary")
         {
             parent.Merged.Add(new MergedReference
@@ -442,6 +464,47 @@ public sealed partial class XamlScanner
         el.Elements().FirstOrDefault(e =>
             e.Name.LocalName.EndsWith(".Resources", StringComparison.Ordinal));
 
+    /// <summary>Avalonia 的 &lt;X.Styles&gt; 屬性元素。</summary>
+    private static XElement? FindStylesProperty(XElement el) =>
+        el.Elements().FirstOrDefault(e =>
+            e.Name.LocalName.EndsWith(".Styles", StringComparison.Ordinal));
+
+    /// <summary>這個放在 Styles 裡的元素會不會帶資源進來？
+    /// &lt;Style&gt; 自己的資源由一般走訪處理；會帶「看不到的」資源進來的是
+    /// &lt;StyleInclude Source="…"/&gt; 與函式庫的主題元素。</summary>
+    private static bool BringsResources(XElement e) =>
+        e.Name.LocalName is "StyleInclude" or "StyleIncludes"
+        || (e.Name.LocalName is not ("Style" or "Styles") && !e.HasElements && e.Attribute("Source") is null);
+
+    /// <summary>把 &lt;X.Styles&gt; 裡的 StyleInclude 與函式庫主題元素記成這個作用域的合併邊。</summary>
+    private void AddStyleSources(XElement stylesProp, ResourceDictionaryNode dict, HashSet<string> ignorable)
+    {
+        foreach (var e in stylesProp.Elements())
+        {
+            if (IsIgnorable(e, ignorable)) continue;
+
+            if (e.Name.LocalName is "StyleInclude" or "StyleIncludes")
+            {
+                if (e.Attribute("Source")?.Value is { Length: > 0 } src)
+                    AddMerged(dict, src, dict.File, LineOf(e));
+                continue;
+            }
+
+            if (e.Name.LocalName is "Style" or "Styles") continue;
+
+            // <semi:SemiTheme/>、<FluentAvaloniaTheme/> 之類：函式庫提供的主題物件，
+            // 它帶的資源在組件裡,靜態看不到 -> external（絕不能當成不存在）
+            dict.Merged.Add(new MergedReference
+            {
+                RawSource = $"<{e.Name.LocalName}/>",
+                Location = new SourceLocation(Rel(dict.File), LineOf(e)),
+                ResolvedDictionaryId = null,
+                ExternalReason = $"'{e.Name.LocalName}' is a theme object supplied by a library; "
+                               + "the resources it brings are not visible in the source tree",
+            });
+        }
+    }
+
     private static IReadOnlyList<int> Prepend(int id, IReadOnlyList<int> chain)
     {
         var list = new List<int>(chain.Count + 1) { id };
@@ -462,14 +525,19 @@ public sealed partial class XamlScanner
     /// 實查（WinUI Gallery，XamlResourcesPage）：一組 Default＋Dark，Default 裡寫的是
     /// 淺色值。把 Default 一律當深色的話，兩本會被判成互相覆蓋 —— 四筆假 shadowed。
     /// </summary>
-    private static ThemeSide SideOf(string? themeKey, IReadOnlySet<string> siblings) => themeKey switch
+    private static ThemeSide SideOf(string? themeKey) => themeKey switch
     {
         "Dark" => ThemeSide.Dark,
         "Light" => ThemeSide.Light,
         "HighContrast" => ThemeSide.HighContrast,
-        "Default" when siblings.Contains("Dark") && !siblings.Contains("Light") => ThemeSide.Light,
-        "Default" when siblings.Contains("Light") && !siblings.Contains("Dark") => ThemeSide.Dark,
-        "Default" when siblings.Contains("Light") && siblings.Contains("Dark") => ThemeSide.Fallback,
+
+        // ⚠ "Default" 一律當**兩側共用**。
+        //   它在兩個方言裡都是「要求的主題沒有對應字典時用這本」的退路 ——
+        //   Avalonia 的原始碼寫得最清楚（ResourceDictionary.TryGetResource：
+        //   先查要求的 variant、再沿 InheritVariant 往上、最後才查 ThemeVariant.Default）。
+        //   早期版本依同組還有誰去推它代表哪一側，那會在「鍵只定義在 Default」時
+        //   誤判成另一側缺漏。往少報的方向錯,不往害人的方向錯。
+        //   同組字典之間不會互相覆蓋這件事，由 ThemeGroupId 負責，不靠這裡。
         "Default" => ThemeSide.Neutral,
         _ => ThemeSide.Neutral,
     };

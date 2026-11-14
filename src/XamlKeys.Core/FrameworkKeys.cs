@@ -32,17 +32,24 @@ public static class FrameworkKeys
 
     public static string SourceCommit { get; private set; } = "unknown";
 
-    /// <summary>這個鍵是不是框架提供的？只有 WinUI 方言才查 ——
-    /// WPF 的框架資源幾乎都是型別鍵或 <c>{x:Static SystemColors.…}</c>，不是字串鍵。</summary>
+    /// <summary>
+    /// 這個鍵是不是框架／平台提供的？
+    ///
+    /// 兩段判斷：
+    ///   - **執行期前綴**（SystemAccentColor…／SystemColor…）在**每一種方言**都算。
+    ///     那是作業系統給的值（使用者的強調色、系統色），不是誰的 repo 裡的東西。
+    ///     實測（Avalonia）：只對 WinUI 生效的話，`SystemAccentColor` 會在
+    ///     Avalonia 專案裡冒出 161 筆假 dangling。WPF 的系統色是
+    ///     <c>{x:Static SystemColors.…}</c>（不是字串鍵），所以沒有誤殺的風險。
+    ///   - **WinUI 的 3,573 個具名鍵**只在 WinUI 方言查 —— 那些名字在別的生態系
+    ///     可能是使用者自己定義的。
+    /// </summary>
     public static bool IsProvidedByFramework(string key, XamlDialect dialect)
     {
-        if (dialect != XamlDialect.WinUi) return false;
-        if (WinUi.Value.Contains(key)) return true;
-
         foreach (var p in RuntimePrefixes)
             if (key.StartsWith(p, StringComparison.Ordinal)) return true;
 
-        return false;
+        return dialect == XamlDialect.WinUi && WinUi.Value.Contains(key);
     }
 
     public static int Count => WinUi.Value.Count;

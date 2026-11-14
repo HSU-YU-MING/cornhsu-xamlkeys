@@ -693,6 +693,216 @@ public class CorpusLessonTests : IDisposable
         Assert.Equal(0, r.LibraryUnresolvedReferences);
     }
 
+    // ── 第三輪語料：Avalonia（Avalonia / FluentAvalonia / Semi.Avalonia） ───
+
+    private static string Ax(string body) => $"""
+        <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        {body}
+        </ResourceDictionary>
+        """;
+
+    [Fact]
+    public void Avalonia_ResourceInclude_is_a_real_merge_not_an_unknown_element()
+    {
+        // Avalonia 用 <ResourceInclude Source="…"/>，不是 <ResourceDictionary Source="…"/>。
+        // 不認的話它會被當成「函式庫提供的子類別」-> 整個作用域變成不可知。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["Themes/Colors.axaml"] = Ax("""<SolidColorBrush x:Key="Brand" Color="#111" />"""),
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources>
+                    <ResourceDictionary>
+                      <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="Themes/Colors.axaml" />
+                      </ResourceDictionary.MergedDictionaries>
+                    </ResourceDictionary>
+                  </Application.Resources>
+                </Application>
+                """,
+            ["Main.axaml"] = """
+                <Window xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{StaticResource Brand}" />
+                </Window>
+                """,
+        });
+
+        Assert.Equal(100.0, r.Coverage);
+        Assert.Empty(r.ExternalSources);
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.DanglingStatic or FindingKind.External);
+    }
+
+    [Fact]
+    public void An_avares_uri_resolves_to_a_project_in_the_tree()
+    {
+        var r = Analyze(new()
+        {
+            ["Lib/MyLib.csproj"] = LibProj,
+            ["Lib/Themes/Colors.axaml"] = Ax("""<SolidColorBrush x:Key="LibBrand" Color="#111" />"""),
+            ["App/App.csproj"] = AppProj,
+            ["App/App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources>
+                    <ResourceDictionary>
+                      <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="avares://MyLib/Themes/Colors.axaml" />
+                      </ResourceDictionary.MergedDictionaries>
+                    </ResourceDictionary>
+                  </Application.Resources>
+                </Application>
+                """,
+        });
+
+        Assert.Equal(100.0, r.Coverage);
+        Assert.Empty(r.ExternalSources);
+    }
+
+    [Fact]
+    public void A_theme_object_in_Application_Styles_is_an_external_merge()
+    {
+        // Avalonia 的函式庫主題是放在 <Application.Styles> 裡的物件
+        // （<semi:SemiTheme/>、<FluentAvaloniaTheme/>）,它帶進來的資源靜態看不到。
+        // 不認的話那些資源等於不存在 -> 一整批假 dangling。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:semi="https://irihi.tech/semi">
+                  <Application.Styles>
+                    <semi:SemiTheme />
+                  </Application.Styles>
+                </Application>
+                """,
+            ["Main.axaml"] = """
+                <Window xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{StaticResource FromTheTheme}" />
+                </Window>
+                """,
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DanglingStatic);
+        Assert.Contains(r.ExternalSources, s => s.Contains("SemiTheme"));
+    }
+
+    [Fact]
+    public void Theme_sides_reach_the_dictionaries_a_theme_entry_includes()
+    {
+        // ⚠ 教訓來源：Semi.Avalonia 用**目錄**分主題 ——
+        //   ThemeDictionaries 的 Dark 那本只放一行 ResourceInclude，真正的鍵在別的檔。
+        //   側別不往下傳的話，Dark 與 Light 兩整套鍵會被判成互相覆蓋（66 筆假 shadowed）。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["Themes/Dark/_index.axaml"] = Ax("""<SolidColorBrush x:Key="Bg" Color="#000" />"""),
+            ["Themes/Light/_index.axaml"] = Ax("""<SolidColorBrush x:Key="Bg" Color="#FFF" />"""),
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources>
+                    <ResourceDictionary>
+                      <ResourceDictionary.ThemeDictionaries>
+                        <ResourceInclude x:Key="Light" Source="Themes/Light/_index.axaml" />
+                        <ResourceInclude x:Key="Dark" Source="Themes/Dark/_index.axaml" />
+                      </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                  </Application.Resources>
+                </Application>
+                """,
+            ["Main.axaml"] = """
+                <Window xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{StaticResource Bg}" />
+                </Window>
+                """,
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.Shadowed or FindingKind.ShadowedIdentical);
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DanglingStatic);
+    }
+
+    [Fact]
+    public void The_same_theme_group_declared_twice_still_means_mutually_exclusive()
+    {
+        // ⚠ 教訓來源：Semi.Avalonia 把同一套 ThemeDictionaries 在 SemiTheme.axaml 與
+        //   Index.axaml 各宣告了一次 —— Dark 那本因此是從**兩個**群組被合併到的。
+        //   用「同一個群組 id」去判會整批漏掉。
+        var themeDecl = """
+                  <Application.Resources>
+                    <ResourceDictionary>
+                      <ResourceDictionary.ThemeDictionaries>
+                        <ResourceInclude x:Key="Light" Source="Themes/Light/_index.axaml" />
+                        <ResourceInclude x:Key="Dark" Source="Themes/Dark/_index.axaml" />
+                      </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                  </Application.Resources>
+            """;
+
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["Themes/Dark/_index.axaml"] = Ax("""<SolidColorBrush x:Key="Bg" Color="#000" />"""),
+            ["Themes/Light/_index.axaml"] = Ax("""<SolidColorBrush x:Key="Bg" Color="#FFF" />"""),
+            ["App.axaml"] = $"""
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                {themeDecl}
+                </Application>
+                """,
+            ["Second.axaml"] = $"""
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                {themeDecl}
+                </Application>
+                """,
+            ["Main.axaml"] = """
+                <Window xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{StaticResource Bg}" />
+                </Window>
+                """,
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Kind is FindingKind.Shadowed or FindingKind.ShadowedIdentical);
+    }
+
+    [Fact]
+    public void Platform_supplied_system_keys_are_not_dangling_in_any_dialect()
+    {
+        // ⚠ 教訓來源：Avalonia 的 SystemAccentColor（作業系統給的強調色）——
+        //   執行期前綴只對 WinUI 生效的話，Avalonia 專案會冒出 161 筆假 dangling,
+        //   ModernWpf 的 SystemColor* 也是 48 筆。
+        var r = Analyze(new()
+        {
+            ["App.csproj"] = AppProj,
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources><ResourceDictionary>
+                    <SolidColorBrush x:Key="Own" Color="#111" />
+                  </ResourceDictionary></Application.Resources>
+                </Application>
+                """,
+            ["Main.axaml"] = """
+                <Window xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Border Background="{DynamicResource SystemAccentColor}" />
+                  <Border Background="{DynamicResource SystemColorHighlightColor}" />
+                </Window>
+                """,
+        });
+
+        Assert.DoesNotContain(r.Findings, f => f.Key.StartsWith("System", StringComparison.Ordinal));
+        Assert.Equal(2, r.FrameworkProvided);
+    }
+
     // ── 對抗性輸入（這個工具會在 CI 上掃別人的 repo） ───────────────────────
 
     [Fact]

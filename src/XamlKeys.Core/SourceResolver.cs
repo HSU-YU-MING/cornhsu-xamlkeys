@@ -135,6 +135,15 @@ public sealed partial class SourceResolver
             s = idx >= 0 ? s[(idx + 3)..] : s["ms-appx:".Length..];
             if (!s.StartsWith('/')) s = "/" + s;
         }
+        else if (s.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
+        {
+            // Avalonia：avares://組件名/路徑/檔案.axaml
+            // 組件名是第一段,不像 pack:// 那樣有 ;component 標記。
+            var rest = s["avares://".Length..].Replace('\\', '/');
+            var slash = rest.IndexOf('/');
+            if (slash <= 0) return (null, null);
+            return (rest[(slash + 1)..], rest[..slash]);
+        }
 
         s = s.Replace('\\', '/');
 

@@ -124,3 +124,31 @@ opened straight from a CI artifact (a report with scripts renders blank under a 
 diffed between runs. Severity filtering is pure CSS; a file section collapses when all of its rows
 are filtered out. "What this run could not see" sits at the top of the page, not at the bottom,
 because it is the precondition for trusting `unused`.
+
+### Avalonia, with a guinea pig
+
+The roadmap gated Avalonia on having a real project to validate against. Three arrived:
+**AvaloniaUI/Avalonia itself, FluentAvalonia and Semi.Avalonia** — 1,172 `.axaml` files.
+
+The merge order was not guessed. `Avalonia.Base/Controls/ResourceDictionary.cs` resolves merged
+dictionaries with `for (var i = _mergedDictionaries.Count - 1; i >= 0; --i)` — reverse order, last
+declared wins, **the same as WPF**. No third dialect is needed. The same method also settles
+`ThemeVariant.Default`: it is the fallback consulted when the requested variant has no dictionary,
+so `Default` is now treated as neutral in every dialect rather than being guessed from its
+siblings — erring towards under-reporting instead of towards false positives.
+
+- `<ResourceInclude Source="…"/>` (and the older `MergeResourceInclude`) is a real merge, not an
+  unknown element.
+- `avares://Assembly/Path.axaml` resolves against projects in the tree.
+- `<X.Styles>` carries resources: a `<StyleInclude Source="…"/>` is a resolvable merge, and a
+  library's theme object (`<semi:SemiTheme/>`) is an external one.
+- **Platform-supplied keys (`SystemAccentColor…`, `SystemColor…`) count in every dialect**, not
+  only WinUI. This alone removed 162 false danglings in Avalonia and 48 in ModernWpf.
+- **A theme entry's side reaches the dictionaries it includes.** Themes are often split by
+  directory, with the `Dark` entry holding a single `ResourceInclude`. And mutual exclusion is
+  "two dictionaries reached from *different entries of the same group*", not "the same group id" —
+  Semi.Avalonia declares the same `ThemeDictionaries` twice, in `SemiTheme.axaml` and
+  `Index.axaml`, so every key was reached from two groups. 66 false `shadowed` findings.
+
+All three Avalonia projects now report zero `fail`-level findings, and re-running the twelve
+WPF/WinUI projects shows no finding lost or changed.

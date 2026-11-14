@@ -165,6 +165,7 @@ public sealed class Analyzer
         foreach (var d in dicts) d.ProjectDir = projects.ProjectDirOf(d.File);
 
         ApplyThemeSides(dicts, config);
+        var themeEntries = PropagateThemeSides(dicts);
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
         result.HasApplication = projects.HasAnyApplication;
 
@@ -189,7 +190,7 @@ public sealed class Analyzer
 
         // dialect 傳 null：每本字典用自己專案的方言（AssignDialects 已經設好）
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
-        var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config);
+        var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
 
         EmitDuplicateKeys(dicts, result, config);
         EmitReferenceFindings(ctx, sides, result);
@@ -208,9 +209,11 @@ public sealed class Analyzer
 
         public Context(string root, IReadOnlyList<ResourceDictionaryNode> dicts, ProjectIndex projects,
                        IReadOnlyList<KeyDefinition> defs, List<KeyReference> refs,
-                       ScopeEngine engine, Config config)
+                       ScopeEngine engine, Config config,
+                       Dictionary<int, HashSet<int>> themeEntries)
         {
             _root = root;
+            ThemeEntriesOf = themeEntries;
             Dicts = dicts;
             Projects = projects;
             Definitions = defs;
@@ -244,6 +247,9 @@ public sealed class Analyzer
         public HashSet<string> DefinedNames { get; }
         public HashSet<string> ReferencedNames { get; }
         public Dictionary<string, HashSet<string>> DefinedByProject { get; }
+
+        /// <summary>字典 Id -> 把它合併進來的那些「主題入口」（見 MutuallyExclusive）。</summary>
+        public Dictionary<int, HashSet<int>> ThemeEntriesOf { get; }
 
         /// <summary>兩兩的變體判定快取（見 AreVariants 的檔頭）。</summary>
         public Dictionary<(int, int), bool> VariantVerdict { get; } = [];
@@ -468,7 +474,7 @@ public sealed class Analyzer
                     // ⚠ 同一個 ThemeDictionaries 群組裡的兩本字典本質上互斥（執行期只選中一本），
                     //   所以它們之間永遠不是覆蓋。這條比用鍵名去推穩健 ——
                     //   實測 Files 的 GridSplitter.xaml 是 Default ＋ HighContrast,靠鍵名會判錯。
-                    if (SameThemeGroup(ctx, winner.DictionaryId, loser.DictionaryId)) continue;
+                    if (MutuallyExclusive(ctx, winner.DictionaryId, loser.DictionaryId)) continue;
 
                     // ⚠ 語系檔／主題檔**刻意**定義同一組鍵，執行期才換。
                     //   實測：ScreenToGif 用 XAML 做在地化（四十種語言、各約 1200 個鍵），
@@ -549,10 +555,32 @@ public sealed class Analyzer
         return result;
     }
 
-    /// <summary>兩本字典在同一個 ThemeDictionaries 群組裡嗎？</summary>
-    private static bool SameThemeGroup(Context ctx, int a, int b) =>
-        ctx.ById.TryGetValue(a, out var da) && ctx.ById.TryGetValue(b, out var db)
-        && da.ThemeGroupId is { } ga && db.ThemeGroupId is { } gb && ga == gb;
+    /// <summary>
+    /// 這兩本字典在執行期互斥嗎？
+    ///
+    /// 判準：存在某一個 ThemeDictionaries 群組，兩者**分別**從它的不同入口被合併進來。
+    /// 同一組裡執行期只會選中一個入口，所以兩邊的鍵不可能同時在場 —— 那不是覆蓋。
+    ///
+    /// ⚠ 不能只比「同一個群組 id」。實測（Semi.Avalonia）：同一套 ThemeDictionaries
+    /// 在 `SemiTheme.axaml` 與 `Index.axaml` 各宣告了一次，於是 `Themes/Dark/_index.axaml`
+    /// 是從**兩個**群組被合併到的 —— 用單一群組 id 判會整批漏掉，66 筆假 shadowed。
+    /// </summary>
+    private static bool MutuallyExclusive(Context ctx, int a, int b)
+    {
+        if (!ctx.ThemeEntriesOf.TryGetValue(a, out var ea)) return false;
+        if (!ctx.ThemeEntriesOf.TryGetValue(b, out var eb)) return false;
+
+        foreach (var ta in ea)
+            foreach (var tb in eb)
+            {
+                if (ta == tb) continue;
+                if (ctx.ById.TryGetValue(ta, out var na) && ctx.ById.TryGetValue(tb, out var nb)
+                    && na.ThemeGroupId is { } ga && nb.ThemeGroupId is { } gb && ga == gb)
+                    return true;
+            }
+
+        return false;
+    }
 
     /// <summary>兩本字典是不是「同一組的替代品」（語系檔、深淺主題檔）？
     /// 判準是鍵集合的重疊度：刻意的變體會幾乎一模一樣，意外的覆蓋只會撞到幾個。
@@ -728,6 +756,64 @@ public sealed class Analyzer
             if (implicitTheme) result.ImplicitThemeDictionaries++;
             else result.RuntimeLoadedDictionaries++;
         }
+    }
+
+    /// <summary>
+    /// 把主題字典的「側」與「群組」往下傳給它合併進來的字典。
+    ///
+    /// ⚠ 實測（Semi.Avalonia）：主題常常是用**目錄**分的 ——
+    /// <c>Themes/_index.axaml</c> 的 ThemeDictionaries 裡，`Dark` 這一本只放一行
+    /// <c>&lt;ResourceInclude Source="Dark/_index.axaml"/&gt;</c>，真正的鍵在那個檔裡。
+    /// 側別不往下傳的話，Dark 與 HighContrast 兩整套鍵會被判成互相覆蓋 —— 66 筆假 shadowed。
+    ///
+    /// 被**多個**不同側合併到的字典（兩側共用的那些）維持中性：
+    /// 它本來就同時屬於兩邊，不能硬塞一個側別給它。
+    /// </summary>
+    private static Dictionary<int, HashSet<int>> PropagateThemeSides(IReadOnlyList<ResourceDictionaryNode> dicts)
+    {
+        var byId = dicts.ToDictionary(d => d.Id);
+
+        // 字典 Id -> 它是從哪幾個「主題入口」被合併到的（入口 = ThemeDictionaries 裡的一本）
+        var reachedFrom = new Dictionary<int, HashSet<int>>();
+
+        foreach (var theme in dicts.Where(d => d.ThemeGroupId is not null))
+        {
+            var stack = new Stack<int>();
+            var seen = new HashSet<int> { theme.Id };
+
+            foreach (var m in theme.Merged)
+                if (m.ResolvedDictionaryId is { } id && seen.Add(id)) stack.Push(id);
+
+            while (stack.Count > 0)
+            {
+                var id = stack.Pop();
+                if (!reachedFrom.TryGetValue(id, out var set)) reachedFrom[id] = set = [];
+                set.Add(theme.Id);
+
+                if (!byId.TryGetValue(id, out var node)) continue;
+                foreach (var m in node.Merged)
+                    if (m.ResolvedDictionaryId is { } child && seen.Add(child)) stack.Push(child);
+            }
+        }
+
+        // 側別：所有入口都是同一側時才指派（兩側共用的檔案維持中性）
+        foreach (var (id, entries) in reachedFrom)
+        {
+            if (!byId.TryGetValue(id, out var node)) continue;
+            if (node.Side != ThemeSide.Neutral) continue;
+
+            var sides = entries.Select(e => byId[e].Side).Distinct().ToList();
+            if (sides.Count == 1 && sides[0] != ThemeSide.Neutral) node.Side = sides[0];
+        }
+
+        // 入口自己也要在表裡，互斥判定才問得到
+        foreach (var theme in dicts.Where(d => d.ThemeGroupId is not null))
+        {
+            if (!reachedFrom.TryGetValue(theme.Id, out var set)) reachedFrom[theme.Id] = set = [];
+            set.Add(theme.Id);
+        }
+
+        return reachedFrom;
     }
 
     /// <summary>逐本字典決定方言（見 Run 裡的註解）。順便把「整棵樹的代表值」寫回 config，

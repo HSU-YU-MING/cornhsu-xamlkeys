@@ -23,12 +23,24 @@
 - [x] `--html` 自包含報告 —— 2026-11-14：內嵌 CSS、無 script（純 CSS 篩選）、無外部資源、無時間戳
 - [ ] 效能：ScreenToGif（121 檔、45,054 個鍵）目前跑得完，但沒有量過大型方案
 
-## 1.x+
+## Avalonia（2026-11-14 完成）
 
-- **Avalonia（`.axaml`）**。目前只是把副檔名收進掃描範圍，**沒有任何實查**。
-  Avalonia 的 `ResourceInclude`／`StyleInclude` 與 WPF 的合併語意不同。
-  **前置條件：要有真實專案當驗證白老鼠** —— 「每條規則來自實查」是本專案的憲法，
-  沒有白老鼠的平台支援只是沒驗證過的猜測。
+白老鼠：**AvaloniaUI/Avalonia 本身、FluentAvalonia、Semi.Avalonia**（合計 1,172 個 axaml）。
+
+- 合併順序**與 WPF 相同**（後宣告的贏）。這不是推測：
+  `Avalonia.Base/Controls/ResourceDictionary.cs` 的 `TryGetResource` 寫著
+  `for (var i = _mergedDictionaries.Count - 1; i >= 0; --i)`。所以不需要第三種方言。
+- `<ResourceInclude Source="…"/>`（與舊版的 `MergeResourceInclude`）等同於
+  `<ResourceDictionary Source="…"/>`
+- `avares://組件名/路徑` URI
+- `<X.Styles>` 裡的 `<StyleInclude Source="…"/>` 會帶資源進這個作用域；
+  函式庫的主題物件（`<semi:SemiTheme/>`）帶的資源看不到 -> external
+- 主題用**目錄**分時（ThemeDictionaries 的一本只放一行 ResourceInclude），
+  側別要往下傳給被包含的字典
+
+實測結果：三個專案的 `fail` 級 finding 都是 0。
+
+## 1.x+
 - `ComponentResourceKey` 與 `{x:Static …Key}`（目前計入 unresolved，不評）
 - 自動修（刪除未使用的資源）。**不做** —— 見規劃書第 3 節，
   本工具的不可知區域正好落在「看起來沒人用」上，自動刪 = 自動炸

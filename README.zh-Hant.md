@@ -1,6 +1,6 @@
 # XamlKeys
 
-**XAML 資源鍵的靜態作用域稽核。不開 App、全專案掃、CI 退出碼。**
+**XAML 資源鍵的靜態作用域稽核。支援 WPF、WinUI 與 Avalonia。不開 App、全專案掃、CI 退出碼。**
 
 [![NuGet](https://img.shields.io/nuget/v/Cornhsu.XamlKeys)](https://www.nuget.org/packages/Cornhsu.XamlKeys)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -115,7 +115,7 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 | 作用域是靜態近似 | `UserControl` 真正的父層不可知 | 鍵在別處存在時報 `out-of-scope`（warn），不報懸空（fail） |
 | `ComponentResourceKey`、`{x:Static …Key}` | 不是字串鍵 | 計入 unresolved，不評 |
 | 函式庫專案 | 它的鍵是公開 API | 不判 `unused` 與 `orphan-dictionary` |
-| Avalonia `.axaml` | 掃得到，但**沒有在真實專案上驗證過** | 不宣稱支援 |
+| Avalonia 的自訂主題變體（`x:Key="{x:Static …}"`） | 當成中性側 | 互斥規則仍然適用，所以它們之間不會互相覆蓋 |
 
 ## 授權
 
