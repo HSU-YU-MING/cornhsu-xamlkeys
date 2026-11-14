@@ -52,6 +52,29 @@ This is not forbidden, because it is also how people configure the tool locally.
 **In CI, pass `--config <path>` explicitly** — pointing at a file outside the pull request's reach —
 if you want the gate to be beyond the author's control.
 
+### Text a scanned file could inject into a CI log
+
+**Escaped.** An attribute value can contain a real line break (`x:Key="A&#10;::error::..."` is valid
+XAML), so a key name could otherwise start its own line in the console or `--msbuild` output — a
+forged diagnostic, a GitHub Actions workflow command, or an Azure Pipelines `##vso[...]` command.
+Everything scanned that reaches plain-text output (keys, file names, `--stale` entries, config and
+baseline error messages) is printed on one line with control characters escaped, `##vso[` and `##[`
+defused, and no line allowed to start with `::`. JSON, SARIF and baseline files keep the original
+value; their serialisers escape it. `HostileInputTests` covers this.
+
+### Pathologically nested files
+
+**Skipped, not followed.** Nesting is measured while streaming, before the file is loaded. A file
+nested more than 512 elements deep is counted as a parse error (so it still feeds the "is this
+result trustworthy" decision). Without the limit, about 8,000 levels — a 100 KB file — overflowed
+the stack and took the whole run down with an exit code outside the documented 0-3.
+
+### The GitHub Action
+
+`action.yml` passes every input to the shell through `env`, never as `${{ inputs.x }}` inside a
+script, so an input wired to something a pull request author controls stays a string.
+`HostileInputTests.The_action_never_interpolates_an_input_into_a_shell_script` keeps it that way.
+
 ### Paths in the output
 
 The HTML report embeds the absolute path of the folder that was scanned, so that a reader knows what
