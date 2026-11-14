@@ -216,7 +216,10 @@ if (writeBaselinePath is not null)
     try
     {
         File.WriteAllText(writeBaselinePath, Baseline.FromFindings(allFindings).ToJson(version));
-        Console.WriteLine($"wrote baseline with {allFindings.Count} entr(ies) to {writeBaselinePath}");
+        // 收緊（--baseline b --write-baseline b）時講出丟掉了幾條 —— 那才是這次動作的結果
+        var dropped = baseline?.Stale(allFindings).Count() ?? 0;
+        Console.WriteLine($"wrote baseline with {allFindings.Count} entr(ies) to {writeBaselinePath}" +
+                          (dropped > 0 ? $" ({dropped} entr(ies) that no longer occur were dropped)" : ""));
     }
     catch (IOException ex)
     {
@@ -250,7 +253,9 @@ if (baseline is not null)
         }
         else Console.WriteLine("every baseline entry still occurs; nothing to tighten");
     }
-    else if (stale.Count > 0)
+    // ⚠ 這一次就在重寫 baseline 的話不提：在 QuillNest 收緊的那一次，結尾還印著
+    //   「18 條過期，請用 --write-baseline 收緊」—— 而使用者剛剛就是在做這件事。
+    else if (stale.Count > 0 && writeBaselinePath is null)
     {
         Console.WriteLine($"tip: {stale.Count} baseline entr(ies) no longer occur. " +
                           $"Run with --stale to list them, then --write-baseline to tighten the ratchet.");

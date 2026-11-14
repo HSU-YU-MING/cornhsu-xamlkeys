@@ -150,6 +150,14 @@ xamlkeys src --write-baseline xamlkeys-baseline.json   # once, commit the file
 xamlkeys src --baseline xamlkeys-baseline.json         # from then on
 ```
 
+When you pay some of it down, the run says so (`tip: 3 baseline entr(ies) no longer occur`).
+Tighten the ratchet, so the entries you fixed cannot quietly come back:
+
+```bash
+xamlkeys src --baseline xamlkeys-baseline.json --stale                                       # what went away
+xamlkeys src --baseline xamlkeys-baseline.json --write-baseline xamlkeys-baseline.json       # tighten
+```
+
 Baseline entries deliberately **do not contain line numbers** — one reformat would otherwise
 invalidate the whole file.
 

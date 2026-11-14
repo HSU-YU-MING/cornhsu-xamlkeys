@@ -95,6 +95,14 @@ xamlkeys src --write-baseline xamlkeys-baseline.json   # 一次，檔案進版�
 xamlkeys src --baseline xamlkeys-baseline.json         # 之後都這樣跑
 ```
 
+還掉一些債之後，執行結果會提醒你（`tip: 3 baseline entr(ies) no longer occur`）。
+這時把棘輪收緊，修好的項目才不會悄悄回來：
+
+```bash
+xamlkeys src --baseline xamlkeys-baseline.json --stale                                       # 看哪些不見了
+xamlkeys src --baseline xamlkeys-baseline.json --write-baseline xamlkeys-baseline.json       # 收緊
+```
+
 baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓整份失效。
 
 要豁免單一個鍵（理由必填，而且被壓掉的項目會計入 summary）：

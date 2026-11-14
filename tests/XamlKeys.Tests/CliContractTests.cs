@@ -176,6 +176,27 @@ public class CliContractTests
     }
 
     [Fact]
+    public void Tightening_the_baseline_reports_what_was_dropped_instead_of_telling_you_to_tighten_it()
+    {
+        // 在 QuillNest 收緊時看到的：寫完新 baseline，結尾還印「18 條過期，請用 --write-baseline 收緊」
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-tighten");
+        try
+        {
+            var bl = Path.Combine(dir.FullName, "b.json");
+            Run("--min-coverage", "0", "--write-baseline", bl, TestPaths.Demo);
+            var json = File.ReadAllText(bl).Replace("\"entries\": [", "\"entries\": [\"unused|Gone.xaml|Ghost|neutral\",");
+            File.WriteAllText(bl, json);
+
+            var (_, stdout, _) = Run("--min-coverage", "0", "--baseline", bl, "--write-baseline", bl, TestPaths.Demo);
+
+            Assert.Contains("1 entr(ies) that no longer occur were dropped", stdout);
+            Assert.DoesNotContain("tip:", stdout);
+            Assert.DoesNotContain("Ghost", File.ReadAllText(bl));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
     public void Stale_without_a_baseline_is_a_usage_error_not_a_silent_no_op()
     {
         // 靜靜什麼都不做，使用者會以為自己檢查過了

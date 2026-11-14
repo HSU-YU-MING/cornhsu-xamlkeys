@@ -131,6 +131,11 @@ coincidental name match.
   (a count taken before the baseline was applied). The baseline's share is a separate line and a
   separate summary field, `baselineSuppressed`.
 
+- **Tightening the baseline says what it dropped.** `--baseline b --write-baseline b` used to end
+  with "18 baseline entries no longer occur ... --write-baseline to tighten the ratchet" — the very
+  thing that run had just done. It now reports `(18 entries that no longer occur were dropped)`,
+  and the README shows the tighten step, which the adoption section had left out.
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file
