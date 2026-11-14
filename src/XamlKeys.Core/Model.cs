@@ -45,6 +45,15 @@ public sealed class KeyDefinition
     /// <summary>元素名稱（SolidColorBrush、Style…）。只拿來讓報告好讀。</summary>
     public string? ElementName { get; init; }
 
+    /// <summary>鍵是 <c>{x:Static …}</c> 或 <c>{ComponentResourceKey …}</c>（Key 是 MarkupKeys 正規化後的身分）。</summary>
+    public bool IsMarkupKey { get; init; }
+    /// <summary>鍵屬於框架（<c>MenuItem.SeparatorStyleKey</c>…）：框架的樣板會讀，重新定義它不算沒人用。</summary>
+    public bool IsFrameworkKey { get; init; }
+    /// <summary>markup 鍵在 C# 裡會出現的名字（成員名／ResourceId）。</summary>
+    public string? MemberName { get; init; }
+    /// <summary>markup 鍵的型別短名（C# 裡找不到 = 別的組件的鍵）。</summary>
+    public string? MarkupType { get; init; }
+
     /// <summary>資源別名：&lt;StaticResource x:Key="A" ResourceKey="B"/&gt; —— 定義 A 的同時引用 B。</summary>
     public string? AliasTarget { get; init; }
 
@@ -67,6 +76,11 @@ public sealed class KeyReference
     public required string Key { get; init; }
     public required SourceLocation Location { get; init; }
     public required RefKind Kind { get; init; }
+
+    /// <summary>鍵是 <c>{x:Static …}</c> 或 <c>{ComponentResourceKey …}</c>（Key 是正規化後的身分）。</summary>
+    public bool IsMarkupKey { get; init; }
+    /// <summary>框架自己的鍵（<c>SystemColors.ControlBrushKey</c>…）：找不到也不是懸空。</summary>
+    public bool IsFrameworkKey { get; init; }
 
     /// <summary>C# 的 <c>Resources["K"] = v</c>：是寫入（執行期定義），不是查找。
     /// 判 unused 時照舊算引用（保守），判懸空時跳過 —— 寫入一個 XAML 沒有的鍵不是錯。</summary>

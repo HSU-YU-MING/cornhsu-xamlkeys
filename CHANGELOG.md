@@ -190,6 +190,16 @@ coincidental name match.
   it references; and the "merged above" rule first crossed projects. On the seventeen earlier projects
   1,615 findings disappeared and 10 appeared; the 42 gated findings are unchanged.
 
+- **`{x:Static …Key}` and `ComponentResourceKey` keys are graded.** They were counted as unresolved and
+  never looked at. Across the corpus 553 of 591 such references name a key the framework provides
+  (`SystemColors.ControlTextBrushKey`, `MenuItem.SeparatorStyleKey`…): those are now framework-provided,
+  and redefining one is never `unused`. A project's own markup keys get one identity however they are
+  written (`Member=`, named or positional `ComponentResourceKey` arguments) and are graded like string keys
+  for duplicates, shadowing, out-of-scope use and unused definitions. One that cannot be found anywhere
+  stays an unresolved site rather than becoming dangling — it may be added from C# or defined in another
+  assembly — and one whose type is not declared in the tree belongs to that library (`libraryKeyOverrides`).
+  Unresolved sites across the corpus fell by 750; one finding appeared (a layered MahApps style set).
+
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
   For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the

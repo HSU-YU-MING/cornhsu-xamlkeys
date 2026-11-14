@@ -425,8 +425,16 @@ public sealed partial class XamlScanner
         {
             var raw = keyAttr.Value.Trim();
 
-            // x:Key="{x:Type Button}" 之類：鍵不是字串（隱含樣式的顯式寫法）。不是我們的單位。
-            if (!raw.StartsWith('{'))
+            // x:Key="{x:Static local:Keys.A}"／"{ComponentResourceKey …}"：換成可比對的身分（見 MarkupKeys）。
+            // x:Key="{x:Type Button}" 之類（隱含樣式的顯式寫法）換不出來，照舊不是我們的單位。
+            MarkupKeys.Canonical? markup = null;
+            if (raw.StartsWith('{'))
+            {
+                markup = MarkupKeys.From(raw, p => NamespaceOf(el, p));
+                if (markup is { } m) raw = m.Key;
+            }
+
+            if (!raw.StartsWith('{') || markup is not null)
             {
                 // 資源別名：<StaticResource x:Key="A" ResourceKey="B"/>（Dynamic／Theme 同）
                 string? alias = null;
@@ -439,6 +447,10 @@ public sealed partial class XamlScanner
                 var def = new KeyDefinition
                 {
                     Key = raw,
+                    IsMarkupKey = markup is not null,
+                    IsFrameworkKey = markup?.Framework ?? false,
+                    MemberName = markup?.Member,
+                    MarkupType = markup?.TypeName,
                     Location = new SourceLocation(Rel(dict.File), LineOf(el)),
                     DictionaryId = dict.Id,
                     ElementName = el.Name.LocalName,
@@ -495,15 +507,22 @@ public sealed partial class XamlScanner
             //    <StaticResource ResourceKey="{x:Static SystemColors.HighlightColorKey}"/>
             //    舊版把整串當成鍵名,於是報出 10 筆叫「{x:Static SystemColors.…}」的假懸空
             //    （實測 ModernWpf 的 HighContrast.xaml）。
+            MarkupKeys.Canonical? markup = null;
             if (rk.TrimStart().StartsWith('{'))
             {
-                _unresolvedSites.Add(new SourceLocation(Rel(file), LineOf(el)));
-                return;
+                markup = MarkupKeys.From(rk, p => NamespaceOf(el, p));
+                if (markup is null)
+                {
+                    _unresolvedSites.Add(new SourceLocation(Rel(file), LineOf(el)));
+                    return;
+                }
             }
 
             _references.Add(new KeyReference
             {
-                Key = rk.Trim(),
+                IsMarkupKey = markup is not null,
+                IsFrameworkKey = markup?.Framework ?? false,
+                Key = markup?.Key ?? rk.Trim(),
                 Location = new SourceLocation(Rel(file), LineOf(el)),
                 Kind = el.Name.LocalName switch
                 {
@@ -525,7 +544,7 @@ public sealed partial class XamlScanner
             if (IsXamlDirective(attr.Name, "Key")) continue;
 
             foreach (var r in MarkupExtensions.Scan(attr.Value))
-                AddExtensionRef(r, file, LineOf(attr), chain, suppressed);
+                AddExtensionRef(r, el, file, LineOf(attr), chain, suppressed);
         }
 
         // 文字節點也可能整段是 markup extension（<Setter.Value>{StaticResource K}</Setter.Value>）
@@ -534,16 +553,24 @@ public sealed partial class XamlScanner
             var v = text.Value;
             if (v.Length == 0 || !v.Contains('{')) continue;
             foreach (var r in MarkupExtensions.Scan(v))
-                AddExtensionRef(r, file, LineOf(el), chain, suppressed);
+                AddExtensionRef(r, el, file, LineOf(el), chain, suppressed);
         }
     }
 
-    private void AddExtensionRef(ExtensionRef r, string file, int line,
+    private void AddExtensionRef(ExtensionRef r, XElement el, string file, int line,
                                  IReadOnlyList<int> chain, string? suppressed)
     {
-        if (r.Key is null)
+        MarkupKeys.Canonical? markup = null;
+        var key = r.Key;
+        if (key is null && r.Nested is { } nested && MarkupKeys.From(nested, p => NamespaceOf(el, p)) is { } m)
         {
-            // {StaticResource {x:Type Button}} / {x:Static …Key} —— 鍵不是字串。
+            markup = m;
+            key = m.Key;
+        }
+
+        if (key is null)
+        {
+            // {StaticResource {x:Type Button}} 之類 —— 鍵不是字串，也換不出身分。
             // 不報任何東西，但要讓 summary 知道這裡有個看不懂的引用。
             _unresolvedSites.Add(new SourceLocation(Rel(file), line));
             return;
@@ -551,7 +578,9 @@ public sealed partial class XamlScanner
 
         _references.Add(new KeyReference
         {
-            Key = r.Key,
+            IsMarkupKey = markup is not null,
+            IsFrameworkKey = markup?.Framework ?? false,
+            Key = key,
             Location = new SourceLocation(Rel(file), line),
             Kind = r.Kind,
             ScopeChain = chain,
@@ -714,6 +743,13 @@ public sealed partial class XamlScanner
 
     private readonly Dictionary<string, int> _dictionaryByClass = new(StringComparer.Ordinal);
     private readonly List<(MergedReference Ref, string Ns, string Name)> _pendingClassLinks = [];
+
+    /// <summary>元素看得到的 xmlns 前綴 → 命名空間 URI。空字串是預設命名空間。</summary>
+    private static string? NamespaceOf(XElement el, string prefix)
+    {
+        if (prefix.Length == 0) return el.GetDefaultNamespace().NamespaceName is { Length: > 0 } d ? d : null;
+        return el.GetNamespaceOfPrefix(prefix)?.NamespaceName;
+    }
 
     private static IReadOnlyList<int> Prepend(int id, IReadOnlyList<int> chain)
     {

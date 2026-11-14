@@ -105,6 +105,33 @@ public sealed partial class CSharpScanner
     public IReadOnlyCollection<string> ComposedSuffixesInCode => _composedSuffixes;
 
     private readonly List<(string Text, string? Project, bool InWriter)> _namesInCode = [];
+
+    /// <summary>要找的識別字（markup 鍵的成員名，見 MarkupKeys）。掃描前由 Analyzer 填。</summary>
+    public HashSet<string> WordsToFind { get; } = new(StringComparer.Ordinal);
+    /// <summary>WordsToFind 裡，在某個 C# 檔以完整的字出現過的。</summary>
+    public HashSet<string> WordsFound { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>要找「宣告」的型別名（markup 鍵的型別）。只是用到不算 —— dnSpy 用了 SharpTreeView，但它在套件裡。</summary>
+    public HashSet<string> TypesToFind { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> TypesDeclared { get; } = new(StringComparer.Ordinal);
+
+    private void FindTypes(string code)
+    {
+        foreach (var t in TypesToFind)
+        {
+            if (TypesDeclared.Contains(t) || !code.Contains(t, StringComparison.Ordinal)) continue;
+            if (Regex.IsMatch(code, $@"(?<![\w])(?:class|struct|record|interface|enum)\s+{Regex.Escape(t)}(?![\w])")) TypesDeclared.Add(t);
+        }
+    }
+
+    private void FindWords(string code)
+    {
+        foreach (var w in WordsToFind)
+        {
+            if (WordsFound.Contains(w) || !code.Contains(w, StringComparison.Ordinal)) continue;
+            if (Regex.IsMatch(code, $@"(?<![\w]){Regex.Escape(w)}(?![\w])")) WordsFound.Add(w);
+        }
+    }
     private readonly HashSet<string> _composedSuffixes = new(StringComparer.Ordinal);
     private readonly HashSet<(string Prefix, string Suffix)> _composedNames = [];
 
@@ -127,6 +154,8 @@ public sealed partial class CSharpScanner
 
         var code = StripComments(text);
         var project = ProjectOf?.Invoke(file);
+        if (WordsToFind.Count > 0) FindWords(code);
+        if (TypesToFind.Count > 0) FindTypes(code);
 
         // 不是查找參數的字串字面（見 NamesInCode）。讀取的查找要排除；寫入（Resources["K"] = v）留著。
         // ⚠ 這一段要對**每一個** C# 檔做：鍵名常常在跟資源完全無關的檔裡（dnSpy 的 TabGroup.cs 只寫了

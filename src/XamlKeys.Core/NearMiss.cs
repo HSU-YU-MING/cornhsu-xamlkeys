@@ -35,6 +35,7 @@ public static class NearMiss
         foreach (var c in candidates)
         {
             if (c.Length < 4) continue;
+            if (c.StartsWith('{')) continue;   // markup 鍵的身分（{x:Static …}）不是打錯字的另一半
             if (string.Equals(c, key, StringComparison.Ordinal)) continue;
 
             // 前綴：InverseBoolToVis -> InverseBoolToVisibilityConverter

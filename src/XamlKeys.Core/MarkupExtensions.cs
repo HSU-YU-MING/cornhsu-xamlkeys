@@ -3,7 +3,9 @@ namespace XamlKeys.Core;
 /// <summary>在屬性值裡找出的一個資源引用。Key 是 null 表示「看得出是資源引用，但鍵名不是字串」
 /// （<c>{StaticResource {x:Type Button}}</c>、<c>{StaticResource {x:Static SystemColors.ControlBrushKey}}</c>）
 /// —— 那是 unresolved，不是懸空。</summary>
-public readonly record struct ExtensionRef(RefKind Kind, string? Key, string Raw);
+/// <param name="Nested">鍵本身是 markup extension 時（<c>{StaticResource {x:Static local:Keys.A}}</c>）那一段原文；
+/// 要靠元素的 xmlns 才解析得出身分，由 XamlScanner 交給 MarkupKeys。</param>
+public readonly record struct ExtensionRef(RefKind Kind, string? Key, string Raw, string? Nested = null);
 
 /// <summary>
 /// XAML markup extension 的小型掃描器。
@@ -50,7 +52,7 @@ public static class MarkupExtensions
         var kind = KindOf(typeName);
 
         if (kind is not null)
-            found.Add(new ExtensionRef(kind.Value, ExtractKey(body), s[open..(end + 1)]));
+            found.Add(new ExtensionRef(kind.Value, ExtractKey(body), s[open..(end + 1)], ExtractNested(body)));
 
         // 不論外層是不是資源引用，參數裡都可能有
         //（{Binding X, Converter={StaticResource K}} 是最常見的形狀）
@@ -70,6 +72,24 @@ public static class MarkupExtensions
     }
 
     /// <summary>從 extension 的參數區取出鍵名。取不到（巢狀 extension、空的）回傳 null。</summary>
+    /// <summary>鍵的位置上是一個 markup extension（以 { 開頭）時，回傳那一段原文。</summary>
+    private static string? ExtractNested(string body)
+    {
+        foreach (var part in SplitTopLevel(body))
+        {
+            var seg = part.Trim();
+            if (seg.Length == 0) continue;
+            var eq = IndexOfTopLevel(seg, '=');
+            if (eq > 0)
+            {
+                if (!seg[..eq].Trim().Equals("ResourceKey", StringComparison.OrdinalIgnoreCase)) continue;
+                seg = seg[(eq + 1)..].Trim();
+            }
+            return seg.StartsWith('{') ? seg : null;
+        }
+        return null;
+    }
+
     private static string? ExtractKey(string body)
     {
         if (body.Length == 0) return null;

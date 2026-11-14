@@ -189,6 +189,12 @@ public sealed class Analyzer
         result.ClassBackedDictionaries = scanner.ClassBackedDictionariesLinked;
 
         var cs = new CSharpScanner(root) { ProjectOf = projects.ProjectDirOf };
+        foreach (var d in scanner.Definitions)
+            if (d.IsMarkupKey && !d.IsFrameworkKey && d.MemberName is { } member)
+            {
+                cs.WordsToFind.Add(member);
+                if (d.MarkupType is { } type) cs.TypesToFind.Add(type);
+            }
         foreach (var f in csFiles) cs.ScanFile(f);
 
         result.ParseErrors.AddRange(scanner.Errors);
@@ -247,6 +253,8 @@ public sealed class Analyzer
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
         foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
+        ctx.MarkupMembersInCode.UnionWith(cs.WordsFound);
+        ctx.MarkupTypesInTree.UnionWith(cs.TypesDeclared);
 
         // ⚠ 下面三條「C# 讓它算有人用」都只標**相關專案裡的那幾份定義**（同一個專案、或以 ProjectReference 連在一起的，
         //   見 ProjectIndex.Related），不是把鍵名加進全樹的 ReferencedNames。
@@ -385,6 +393,11 @@ public sealed class Analyzer
         /// <summary>C# 用過的鍵名：字面查找，加上「變數查找旁邊的同名字串」。
         /// C# 可以對任何一個元素呼叫 FindResource，所以這些名字的每一份定義都可能被用到。</summary>
         public HashSet<string> CSharpNames { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>markup 鍵的成員名裡，在 C# 出現過的（見 EmitUnused）。</summary>
+        public HashSet<string> MarkupMembersInCode { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> ExternalLibraryKeyNames { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> MarkupTypesInTree { get; } = new(StringComparer.Ordinal);
 
         /// <summary>因為 C# 而算成有人用的**定義**（規則 31／35／43）。以定義為單位、限同一個專案 ——
         /// 見 Analyzer.Run 裡那三條規則上面的說明。</summary>
@@ -588,6 +601,15 @@ public sealed class Analyzer
 
             if (failures.Count == 0) continue;
             ctx.OpenNames.Add(r.Key);
+
+            // {x:Static …Key}／{ComponentResourceKey …}（見 MarkupKeys）：
+            // 框架的鍵由框架提供；專案自己的鍵找不到就照舊算 unresolved —— 它可能在 C#（Resources.Add(Keys.X, …)）
+            // 或別的組件裡定義，靜態判不出「不存在」。定義在樹裡別處的，照字串鍵的規則走（out-of-scope）。
+            if (r.IsMarkupKey)
+            {
+                if (r.IsFrameworkKey) { result.FrameworkProvided++; continue; }
+                if (!ctx.DefinedNames.Contains(r.Key)) { result.UnresolvedSites.Add(r.Location); continue; }
+            }
             var allSidesFailed = failures.Count == evaluate.Count;
 
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
@@ -923,6 +945,21 @@ public sealed class Analyzer
             if (ctx.ReferencedNames.Contains(d.Key)) continue;
             if (ctx.UsedByCode.Contains(d)) continue;
 
+            // markup 鍵：框架的鍵是框架的樣板在讀（同輕量樣式覆寫）；專案的鍵，C# 提到成員名就算有人用
+            //（FindResource(Keys.Accent)、Resources.Add(Keys.Accent, …) 都是用變數，看不出讀或寫）。
+            if (d.IsMarkupKey)
+            {
+                if (d.IsFrameworkKey) { ctx.FrameworkOverrideNames.Add(d.Key); continue; }
+                // 型別不在這棵樹的 C# 裡 = 別的組件（函式庫）的鍵，那個函式庫的樣板會讀它。
+                // ⚠ 2026-11-15 實測 dnSpy：{x:Static SharpTreeView.DefaultItemContainerStyleKey}（ICSharpCode.TreeView 套件）
+                if (d.MarkupType is { } type && !ctx.MarkupTypesInTree.Contains(type))
+                {
+                    if (ctx.ExternalLibraryKeyNames.Add(d.Key)) result.LibraryKeyOverrides++;
+                    continue;
+                }
+                if (d.MemberName is { } member && ctx.MarkupMembersInCode.Contains(member)) continue;
+            }
+
             var dict = ctx.ById[d.DictionaryId];
 
             // ⚠ 函式庫的鍵是它的公開 API：使用者的專案才會引用。
@@ -1015,6 +1052,8 @@ public sealed class Analyzer
             // 整個名字都沒人用 → EmitUnused 已經報過了
             if (!ctx.ReferencedNames.Contains(d.Key)) continue;
             if (ctx.Reached.Contains(d)) continue;
+            // 框架的鍵（MenuItem.SeparatorStyleKey）在視窗資源裡重新定義：框架在那個作用域裡讀它
+            if (d.IsFrameworkKey) continue;
 
             var dict = ctx.ById[d.DictionaryId];
             if (dict.Owner is null || dict.IsApplicationScope || dict.IsStandaloneFile) continue;

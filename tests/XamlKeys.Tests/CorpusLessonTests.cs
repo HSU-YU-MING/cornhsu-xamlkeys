@@ -617,7 +617,8 @@ public class CorpusLessonTests : IDisposable
         });
 
         Assert.DoesNotContain(r.Findings, f => f.Key.StartsWith('{'));
-        Assert.NotEmpty(r.UnresolvedSites);
+        // 2026-11-15 起認得框架的 x:Static 鍵（MarkupKeys）：算「框架提供」，不再只是 unresolved
+        Assert.True(r.FrameworkProvided > 0);
     }
 
     [Fact]

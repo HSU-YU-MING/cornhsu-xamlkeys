@@ -253,8 +253,8 @@ public static class Report
             o.WriteLine($"note: {r.DynamicKeysNamedInCode} DynamicResource reference(s) name a key no XAML defines but C# names " +
                         $"as a string (a key added to resources at runtime) -- not reported as dangling");
         if (r.LibraryKeyOverrides > 0)
-            o.WriteLine($"note: {r.LibraryKeyOverrides} library key(s) are overridden by another project in this tree " +
-                        $"(an app restyling the library) -- not reported as shadowed");
+            o.WriteLine($"note: {r.LibraryKeyOverrides} key(s) belong to a library and are redefined to restyle it " +
+                        $"-- not reported as shadowed or unused");
         if (r.KeyedDictionaries > 0)
             o.WriteLine($"note: {r.KeyedDictionaries} keyed ResourceDictionar(ies) inside a dictionary were treated as " +
                         $"alternatives the app picks at runtime -- their keys count as defined");
