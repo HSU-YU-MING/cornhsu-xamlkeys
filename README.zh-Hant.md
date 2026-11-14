@@ -25,7 +25,7 @@ xamlkeys path/to/your/wpf/project
 
 | 種類 | 分級 | 意思 |
 |---|---|---|
-| `dangling-static` | **fail** | `{StaticResource K}` 但沒有人定義 `K`。執行期丟例外。 |
+| `dangling-static` | **fail** | `{StaticResource K}` 但沒有人定義 `K`。執行期丟例外——載入時，或寫在 Style 的 Setter 裡時要等那個屬性第一次被用到（`FocusVisualStyle` 的 Setter 要等鍵盤焦點，所以視窗能正常開、之後才當掉）。 |
 | `duplicate-key` | **fail** | 同一本字典裡同一個 `x:Key` 兩次。載入時 parser 丟錯，編譯器不擋。 |
 | `dangling-dynamic` | warn | `{DynamicResource K}` / `{ThemeResource K}` 找不到。默默退回預設值。 |
 | `out-of-scope` | warn | `K` 在專案裡存在，但不在這個引用看得到的地方。 |

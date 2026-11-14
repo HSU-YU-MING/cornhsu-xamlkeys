@@ -330,7 +330,7 @@ static void PrintUsage(TextWriter o)
           xamlkeys [options] <path>
 
         Finds, across the whole project without launching the app:
-          - {StaticResource} references whose key is defined nowhere   (throws at load time)
+          - {StaticResource} references whose key is defined nowhere   (throws at runtime)
           - the same x:Key defined twice in one dictionary             (throws at load time)
           - definitions that merge order makes unreachable
           - keys that nothing references

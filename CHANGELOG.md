@@ -146,6 +146,11 @@ coincidental name match.
   were reported as unused — 33 of 80 findings in Files, 16 of 42 in WinUI Gallery. They are now
   counted in `frameworkKeyOverrides` instead.
 
+- **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
+  inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
+  For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the
+  old wording made "it opened fine" look like "it is fine".
+
 ### A security pass before release: the scanned content is hostile
 
 The tool's main job is to run in CI against pull requests, so everything it reads — XAML, file

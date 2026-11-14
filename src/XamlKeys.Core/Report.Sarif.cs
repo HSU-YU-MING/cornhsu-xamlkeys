@@ -81,7 +81,7 @@ public static partial class ReportSarif
 
     private static string RuleText(FindingKind k) => k switch
     {
-        FindingKind.DanglingStatic => "A {StaticResource} reference whose key is defined nowhere; throws at load time.",
+        FindingKind.DanglingStatic => "A {StaticResource} reference whose key is defined nowhere; throws at runtime (on load, or for a Style setter when the property is first used).",
         FindingKind.DanglingDynamic => "A {DynamicResource}/{ThemeResource} reference whose key is defined nowhere.",
         FindingKind.DuplicateKey => "The same x:Key is defined twice in one dictionary; the XAML parser throws at load time.",
         FindingKind.OutOfScope => "The key exists in the project but not in the scope of this reference.",

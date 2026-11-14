@@ -8,7 +8,7 @@
 
 [繁體中文](README.zh-Hant.md)
 
-A `{StaticResource}` whose key does not exist throws at load time. The same `x:Key` twice in one
+A `{StaticResource}` whose key does not exist throws at runtime. The same `x:Key` twice in one
 dictionary throws at load time too — and **the XAML compiler checks neither**. A key that merge
 order quietly shadows renders the wrong colour forever. A key nobody uses sits there until someone
 deletes the wrong one.
@@ -28,7 +28,7 @@ xamlkeys path/to/your/wpf/project
 
 | Kind | Severity | What it means |
 |---|---|---|
-| `dangling-static` | **fail** | `{StaticResource K}` and nothing defines `K`. Throws at load time. |
+| `dangling-static` | **fail** | `{StaticResource K}` and nothing defines `K`. Throws at runtime — on load, or, inside a Style setter, the first time that property is used (a `FocusVisualStyle` setter waits for keyboard focus, so the window opens fine and crashes later). |
 | `duplicate-key` | **fail** | The same `x:Key` twice in one dictionary. The parser throws at load time; the compiler does not check this. |
 | `dangling-dynamic` | warn | `{DynamicResource K}` / `{ThemeResource K}` and nothing defines `K`. Falls back silently. |
 | `out-of-scope` | warn | `K` exists in this project but not where this reference can see it. |
@@ -62,7 +62,7 @@ Themes/Override.xaml
       8  warn shadowed           'AppWins' is shadowed by a different definition at App.xaml:13 (WPF resolves to the last merged dictionary); this definition never wins
 
 Views/MainWindow.xaml
-     27  fail dangling-static    'MissingBrush' is not defined anywhere in this tree; StaticResource throws at load time
+     27  fail dangling-static    'MissingBrush' is not defined anywhere in this tree; StaticResource throws at runtime -- on load, or for a Style setter the first time the property is used
      30  warn dangling-dynamic   'MissingDynamicBrush' is not defined anywhere in this tree; DynamicResource silently falls back to the default value
      42  warn out-of-scope       'OtherWindowLocal' is defined at Views/OtherWindow.xaml:6 but that is not in the scope of this reference
 

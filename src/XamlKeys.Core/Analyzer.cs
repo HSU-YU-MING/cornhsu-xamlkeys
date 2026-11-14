@@ -490,7 +490,10 @@ public sealed class Analyzer
 
             var kind = r.Kind == RefKind.Static ? FindingKind.DanglingStatic : FindingKind.DanglingDynamic;
             var consequence = kind == FindingKind.DanglingStatic
-                ? "StaticResource throws at load time"
+                // ⚠ 不是一律「載入時」：寫在 Style 的 Setter 裡時，要等那個屬性第一次被讀才丟錯。
+                //   2026-11-14 以編譯過的 WPF App 實測：FocusVisualStyle 的 Setter 要等鍵盤焦點才會讀，
+                //   視窗能正常開，焦點一到就當掉 —— 舊訊息說「載入時」會讓人以為沒當就是沒事。
+                ? "StaticResource throws at runtime -- on load, or for a Style setter the first time the property is used"
                 : "DynamicResource silently falls back to the default value";
 
             // 懸空的鍵絕大多數是打錯字或改名留下的 —— 講出最接近的那個名字,
