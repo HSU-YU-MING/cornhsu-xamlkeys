@@ -339,7 +339,7 @@ static void PrintUsage(TextWriter o)
           --write-baseline <path>  write the current findings as a baseline
           --stale                  with --baseline, list entries that no longer occur
           --fail-on warn|fail      gate level (default: fail)
-          --dialect wpf|winui      merge-order dialect (default: detected from {ThemeResource})
+          --dialect wpf|winui      merge-order dialect (default: detected from the project files)
           --min-coverage <0-100>   minimum share of merged dictionaries that must resolve (default 80)
           --exclude <fragment>     skip paths containing this fragment (repeatable)
           --include-tests          also scan test projects and fixture folders

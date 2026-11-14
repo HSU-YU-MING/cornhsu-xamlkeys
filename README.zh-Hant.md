@@ -102,6 +102,58 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 <SolidColorBrush x:Key="PluginAccent" Color="#FF4081" />
 ```
 
+## 放進 CI
+
+```yaml
+- run: dotnet tool install -g Cornhsu.XamlKeys
+- run: xamlkeys src --sarif xamlkeys.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: xamlkeys.sarif
+```
+
+## 設定檔
+
+放在被掃描的資料夾旁邊、檔名 `xamlkeys.config.json`，或用 `--config <path>` 指定：
+
+```json
+{
+  "dialect": "wpf",
+  "failOn": "fail",
+  "minCoverage": 80,
+  "usedAtRuntime": ["Icon*", "Status.*"],
+  "exclude": ["Generated"],
+  "includeTests": false,
+  "externalDictionaries": [
+    { "assembly": "HandyControl", "path": "../packages/HandyControl/Themes" }
+  ],
+  "themeFiles": { "dark": ["Themes/Dark"], "light": ["Themes/Light"] },
+  "severities": { "unused": "info", "out-of-scope": "fail" }
+}
+```
+
+寫錯的屬性名會直接**報錯**，不會被默默略過 —— 一個拼錯而沒有作用的設定，比沒有設定更糟。
+每一格的說明在 [docs/config-schema.md](docs/config-schema.md)。
+
+## 選項
+
+```
+--json <path>            寫出 JSON 報告
+--sarif <path>           寫出 SARIF 2.1.0 報告（只含 fail／warn）
+--html <path>            寫出單檔 HTML 報告（沒有 script、沒有外部檔案）
+--msbuild                另外印出 MSBuild 診斷，給 VS 的錯誤清單用
+--config <path>          設定檔（預設：<path> 裡的 xamlkeys.config.json）
+--baseline <path>        只回報不在這份 baseline 裡的 finding
+--write-baseline <path>  把目前的 finding 寫成 baseline
+--stale                  搭配 --baseline，列出已經不再出現的項目
+--fail-on warn|fail      守門等級（預設：fail）
+--dialect wpf|winui      合併順序的方言（預設：由專案檔判定）
+--min-coverage <0-100>   合併字典至少要有多少比例解析得到（預設 80）
+--exclude <fragment>     略過路徑中含有這段文字的檔案（可重複）
+--include-tests          連測試專案與 fixture 資料夾一起掃
+--show-info              info 等級的 finding 也印出來
+```
+
 ## 已知盲區
 
 每一條都是拿十七個公開專案（WPF、WinUI、Avalonia、.NET MAUI，約 5,600 個 XAML 檔）實跑找出來的 —— 完整歸因見

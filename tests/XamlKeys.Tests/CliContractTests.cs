@@ -317,4 +317,83 @@ public class CliContractTests
         }
         finally { dir.Delete(true); }
     }
+
+    // ── --dialect 與 --exclude：旗標真的有接到分析上 ─────────────────────
+    // Core 層的行為在 ConfigBehaviourTests；這裡只守「命令列 → 設定」這段線沒有斷。
+
+    private static DirectoryInfo TwoMergedDefinitions()
+    {
+        const string ns = "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" " +
+                          "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"";
+
+        var dir = Directory.CreateTempSubdirectory("xamlkeys-flags");
+        void Put(string rel, string content)
+        {
+            var path = Path.Combine(dir.FullName, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+        }
+
+        Put("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+        Put("App.xaml", $"""
+            <Application {ns}>
+              <Application.Resources>
+                <ResourceDictionary>
+                  <ResourceDictionary.MergedDictionaries>
+                    <ResourceDictionary Source="First.xaml" />
+                    <ResourceDictionary Source="Second.xaml" />
+                  </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+              </Application.Resources>
+            </Application>
+            """);
+        Put("First.xaml", $"<ResourceDictionary {ns}><SolidColorBrush x:Key=\"K\" Color=\"#111\" /></ResourceDictionary>");
+        Put("Second.xaml", $"<ResourceDictionary {ns}><SolidColorBrush x:Key=\"K\" Color=\"#222\" /></ResourceDictionary>");
+        Put("Main.xaml", $"<Window {ns}><Border Background=\"{{StaticResource K}}\" /></Window>");
+        Put("Generated/Broken.xaml", $"<ResourceDictionary {ns}><SolidColorBrush x:Key=\"D\" Color=\"#1\" /><SolidColorBrush x:Key=\"D\" Color=\"#2\" /></ResourceDictionary>");
+        return dir;
+    }
+
+    private static string ShadowedLoser(string jsonPath)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(jsonPath));
+        var shadowed = doc.RootElement.GetProperty("findings").EnumerateArray()
+                          .Single(f => f.GetProperty("kind").GetString() == "shadowed");
+        return shadowed.GetProperty("file").GetString()!;
+    }
+
+    [Fact]
+    public void The_dialect_flag_reverses_which_merged_dictionary_loses()
+    {
+        var dir = TwoMergedDefinitions();
+        try
+        {
+            var wpf = Path.Combine(dir.FullName, "wpf.json");
+            var winui = Path.Combine(dir.FullName, "winui.json");
+
+            Run("--dialect", "wpf", "--exclude", "Generated", "--json", wpf, dir.FullName);
+            Run("--dialect", "winui", "--exclude", "Generated", "--json", winui, dir.FullName);
+
+            Assert.EndsWith("First.xaml", ShadowedLoser(wpf));      // WPF：後宣告的贏
+            Assert.EndsWith("Second.xaml", ShadowedLoser(winui));   // WinUI：先宣告的贏
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void The_exclude_flag_removes_a_folder_from_the_scan()
+    {
+        var dir = TwoMergedDefinitions();
+        try
+        {
+            // Generated/Broken.xaml 裡有重複鍵（fail）：不排除 → 1，排除 → 0
+            var (withIt, _, _) = Run(dir.FullName);
+            var (without, stdout, _) = Run("--exclude", "Generated", dir.FullName);
+
+            Assert.Equal(1, withIt);
+            Assert.Equal(0, without);
+            Assert.DoesNotContain("Broken.xaml", stdout);
+        }
+        finally { dir.Delete(true); }
+    }
 }

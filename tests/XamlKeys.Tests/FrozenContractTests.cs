@@ -53,6 +53,19 @@ public class FrozenContractTests
             Assert.True(help.Contains(f, StringComparison.Ordinal), $"--help does not mention {f}");
     }
 
+    [Theory]
+    [InlineData("README.md")]
+    [InlineData("README.zh-Hant.md")]
+    public void Every_flag_is_listed_in_both_readmes(string readme)
+    {
+        // 2026-11-14 發現：中文 README 少了十個旗標，而且沒有任何東西會發現。
+        // --help 與 --version 不必列（它們是「怎麼問工具」，不是「怎麼用工具」）。
+        var text = File.ReadAllText(Path.Combine(TestPaths.RepoRoot, readme));
+
+        foreach (var f in Flags.Except(["--help", "--version"]))
+            Assert.True(text.Contains(f, StringComparison.Ordinal), $"{readme} does not mention {f}");
+    }
+
     [Fact]
     public void Only_one_positional_argument_is_accepted()
     {
