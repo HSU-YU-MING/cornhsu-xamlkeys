@@ -60,7 +60,7 @@ jobs:
             .summary.counts.outOfScope        == 1 and
             .summary.counts.shadowed          == 3 and
             .summary.counts.shadowedIdentical == 1 and
-            .summary.counts.unused            == 5 and
+            .summary.counts.unused            == 4 and
             .summary.counts.orphanDictionary  == 1 and
             .summary.counts.external          == 1 and
             .summary.suppressed               >= 1

@@ -4,7 +4,31 @@ using System.Text.RegularExpressions;
 namespace XamlKeys.Core;
 
 /// <summary>C# 裡一個「鍵名不是字面」的查找點。靜態不可知 —— 計數並警示，不當成沒人用。</summary>
-public sealed record DynamicKeySite(SourceLocation Location, string Expression);
+public sealed record DynamicKeySite(SourceLocation Location, string Expression)
+{
+    /// <summary>組出來的鍵名裡固定的開頭（<c>$"Icon{name}"</c> → <c>Icon</c>）。取不到時是 null。</summary>
+    public string? Prefix { get; init; }
+
+    /// <summary>組出來的鍵名裡固定的結尾（<c>$"{state}Brush"</c> → <c>Brush</c>）。</summary>
+    public string Suffix { get; init; } = "";
+
+    /// <summary>這個查找點所在的專案目錄 —— 樣式只套用到同一個專案的鍵（跨專案比對的教訓，見 CLAUDE.md）。</summary>
+    public string? Project { get; init; }
+
+    /// <summary>
+    /// 開頭加結尾至少要有幾個固定字元才當成樣式。
+    /// ⚠ 太短的樣式（<c>$"{a}{b}"</c>、<c>$"x{n}"</c>）會把半個專案都算成「可能有人用」，等於關掉 unused。
+    /// </summary>
+    public const int MinPatternLength = 3;
+
+    public bool HasPattern => Prefix is not null && Prefix.Length + Suffix.Length >= MinPatternLength;
+
+    /// <summary>這個鍵可能是這個查找點組出來的嗎？</summary>
+    public bool Matches(string key) =>
+        HasPattern && key.Length >= Prefix!.Length + Suffix.Length
+                   && key.StartsWith(Prefix, StringComparison.Ordinal)
+                   && key.EndsWith(Suffix, StringComparison.Ordinal);
+}
 
 /// <summary>
 /// C# 側的資源用法掃描。
@@ -66,7 +90,7 @@ public sealed partial class CSharpScanner
         catch (IOException) { return; }
 
         if (!text.Contains("Resource", StringComparison.Ordinal)
-            && !text.Contains(".xaml", StringComparison.OrdinalIgnoreCase)) return;
+            && !text.Contains("xaml", StringComparison.OrdinalIgnoreCase)) return;   // 含 .axaml
 
         var code = StripComments(text);
         var rel = Rel(file);
@@ -80,19 +104,100 @@ public sealed partial class CSharpScanner
                 ScopeChain = [],   // 執行期沿真實樹查找，沒有靜態作用域
             });
 
+        var project = ProjectOf?.Invoke(file);
+
         var dynamicBefore = _dynamicSites.Count;
         foreach (var m in DynamicLookupRegex().Matches(code).Cast<Match>())
+        {
+            var (prefix, suffix) = ComposedPattern(m.Value);
             _dynamicSites.Add(new DynamicKeySite(
                 new SourceLocation(rel, LineAt(code, m.Index)),
-                Shorten(m.Value)));
+                Shorten(m.Value))
+            {
+                Prefix = prefix,
+                Suffix = suffix ?? "",
+                Project = project,
+            });
+        }
 
         if (_dynamicSites.Count > dynamicBefore)
             foreach (var m in KeyLikeLiteralRegex().Matches(code).Cast<Match>())
                 _literalsNearDynamicLookups.Add((m.Groups["s"].Value, new SourceLocation(rel, LineAt(code, m.Index))));
 
-        var project = ProjectOf?.Invoke(file);
         foreach (var m in XamlPathRegex().Matches(code).Cast<Match>())
             _loadedDictionaryPaths.Add((m.Groups["p"].Value, project));
+    }
+
+    /// <summary>
+    /// 從一個「鍵名組出來」的查找點取出固定的開頭與結尾：
+    /// <c>FindResource($"Icon{name}")</c> → (<c>Icon</c>, ""）、
+    /// <c>Resources[$"{state}Brush"]</c> → ("", <c>Brush</c>）、
+    /// <c>FindResource("Icon" + name)</c> → (<c>Icon</c>, ""）。取不到時是 (null, null)。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-14 量過 17 個外部專案：243 個用變數查找的地方裡，25 個是這種「有固定開頭」的寫法 ——
+    ///   典型是一組圖示（<c>IconSave</c>、<c>IconOpen</c>…）由程式依名稱取用。舊版把它們全報成沒人用。
+    /// </remarks>
+    internal static (string? Prefix, string? Suffix) ComposedPattern(string site)
+    {
+        // 鍵是第幾個參數：SetResourceReference／SetDynamicResource 是第二個，其他是第一個
+        var open = site.IndexOfAny(['(', '[']);
+        if (open < 0) return (null, null);
+        var arg = site[(open + 1)..];
+        if (site.Contains("SetResourceReference", StringComparison.Ordinal)
+            || site.Contains("SetDynamicResource", StringComparison.Ordinal))
+        {
+            var comma = TopLevelComma(arg);
+            if (comma < 0) return (null, null);
+            arg = arg[(comma + 1)..];
+        }
+        arg = arg.TrimStart();
+
+        // 內插字串：$"…"、$@"…"、@$"…"
+        var interp = arg.StartsWith("$\"", StringComparison.Ordinal) ? 2
+                   : arg.StartsWith("$@\"", StringComparison.Ordinal) || arg.StartsWith("@$\"", StringComparison.Ordinal) ? 3
+                   : -1;
+        if (interp > 0)
+        {
+            var body = new StringBuilder();
+            int depth = 0, i = interp;
+            int firstHole = -1, lastClose = -1;
+            for (; i < arg.Length; i++)
+            {
+                var c = arg[i];
+                if (depth == 0 && c == '"') break;
+                if (c == '{' && i + 1 < arg.Length && arg[i + 1] == '{' && depth == 0) { body.Append('{'); i++; continue; }
+                if (c == '}' && i + 1 < arg.Length && arg[i + 1] == '}' && depth == 0) { body.Append('}'); i++; continue; }
+                if (c == '{') { if (depth == 0 && firstHole < 0) firstHole = body.Length; depth++; continue; }
+                if (c == '}' && depth > 0) { depth--; if (depth == 0) lastClose = body.Length; continue; }
+                if (depth == 0) body.Append(c);
+            }
+            if (firstHole < 0 || i >= arg.Length) return (null, null);   // 沒有洞，或字串沒有結束
+            var text = body.ToString();
+            return (text[..firstHole], text[lastClose..]);
+        }
+
+        // 串接："Icon" + name、prefix + "Brush"
+        var pre = ConcatPrefixRegex().Match(arg);
+        var suf = ConcatSuffixRegex().Match(arg);
+        if (!pre.Success && !suf.Success) return (null, null);
+        return (pre.Success ? pre.Groups["s"].Value : "", suf.Success ? suf.Groups["s"].Value : "");
+    }
+
+    private static int TopLevelComma(string s)
+    {
+        int depth = 0;
+        bool inString = false;
+        for (int i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (c == '"') inString = !inString;
+            if (inString) continue;
+            if (c is '(' or '[' or '{') depth++;
+            else if (c is ')' or ']' or '}') { if (depth == 0) return -1; depth--; }
+            else if (c == ',' && depth == 0) return i;
+        }
+        return -1;
     }
 
     /// <summary>把註解換成等長的空白 —— 位移不變，行號才算得準。</summary>
@@ -226,14 +331,19 @@ public sealed partial class CSharpScanner
     // ⚠ typeof(X) 是隱含樣式的鍵（型別），跟 x:Key 無關，不算。
     // ⚠ Resources[key] = value 是**寫入**，不是查找 —— 算進來的話，主題服務那種
     //   「整張色盤寫進資源」的檔會讓 LiteralsNearDynamicLookups 把色盤裡每個鍵都算成有人用。
+    // ⚠ 「不是字面」指的是**整個參數**不是單一字串字面，不是「不以引號開頭」。
+    //   2026-11-14 之前寫成 (?!["\s])，於是 FindResource("Pic01" + n) 這種字串開頭的串接
+    //   既不算字面、也不算執行期查找 —— 完全沒看到。實測 WPF-Samples 的 PhotoFlipperDemo：
+    //   Pic011～Pic016 全被報成沒人用，summary 也沒提到有看不見的查找。
+    // ⚠ 參數裡可以換行（停在分號）：參數寫成兩行的 FindResource(ok ? a : b) 原本也是完全隱形。
     [GeneratedRegex("""
-        (?:(?:Try)?FindResource\s*\(\s*(?!["\s])[^)\n]{1,80}\))
-        | (?:Set(?:ResourceReference|DynamicResource)\s*\([^,()]*,\s*(?!["\s]|typeof\s*\()[^)\n]{1,80}\))
-        | (?:Resources\s*\[\s*(?!["\s])[^\]\n]{1,80}\](?!\s*=[^=]))
-        | (?:TryGetResource\s*\(\s*(?!["\s])[^,)\n]{1,80},)
-        | (?:Resources\s*\.\s*TryGetValue\s*\(\s*(?!["\s])[^,)\n]{1,80},)
-        | (?:GetResourceObservable\s*\(\s*(?!["\s])[^,)\n]{1,80}[,)])
-        | (?:(?:Dynamic|Static)ResourceExtension\s*\(\s*(?!["\s)])[^)\n]{1,80}\))
+        (?:(?:Try)?FindResource\s*\(\s*(?!\s|"(?:[^"\\]|\\.)*"\s*[,)])[^);]{1,80}\))
+        | (?:Set(?:ResourceReference|DynamicResource)\s*\([^,()]*,\s*(?!\s|"(?:[^"\\]|\\.)*"\s*\)|typeof\s*\()[^);]{1,80}\))
+        | (?:Resources\s*\[\s*(?!\s|"(?:[^"\\]|\\.)*"\s*\])[^\];]{1,80}\](?!\s*=[^=]))
+        | (?:TryGetResource\s*\(\s*(?!\s|"(?:[^"\\]|\\.)*"\s*,)[^,);]{1,80},)
+        | (?:Resources\s*\.\s*TryGetValue\s*\(\s*(?!\s|"(?:[^"\\]|\\.)*"\s*,)[^,);]{1,80},)
+        | (?:GetResourceObservable\s*\(\s*(?!\s|"(?:[^"\\]|\\.)*"\s*[,)])[^,);]{1,80}[,)])
+        | (?:(?:Dynamic|Static)ResourceExtension\s*\(\s*(?!\s|\)|"(?:[^"\\]|\\.)*"\s*\))[^);]{1,80}\))
         """, RegexOptions.IgnorePatternWhitespace)]
     private static partial Regex DynamicLookupRegex();
 
@@ -241,8 +351,18 @@ public sealed partial class CSharpScanner
     [GeneratedRegex("""(?<![@$\w"])"(?<s>[A-Za-z_][\w.\-]{0,99})(?=")""")]
     private static partial Regex KeyLikeLiteralRegex();
 
-    [GeneratedRegex("""["'](?<p>[^"'\n]*\.xaml)["']""", RegexOptions.IgnoreCase)]
+    // ⚠ .axaml 也要認（Avalonia）。組出來的路徑（$"Themes/{name}.xaml"）也會被這條抓到，
+    //   路徑裡帶著 {…} —— 由 Analyzer.MarkRuntimeLoaded 當成樣式比對。
+    [GeneratedRegex("""["'](?<p>[^"'\n]*\.a?xaml)["']""", RegexOptions.IgnoreCase)]
     private static partial Regex XamlPathRegex();
+
+    // "Icon" + name —— 參數一開頭就是字串字面再接 +
+    [GeneratedRegex("""^"(?<s>(?:[^"\\]|\\.)*)"\s*\+""")]
+    private static partial Regex ConcatPrefixRegex();
+
+    // name + "Brush" —— 參數最後是 + 字串字面
+    [GeneratedRegex("""\+\s*"(?<s>(?:[^"\\]|\\.)*)"\s*[)\],]""")]
+    private static partial Regex ConcatSuffixRegex();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();

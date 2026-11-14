@@ -42,6 +42,13 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **C# 的查找要同時認「字面」與「變數」兩種寫法。** 只加了字面版本、沒加變數版本的話，
   那類查找連動態查找點都算不到，summary 不會警告。`CSharpScannerTests` 兩邊各有一組。
   `Resources[k] = v` 是寫入，不能算成查找（否則主題服務的色盤會讓整排鍵都「有人用」）。
+  ⚠ 「不是字面」指**整個參數**不是單一字串字面，不是「不以引號開頭」：`FindResource("Pic01" + n)`
+  曾經兩邊都不算，完全隱形（`DynamicLookupRegex` 的註解有經過）。
+- **組出來但有固定開頭／結尾的鍵名與字典路徑會比對**（`$"Icon{n}"`、`"Icon" + n`、
+  `$"Themes/{name}.xaml"`）。這是放寬，三道保險缺一不可：固定部分至少 3 個字
+  （`DynamicKeySite.MinPatternLength`）、只比同一個專案、計數（`keysMatchingComposedLookups`、
+  `runtimeLoadedDictionaries`）。`ComposedLookupTests` 的每一條都以變異測試確認過。
+  **測整條流程，不要只測解析函式**：第一版的單元測試全綠，語料一跑才發現字串開頭的串接根本沒進到解析。
 - **`unused` 有兩條路**：`EmitUnused` 以名字算一次（為了在地化），`EmitDeadLocalCopies` 抓畫面裡
   死掉的同名副本。後者的每一個 `continue` 都是一種「執行期找得到」，拿掉任何一個，
   `DeadLocalCopyTests` 都會紅 —— 新增例外時也要照這個標準補測試。

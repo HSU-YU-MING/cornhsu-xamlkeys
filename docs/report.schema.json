@@ -44,6 +44,7 @@
         "dynamicKeySites": { "type": "integer", "description": "C# lookups that build the key at runtime." },
         "frameworkKeyOverrides": { "type": "integer", "description": "Keys that redefine a framework-provided key (WinUI lightweight styling, System* resources). The framework's own templates read them, so they are never reported as unused." },
         "unusedOnlyViaUnused": { "type": "integer", "description": "How many of the unused findings are keys referenced only from inside other unused resources (counted in 'unused' as well)." },
+        "keysMatchingComposedLookups": { "type": "integer", "description": "Keys counted as used because they match the fixed start and end of a key C# composes at runtime ($\"Icon{name}\", \"Icon\" + name), within the same project. Never reported as unused." },
         "keysNamedNearDynamicLookups": { "type": "integer", "description": "Keys counted as used because their name appears as a string literal in a C# file that looks resources up by variable. Never reported as unused." },
         "libraryKeysNotChecked": { "type": "integer", "description": "Keys in library projects, not evaluated for usage." },
         "libraryUnresolvedReferences": { "type": "integer" },

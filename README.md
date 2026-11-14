@@ -51,7 +51,6 @@ Themes/Base.xaml
      11  warn unused             'DupKey' is defined but never referenced in XAML or code (2 definitions, e.g. also Themes/Base.xaml:12)
      12  fail duplicate-key      key 'DupKey' is defined more than once in the same dictionary; XAML requires keys to be unique within one dictionary and the parser throws at load time (first defined at Themes/Base.xaml:11)
      23  warn unused             'NobodyUsesThis' is defined but never referenced in XAML or code
-     30  warn unused             'IconSave' is defined but never referenced in XAML or code
 
 Themes/Orphan.xaml
       3  warn orphan-dictionary  this ResourceDictionary (2 key(s)) is never merged by another dictionary and is not loaded from code -- nothing in it can be resolved
@@ -68,10 +67,11 @@ Views/MainWindow.xaml
 
 7 XAML file(s), 7 dictionar(ies), 19 key(s), 14 reference(s)
 merged dictionaries resolved: 2/3 (66.7%)
-dangling-static 1, dangling-dynamic 1, duplicate-key 1, out-of-scope 1, shadowed 3, shadowed-identical 1, unused 5, orphan-dictionary 1, external 1
-note: the 5 unused finding(s) cover 6 definition(s) -- a key name defined in several dictionaries is reported once
+dangling-static 1, dangling-dynamic 1, duplicate-key 1, out-of-scope 1, shadowed 3, shadowed-identical 1, unused 4, orphan-dictionary 1, external 1
+note: the 4 unused finding(s) cover 5 definition(s) -- a key name defined in several dictionaries is reported once
 note: 1 merged dictionar(ies) could not be read -- 'unused' results are incomplete for keys they may define
 note: 1 runtime-composed resource lookup(s) in C# -- keys they reach cannot be seen statically (see 'usedAtRuntime' in the config)
+note: 1 key(s) were counted as used because they match a key that C# composes at runtime (for example $"Icon{name}")
 note: 1 finding(s) suppressed by ignore comments or config
 ```
 
@@ -218,9 +218,9 @@ Avalonia and .NET MAUI, about 5,600 XAML files) — see
 
 | Limitation | Effect | What the tool does about it |
 |---|---|---|
-| Keys composed at runtime (`$"Icon{n}"`) | Could look unused | Counted as dynamic sites; `usedAtRuntime` patterns suppress them |
+| Keys composed at runtime (`$"Icon{n}"`) | Could look unused | With a fixed part of three characters or more (`$"Icon{n}"`, `"Icon" + n`, `n + "Brush"`), keys in the same project that match count as used, and the summary says how many. Fully variable lookups are counted as dynamic sites; `usedAtRuntime` patterns suppress the keys they reach |
 | Dictionaries inside third-party assemblies | Their contents are invisible | Marked `external`, counted, and they lower the coverage figure |
-| Dictionaries merged by composed URIs in code | May look orphaned | Literal `.xaml` paths in C# are detected; composed ones are not |
+| Dictionaries merged by composed URIs in code | May look orphaned | Literal `.xaml` paths in C# are detected, and so are composed ones with a fixed part (`$"Themes/{name}.xaml"` loads every `Themes/*.xaml` in that project). `$"{name}.xaml"` and paths built with `+` are not |
 | Scope is a static approximation | A `UserControl`'s real parent is unknown | A key that exists elsewhere is `out-of-scope` (warn), never `dangling` (fail) |
 | `ComponentResourceKey`, `{x:Static …Key}` | Not string keys | Counted as unresolved sites, never graded |
 | Library projects | Their keys are public API | `unused` and `orphan-dictionary` are not evaluated there |

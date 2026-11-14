@@ -49,6 +49,20 @@ public class CSharpScannerTests
     [InlineData("if (res.TryGetResource(name, ThemeVariant.Dark, out var v)) { }")]
     [InlineData("Application.Current.Resources.TryGetValue(key, out var c);")]
     [InlineData("var b = Application.Current.Resources[key];")]
+    // 字串開頭的串接：參數不是單一字面，就是執行期查找（2026-11-14 之前完全沒看到，見 DynamicLookupRegex）
+    [InlineData("""var m = FindResource("Pic01" + n) as DiffuseMaterial;""")]
+    [InlineData("""var m = TryFindResource("Pic01" + n);""")]
+    [InlineData("""var b = Application.Current.Resources["Icon" + name];""")]
+    [InlineData("""el.SetResourceReference(TextBlock.TextProperty, "S.Preset.Info." + mode);""")]
+    [InlineData("""label.SetDynamicResource(Label.TextColorProperty, "Status" + level);""")]
+    [InlineData("""if (res.TryGetResource("Icon" + name, ThemeVariant.Dark, out var v)) { }""")]
+    [InlineData("""Application.Current.Resources.TryGetValue("Icon" + name, out var c);""")]
+    [InlineData("""var o = this.GetResourceObservable("Icon" + name);""")]
+    [InlineData("""var x = new DynamicResourceExtension("Icon" + name);""")]
+    // 參數中間換行
+    [InlineData("var b = el.FindResource(ok\n    ? \"A\"\n    : \"B\");")]
+    [InlineData("var b = el.FindResource(\"Pic01\"\n    + n);")]
+    [InlineData("el.SetResourceReference(TextBlock.TextProperty,\n    \"S.Info.\" + (ok\n        ? \"A\" : \"B\"));")]
     public void A_lookup_by_variable_is_a_dynamic_site(string code)
     {
         var (refs, dyn) = Scan(code);

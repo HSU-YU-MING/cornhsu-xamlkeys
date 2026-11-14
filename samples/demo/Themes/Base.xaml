@@ -25,8 +25,9 @@
     <!-- 只有 C# 用字面字串取用：不該被報成沒人用 -->
     <SolidColorBrush x:Key="CodeOnlyBrush" Color="#999999" />
 
-    <!-- 只有組出來的鍵名會取到（IconSave／IconOpen…）：
-         靠 config 的 usedAtRuntime 才不會被誤報 -->
+    <!-- 只有組出來的鍵名會取到（IconSave／IconOpen…）。CodeBehind.cs 組鍵時有固定前綴 "Icon"，
+         所以不必設定就不會被誤報，summary 會另外列一行 keysMatchingComposedLookups。
+         組不出固定前綴的（整個鍵名來自資料）才要靠 config 的 usedAtRuntime。 -->
     <SolidColorBrush x:Key="IconSave" Color="#AAAAAA" />
 
     <!-- 壓制示範：理由必填，而且會進 summary.suppressed -->

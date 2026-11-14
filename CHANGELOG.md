@@ -146,6 +146,19 @@ coincidental name match.
   were reported as unused — 33 of 80 findings in Files, 16 of 42 in WinUI Gallery. They are now
   counted in `frameworkKeyOverrides` instead.
 
+- **Keys and dictionary paths composed around a fixed part are matched.** `FindResource($"Icon{name}")`,
+  `"Icon" + name` and `name + "Brush"` make the keys in the same project that start or end that way
+  count as used; the summary reports how many (`keysMatchingComposedLookups`). A fixed part shorter
+  than three characters is ignored — it would match most of the project. Likewise
+  `new Uri($"Themes/{name}.xaml", ...)` loads every dictionary under `Themes/` in that project;
+  `$"{name}.xaml"`, which fixes only the extension, is ignored. Building this exposed an older gap:
+  a lookup whose argument *starts* with a string (`FindResource("Pic01" + n)`) was neither a literal
+  nor a dynamic site, so it was invisible and the summary gave no warning; the same was true of any
+  lookup whose argument was split across lines. Across the corpus 21
+  findings disappeared and none appeared, all of them real uses: WPF-Samples' PhotoFlipperDemo
+  `Pic011`–`Pic016`, nine ScreenToGif strings and icons, and six MahApps menu strings that live in
+  language dictionaries loaded by `$".../Languages/Strings.{language}.xaml"`.
+
 - **`dangling-static` no longer says "throws at load time".** A compiled WPF app was used to check:
   inside a Style setter, a missing `{StaticResource}` throws the first time the property is read.
   For `FocusVisualStyle` that is keyboard focus, so the window opens normally and crashes later — the

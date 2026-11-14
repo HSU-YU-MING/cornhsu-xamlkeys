@@ -20,6 +20,7 @@
     "invalidIgnores": 0,
     "dynamicKeySites": 3,
     "keysNamedNearDynamicLookups": 1,
+    "keysMatchingComposedLookups": 0,
     "frameworkKeyOverrides": 0,
     "unusedOnlyViaUnused": 0,
     "configOverrides": true,

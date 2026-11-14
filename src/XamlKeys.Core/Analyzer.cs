@@ -30,6 +30,10 @@ public sealed class AnalysisResult
     /// ⚠ 這是一條放寬的路（見 CSharpScanner.LiteralsNearDynamicLookups），一定要計數。</summary>
     public int KeysNamedNearDynamicLookups { get; set; }
 
+    /// <summary>因為符合 C# 裡組出來的鍵名樣式（<c>$"Icon{name}"</c> 的 <c>Icon…</c>）而被算成可能有人用的鍵名數。
+    /// ⚠ 放寬的路，一定要計數。</summary>
+    public int KeysMatchingComposedLookups { get; set; }
+
     /// <summary>重新定義了框架內建鍵（WinUI 的輕量樣式覆寫、System* 前綴）而沒有判「沒人用」的鍵名數。
     /// 框架自己的樣板在執行期會讀它們 —— 原始碼樹裡看不到這個引用。</summary>
     public int FrameworkKeyOverrides { get; set; }
@@ -230,6 +234,26 @@ public sealed class Analyzer
             ctx.CSharpNames.Add(text);
             if (ctx.ReferencedNames.Add(text) && appKeys.Contains(text))
                 result.KeysNamedNearDynamicLookups++;
+        }
+
+        // 組出來但有固定開頭／結尾的鍵名（$"Icon{name}"、"Icon" + name）→ 同一個專案裡符合樣式的鍵算可能有人用。
+        // ⚠ 這是一條放寬的路，所以：樣式要夠長（DynamicKeySite.MinPatternLength）、只比同一個專案、一定計數。
+        var patterns = cs.DynamicSites.Where(s => s.HasPattern).ToList();
+        if (patterns.Count > 0)
+        {
+            var rescued = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var d in ctx.Definitions)
+            {
+                var proj = ctx.ById[d.DictionaryId].ProjectDir;
+                if (!patterns.Any(p => p.Matches(d.Key)
+                                    && (p.Project is null || proj is null
+                                        || string.Equals(p.Project, proj, StringComparison.OrdinalIgnoreCase))))
+                    continue;
+
+                ctx.CSharpNames.Add(d.Key);
+                if (ctx.ReferencedNames.Add(d.Key) && appKeys.Contains(d.Key)) rescued.Add(d.Key);
+            }
+            result.KeysMatchingComposedLookups = rescued.Count;
         }
 
         EmitDuplicateKeys(dicts, result, config);
@@ -1026,6 +1050,43 @@ public sealed class Analyzer
 
     /// <summary>程式碼裡出現過的 .xaml 路徑 -> 那本字典在執行期會被合併進 Application.Resources。
     /// 比對用檔名（程式裡寫的是 pack URI 或相對路徑，形式不一定對得起來）。</summary>
+    /// <summary>
+    /// 程式碼裡組出來的字典路徑 → (開頭, 結尾)。例：<c>$"Themes/{name}.xaml"</c> → (<c>Themes/</c>, <c>.xaml</c>)；
+    /// <c>pack://application:,,,/App;component/Themes/{t}Theme.xaml</c> → (<c>Themes/</c>, <c>Theme.xaml</c>)。
+    /// 不是組出來的、或固定部分太短（扣掉副檔名不到 3 個字）回傳 null。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-14 量過 17 個外部專案有 24 處這種寫法（主題、語系依名稱載入）。舊版拿檔名
+    ///   <c>{name}.xaml</c> 去比，永遠對不上，那些字典全被報成沒人合併。
+    /// ⚠ 門檻：<c>$"{name}.xaml"</c> 只剩副檔名，會把整個專案的字典都算成「程式會載入」，等於關掉檢查。
+    /// </remarks>
+    internal static (string Prefix, string Suffix)? ComposedPathPattern(string path)
+    {
+        var first = path.IndexOf('{');
+        var last = path.LastIndexOf('}');
+        if (first < 0 || last < first) return null;
+
+        var p = path.Replace('\\', '/');
+        first = p.IndexOf('{'); last = p.LastIndexOf('}');
+        var prefix = p[..first];
+        var suffix = p[(last + 1)..];
+
+        // 開頭去掉 pack URI／avares 的部分，只留專案內的相對路徑
+        var component = prefix.LastIndexOf(";component/", StringComparison.OrdinalIgnoreCase);
+        if (component >= 0) prefix = prefix[(component + ";component/".Length)..];
+        else if (prefix.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
+        {
+            var slash = prefix.IndexOf('/', "avares://".Length);
+            prefix = slash >= 0 ? prefix[(slash + 1)..] : "";
+        }
+        prefix = prefix.TrimStart('/');
+        if (prefix.StartsWith("./", StringComparison.Ordinal)) prefix = prefix[2..];
+
+        var ext = Path.GetExtension(suffix);
+        var meaningful = prefix.Length + suffix.Length - ext.Length;
+        return meaningful >= DynamicKeySite.MinPatternLength ? (prefix, suffix) : null;
+    }
+
     private static void MarkRuntimeLoaded(IReadOnlyList<ResourceDictionaryNode> dicts,
                                           IReadOnlyList<(string Path, string? Project)> loadedPaths,
                                           AnalysisResult result)
@@ -1035,10 +1096,18 @@ public sealed class Analyzer
         //   任何一個範例的 C# 提到 "Colors.xaml"，其餘 230 份 Colors.xaml 都會被
         //   當成「程式會載入」而豁免孤兒檢查 —— 一次跨專案的大赦。
         var byProject = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var composed = new List<(string Prefix, string Suffix, string Project)>();
         foreach (var (path, project) in loadedPaths)
         {
+            // 組出來的路徑（$"Themes/{name}.xaml"）：當成「開頭…結尾」的樣式，下面另外比對
+            if (ComposedPathPattern(path) is { } pattern)
+            {
+                composed.Add((pattern.Prefix, pattern.Suffix, project ?? ""));
+                continue;
+            }
+
             var name = Path.GetFileName(path.Replace('\\', '/'));
-            if (name.Length == 0) continue;
+            if (name.Length == 0 || name.Contains('{')) continue;
 
             var key = project ?? "";
             if (!byProject.TryGetValue(key, out var set))
@@ -1052,6 +1121,17 @@ public sealed class Analyzer
 
             var loaded = byProject.TryGetValue(d.ProjectDir ?? "", out var names)
                       && names.Contains(Path.GetFileName(d.File));
+
+            if (!loaded && composed.Count > 0)
+            {
+                var rel = Path.GetRelativePath(d.ProjectDir ?? Path.GetDirectoryName(d.File) ?? ".", d.File).Replace('\\', '/');
+                loaded = composed.Any(c => string.Equals(c.Project, d.ProjectDir ?? "", StringComparison.OrdinalIgnoreCase)
+                                        && rel.EndsWith(c.Suffix, StringComparison.OrdinalIgnoreCase)
+                                        && rel.Length >= c.Prefix.Length + c.Suffix.Length
+                                        && (c.Prefix.Length == 0
+                                            || rel.StartsWith(c.Prefix, StringComparison.OrdinalIgnoreCase)
+                                            || rel.Contains("/" + c.Prefix, StringComparison.OrdinalIgnoreCase)));
+            }
             var implicitTheme = IsImplicitThemeDictionary(d.File);
             if (!loaded && !implicitTheme) continue;
 

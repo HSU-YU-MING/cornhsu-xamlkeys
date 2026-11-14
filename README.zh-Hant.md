@@ -171,9 +171,9 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 
 | 盲區 | 後果 | 工具怎麼處理 |
 |---|---|---|
-| 執行期組出來的鍵名 | 可能看起來沒人用 | 計入動態查找點；`usedAtRuntime` 可壓制 |
+| 執行期組出來的鍵名 | 可能看起來沒人用 | 有 3 個字以上的固定部分（`$"Icon{n}"`、`"Icon" + n`、`n + "Brush"`）時，同專案裡符合的鍵算有人用，summary 會講有幾個；完全由變數決定的計入動態查找點，`usedAtRuntime` 可壓制 |
 | 第三方組件裡的字典 | 看不到內容 | 標 `external`、計數、拉低覆蓋率 |
-| 程式用組出來的 URI 載入的字典 | 可能看起來是孤兒 | 認得 C# 裡的字面 `.xaml` 路徑，組出來的認不得 |
+| 程式用組出來的 URI 載入的字典 | 可能看起來是孤兒 | 認得 C# 裡的字面 `.xaml` 路徑，也認得有固定部分的（`$"Themes/{name}.xaml"` 會載入該專案的每一本 `Themes/*.xaml`）；`$"{name}.xaml"` 與用 `+` 串的路徑認不得 |
 | 作用域是靜態近似 | `UserControl` 真正的父層不可知 | 鍵在別處存在時報 `out-of-scope`（warn），不報懸空（fail） |
 | `ComponentResourceKey`、`{x:Static …Key}` | 不是字串鍵 | 計入 unresolved，不評 |
 | 函式庫專案 | 它的鍵是公開 API | 不判 `unused` 與 `orphan-dictionary` |

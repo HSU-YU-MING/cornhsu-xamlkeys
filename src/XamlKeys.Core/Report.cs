@@ -45,6 +45,7 @@ public static class Report
             w.WriteNumber("invalidIgnores", r.InvalidIgnores.Count);
             w.WriteNumber("dynamicKeySites", r.DynamicKeySites.Count);
             w.WriteNumber("keysNamedNearDynamicLookups", r.KeysNamedNearDynamicLookups);
+            w.WriteNumber("keysMatchingComposedLookups", r.KeysMatchingComposedLookups);
             w.WriteNumber("frameworkKeyOverrides", r.FrameworkKeyOverrides);
             w.WriteNumber("unusedOnlyViaUnused", r.UnusedOnlyViaUnused);
             w.WriteBoolean("configOverrides", r.Config.HasOverrides);
@@ -234,6 +235,9 @@ public static class Report
                         $"-- not reported as unused");
         if (r.UnusedOnlyViaUnused > 0)
             o.WriteLine($"note: {r.UnusedOnlyViaUnused} of the unused key(s) are referenced only from inside other unused resources");
+        if (r.KeysMatchingComposedLookups > 0)
+            o.WriteLine($"note: {r.KeysMatchingComposedLookups} key(s) were counted as used because they match a key " +
+                        $"that C# composes at runtime (for example $\"Icon{{name}}\")");
         if (r.KeysNamedNearDynamicLookups > 0)
             o.WriteLine($"note: {r.KeysNamedNearDynamicLookups} key(s) were counted as used because their name appears " +
                         $"as a string in a C# file that looks resources up by variable");

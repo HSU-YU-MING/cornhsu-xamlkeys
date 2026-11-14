@@ -28,7 +28,7 @@ public class DemoTests
     [InlineData(FindingKind.OutOfScope, 1)]
     [InlineData(FindingKind.Shadowed, 3)]
     [InlineData(FindingKind.ShadowedIdentical, 1)]
-    [InlineData(FindingKind.Unused, 5)]
+    [InlineData(FindingKind.Unused, 4)]
     [InlineData(FindingKind.OrphanDictionary, 1)]
     [InlineData(FindingKind.External, 1)]
     public void Counts_are_stable(FindingKind kind, int expected) =>
@@ -90,13 +90,25 @@ public class DemoTests
     }
 
     [Fact]
-    public void UsedAtRuntime_suppresses_the_composed_key_family()
+    public void A_composed_lookup_with_a_fixed_prefix_rescues_its_keys_and_says_so()
     {
+        // CodeBehind.cs 的 FindResource($"Icon{name}") 有固定前綴 "Icon"：IconSave 不必設定就不會被報成沒人用，
+        // 而且 summary 要講出來（放寬的路都要留計數）。
+        var r = Run();
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Unused && f.Key == "IconSave");
+        Assert.Equal(1, r.KeysMatchingComposedLookups);
+    }
+
+    [Fact]
+    public void UsedAtRuntime_suppresses_a_key_family()
+    {
+        // 組不出固定前綴的鍵（例如整個鍵名來自資料）只能靠 usedAtRuntime。
         var cfg = new Config();
-        cfg.UsedAtRuntime.Add("Icon*");
+        cfg.UsedAtRuntime.Add("Nobody*");
 
         var r = Run(cfg);
-        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Unused && f.Key == "IconSave");
+        Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.Unused && f.Key == "NobodyUsesThis");
+        Assert.Contains(Run().Findings, f => f.Kind == FindingKind.Unused && f.Key == "NobodyUsesThis");
     }
 
     [Fact]

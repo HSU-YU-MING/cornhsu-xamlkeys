@@ -13,9 +13,10 @@ public static class CodeBehind
 
     public static object? Composed(System.Windows.FrameworkElement el, string name)
     {
-        // 組出來的鍵名：靜態不可知。
+        // 組出來的鍵名：完整鍵名靜態不可知，但前綴 "Icon" 是固定的。
         // ⚠ 工具必須把它計入 dynamicKeySites 並在 summary 講出來 ——
         //   不然 Icon* 底下的鍵會全部被報成沒人用,使用者照著刪就炸了。
+        //   有固定前綴時，Icon 開頭的鍵直接算有人用（同專案內），並計入 keysMatchingComposedLookups。
         return el.FindResource($"Icon{name}");
     }
 
