@@ -236,6 +236,24 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **An eighth corpus round: C++/WinRT, Xamarin.Forms and layered themes** (dnGrep, Prism-Samples-Wpf,
+  WoWDatabaseEditor, Dock, Windows Terminal, Windows App SDK samples, xamarin-forms-samples): 506 findings on
+  the first run, 214 after; 80 fewer and none added in the earlier 38 projects; the 43 gated findings unchanged.
+  New:
+  - `.vcxproj` projects are read: they are WinUI, `ConfigurationType` decides application or library, and their
+    `.cpp`/`.h` files are scanned too (`L"Key"` counts as a string);
+  - an `x:Name`d resource whose name appears in its own XAML file's code-behind (C# or C++/WinRT) is used
+    (`keysUsedAsFields`); a WinUI `TeachingTip` placed in `Resources` is not unused (`placedTeachingTips`);
+  - a composed string with a fixed head and tail of three characters or more (`$"Match.Group.{i}.Highlight.Background"`)
+    counts as using matching keys even when it is stored in a variable before the lookup;
+  - Xamarin.Forms device styles (`TitleStyle`, `BodyStyle`, …) are framework-provided in Xamarin.Forms files;
+  - an x:Class dictionary that C# creates with `new` is not an orphan (`dictionariesCreatedInCode`) — it is not
+    added to any scope, because where it is merged is unknown;
+  - a definition overridden by a layered theme but winning in another root dictionary is not `shadowed`
+    (`layeredOverrides`), and the shadowed message names the dictionary's own framework;
+  - csproj wildcard links (`Include="..\X\**\*.axaml"` with `Link="X\%(RecursiveDir)%(Filename)%(Extension)"`) resolve;
+  - `DarkSource`/`LightSource` attributes on an include element are merged as mutually exclusive sides.
+
 - **A seventh corpus round, and a `UserControl`'s real parent** (Notepads, LiveCharts2, Avalonia.Samples,
   Uno Chefs, XamlFlair, MVVM-Samples, AvalonDock): 468 findings on the first run, 285 after; 15 fewer in the
   earlier 31 projects; the 43 gated findings unchanged. New:

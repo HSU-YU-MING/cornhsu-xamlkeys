@@ -185,7 +185,7 @@ public class FrozenContractTests
             "dialect", "dialectAutoDetected", "dialectMixed", "xamlFiles", "csharpFiles",
             "dictionaries", "mergeEdges", "mergeEdgesResolved", "coverage", "keysDefined",
             "references", "suppressed", "baselineSuppressed", "parseErrors", "unresolvedSites", "invalidIgnores",
-            "dynamicKeySites", "keysNamedNearDynamicLookups", "keysMatchingComposedLookups", "keysNamedInCode", "dynamicKeysNamedInCode", "keysAddedInCode", "keysResolvedThroughHosts", "keysFromControlResources", "startupResources", "keyedDictionaries", "classBackedDictionaries", "libraryKeyOverrides", "frameworkKeyOverrides", "unusedOnlyViaUnused", "configOverrides", "hasApplication", "projects", "applicationProjects",
+            "dynamicKeySites", "keysNamedNearDynamicLookups", "keysMatchingComposedLookups", "keysNamedInCode", "dynamicKeysNamedInCode", "keysAddedInCode", "keysResolvedThroughHosts", "keysFromControlResources", "startupResources", "layeredOverrides", "keysUsedAsFields", "dictionariesCreatedInCode", "placedTeachingTips", "keyedDictionaries", "classBackedDictionaries", "libraryKeyOverrides", "frameworkKeyOverrides", "unusedOnlyViaUnused", "configOverrides", "hasApplication", "projects", "applicationProjects",
             "libraryKeysNotChecked", "variantDictionaryGroups", "frameworkProvided",
             "runtimeLoadedDictionaries", "implicitThemeDictionaries", "runtimeSelectedFamilyFiles",
             "libraryUnresolvedReferences", "unusedDefinitions", "crossProjectReferences",

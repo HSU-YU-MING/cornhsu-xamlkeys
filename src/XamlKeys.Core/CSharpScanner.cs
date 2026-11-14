@@ -126,15 +126,20 @@ public sealed partial class CSharpScanner
     /// <summary>ClassesToFind 裡，C# 有 <c>new X(</c>、<c>typeof(X)</c>、<c>&lt;X&gt;</c>（DI 註冊、導覽）的 ——
     /// 它的宿主不只 XAML 裡看得到的那幾處。</summary>
     public HashSet<string> ClassesCreatedInCode { get; } = new(StringComparer.Ordinal);
+    /// <summary>同上，連建立它的檔所在的專案（判「字典類別在程式裡被 new 出來」要限相關專案）。</summary>
+    public HashSet<(string Class, string? Project)> ClassesCreatedInCodeByProject { get; } = [];
 
-    private void FindCreatedClasses(string code)
+    private void FindCreatedClasses(string code, string? project)
     {
         foreach (var c in ClassesToFind)
         {
-            if (ClassesCreatedInCode.Contains(c) || !code.Contains(c, StringComparison.Ordinal)) continue;
+            if (ClassesCreatedInCodeByProject.Contains((c, project)) || !code.Contains(c, StringComparison.Ordinal)) continue;
             var n = Regex.Escape(c);
             if (Regex.IsMatch(code, $@"\bnew\s+(?:[\w.]+\.)?{n}\s*[({{]|\btypeof\s*\(\s*(?:[\w.]+\.)?{n}\s*\)|[<,]\s*(?:[\w.]+\.)?{n}\s*[>,]"))
+            {
                 ClassesCreatedInCode.Add(c);
+                ClassesCreatedInCodeByProject.Add((c, project));
+            }
         }
     }
 
@@ -178,6 +183,9 @@ public sealed partial class CSharpScanner
     /// <summary>C# 裡組鍵名的內插字串（<c>$"TEInherited{name}Foreground"</c>）的固定開頭與結尾 ——
     /// 不限查找呼叫。dnSpy 用這種輔助方法把一整組鍵寫進資源。</summary>
     public IReadOnlyCollection<(string Prefix, string Suffix)> ComposedNamesInCode => _composedNames;
+    private readonly HashSet<(string Prefix, string Suffix, string? Project)> _composedLiterals = [];
+    /// <summary>前後都有固定部分（各至少 3 個字）的組出來的字串，與所在專案。</summary>
+    public IReadOnlyCollection<(string Prefix, string Suffix, string? Project)> ComposedLiteralsInCode => _composedLiterals;
 
     /// <summary>程式碼裡載入的字典路徑（new ResourceDictionary { Source = new Uri("…") }）。
     /// 用來避免把它們誤報成 orphan-dictionary。</summary>
@@ -192,11 +200,15 @@ public sealed partial class CSharpScanner
         try { text = File.ReadAllText(file); }
         catch (IOException) { return; }
 
+        // C++/WinRT：寬字串 L"Key" 當成一般字串（其餘規則照 C# 的讀）
+        if (file.EndsWith(".cpp", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".h", StringComparison.OrdinalIgnoreCase))
+            text = CppWideString().Replace(text, " \"");
+
         var code = StripComments(text);
         var project = ProjectOf?.Invoke(file);
         if (WordsToFind.Count > 0) FindWords(code);
         if (TypesToFind.Count > 0) FindTypes(code);
-        if (ClassesToFind.Count > 0) FindCreatedClasses(code);
+        if (ClassesToFind.Count > 0) FindCreatedClasses(code, project);
 
         // 不是查找參數的字串字面（見 NamesInCode）。讀取的查找要排除；寫入（Resources["K"] = v）留著。
         // ⚠ 這一段要對**每一個** C# 檔做：鍵名常常在跟資源完全無關的檔裡（dnSpy 的 TabGroup.cs 只寫了
@@ -235,6 +247,10 @@ public sealed partial class CSharpScanner
             //   第一版就是這樣把 dnSpy 一筆真的懸空（AppSettingsTreeViewBackground）也吃掉了。
             //   只有結尾的情形另外由 ComposedSuffixesInCode 處理，那邊要求開頭是一個 C# 字串。
             if (pre.Length >= DynamicKeySite.MinPatternLength) _composedNames.Add((pre, suf));
+            // 前後都夠長的（$"Match.Group.{i}.Highlight.Background"，dnGrep）：先存進變數再查找的寫法，
+            // 查找點只看到變數 —— 判 unused 時也要認（見 Analyzer 規則 64）
+            if (pre.Length >= DynamicKeySite.MinPatternLength && suf.Length >= DynamicKeySite.MinPatternLength)
+                _composedLiterals.Add((pre, suf, project));
         }
 
         if (!text.Contains("Resource", StringComparison.Ordinal)
@@ -494,6 +510,9 @@ public sealed partial class CSharpScanner
     private static partial Regex DynamicLookupRegex();
 
     // 長得像鍵名的一般字串字面（不含 $"…" 與 @"…"）。用在 LiteralsNearDynamicLookups。
+    [GeneratedRegex(@"(?<![\w])L""")]
+    private static partial Regex CppWideString();
+
     [GeneratedRegex("""(?<![@$\w"])"(?<s>[A-Za-z_][\w.\-]{0,99})(?=")""")]
     private static partial Regex KeyLikeLiteralRegex();
 

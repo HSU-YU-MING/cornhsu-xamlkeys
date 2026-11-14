@@ -127,6 +127,8 @@ public sealed partial class XamlScanner
         var ignorable = IgnorablePrefixes(root);
         if (XamlAttr(root, "Class")?.Value?.Trim() is { Length: > 0 } rootClass)
             _classOfFile[Path.GetFullPath(file)] = rootClass;
+        if (root.Name.NamespaceName == "http://xamarin.com/schemas/2014/forms")
+            _xamarinFormsFiles.Add(Path.GetFullPath(file));
 
         if (root.Name.LocalName == "ResourceDictionary")
         {
@@ -321,11 +323,7 @@ public sealed partial class XamlScanner
                             //                         FontOverrideSource="ms-appx:///Styles/MaterialFontsOverride.xaml"/>
                             // 覆寫的值蓋過主題，所以排在主題前面（WinUI 先宣告的贏）。
                             // ⚠ 2026-11-15 第七輪 Uno Chefs：舊版把這兩本報成孤兒，裡面的 ChefsLogoWithIcon 等鍵變成 external。
-                            foreach (var a in m.Attributes())
-                                if (a.Name.Namespace == XNamespace.None
-                                    && a.Name.LocalName.EndsWith("OverrideSource", StringComparison.Ordinal)
-                                    && a.Value.Trim() is { Length: > 0 } ov && !ov.StartsWith('{'))
-                                    AddMerged(dict, ov, dict.File, LineOf(m));
+                            AddAttributeSources(m, dict);
                             // 行內合併：<ResourceDictionary> 直接寫在 MergedDictionaries 裡
                             InlineMerged(m, dict, chain, ignorable, suppressed);
                         }
@@ -506,6 +504,7 @@ public sealed partial class XamlScanner
                     DictionaryId = dict.Id,
                     ElementName = el.Name.LocalName,
                     AliasTarget = alias,
+                    FieldName = XamlAttr(el, "Name")?.Value?.Trim() is { Length: > 0 } fieldName ? fieldName : null,
                     SuppressedReason = suppressed,
                     ContentHash = ContentOf(el),
                 };
@@ -708,6 +707,13 @@ public sealed partial class XamlScanner
     private readonly Dictionary<KeyReference, (string Ns, string Name)[]> _enclosingOfRef =
         new(ReferenceEqualityComparer.Instance);
 
+    private readonly HashSet<string> _xamarinFormsFiles = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>根元素是 Xamarin.Forms 命名空間的檔（絕對路徑）。</summary>
+    public IReadOnlySet<string> XamarinFormsFiles => _xamarinFormsFiles;
+
+    /// <summary>有 x:Class 的字典檔：類別全名 → 字典 Id。</summary>
+    public IReadOnlyDictionary<string, int> DictionaryByClass => _dictionaryByClass;
+
     /// <summary>根元素的 x:Class：檔案（絕對路徑） → 類別全名。</summary>
     public IReadOnlyDictionary<string, string> ClassOfFile => _classOfFile;
 
@@ -810,6 +816,13 @@ public sealed partial class XamlScanner
 
             if (e.Name.LocalName is "Style" or "Styles") continue;
 
+            // 自訂的 include 元素（StyleInclude／ResourceInclude 的子類別，內容全部來自 *Source 屬性）：讀完就好，
+            // 不再另外記成一本看不到的字典 —— 否則它會一直拉低覆蓋率，external 訊息也會指錯對象。
+            if (AddAttributeSources(e, dict) > 0
+                && (e.Name.LocalName.Contains("StyleInclude", StringComparison.Ordinal)
+                    || e.Name.LocalName.Contains("ResourceInclude", StringComparison.Ordinal)))
+                continue;
+
             // <semi:SemiTheme/>、<FluentAvaloniaTheme/> 之類：函式庫提供的主題物件，
             // 它帶的資源在組件裡,靜態看不到 -> external（絕不能當成不存在）
             dict.Merged.Add(new MergedReference
@@ -822,6 +835,53 @@ public sealed partial class XamlScanner
             });
             LinkByClassLater(e, dict.Merged[^1]);
         }
+    }
+
+    /// <summary>
+    /// 主題物件、自訂 include 元素用屬性帶進來的字典：屬性名以 Source 結尾（不含 Source 本身，那由呼叫端處理）。
+    /// </summary>
+    /// <remarks>
+    /// - Uno：<c>&lt;MaterialToolkitTheme ColorOverrideSource="…" FontOverrideSource="…"/&gt;</c>（規則 63）。覆寫蓋過主題，排在主題前面。
+    /// - Avalonia 自訂的 <c>&lt;StyleIncludeColorAware DarkSource="…" LightSource="…"/&gt;</c>（2026-11-15 第八輪 WoWDatabaseEditor，46 筆 external）：
+    ///   前綴是 Dark／Light／HighContrast 的是**執行期二選一**，像 ThemeDictionaries 一樣做成同一群組的兩側，
+    ///   兩本的同名鍵不會被判成互相覆蓋。
+    /// 只收非命名空間的屬性、值不是 markup extension 的。
+    /// </remarks>
+    private int AddAttributeSources(XElement e, ResourceDictionaryNode dict)
+    {
+        int? groupId = null;
+        var added = 0;
+        foreach (var a in e.Attributes())
+        {
+            if (a.Name.Namespace != XNamespace.None) continue;
+            var name = a.Name.LocalName;
+            if (name == "Source" || !name.EndsWith("Source", StringComparison.Ordinal)) continue;
+            if (a.Value.Trim() is not { Length: > 0 } src || src.StartsWith('{')) continue;
+
+            var sideName = name[..^"Source".Length];
+            var side = SideOf(sideName);
+            if (sideName is "Dark" or "Light" or "HighContrast")
+            {
+                groupId ??= _nextThemeGroupId++;
+                var sideDict = NewDictionary(dict.File, $"{e.Name.LocalName}.{name}", LineOf(e), standalone: false, appScope: false);
+                sideDict.Side = side;
+                sideDict.ThemeGroupId = groupId;
+                AddMerged(sideDict, src, dict.File, LineOf(e));
+                dict.Merged.Add(new MergedReference
+                {
+                    RawSource = $"{e.Name.LocalName}.{name}",
+                    Location = new SourceLocation(Rel(dict.File), LineOf(e)),
+                    ResolvedDictionaryId = sideDict.Id,
+                });
+                added++;
+            }
+            else if (name.EndsWith("OverrideSource", StringComparison.Ordinal))
+            {
+                AddMerged(dict, src, dict.File, LineOf(e));
+                added++;
+            }
+        }
+        return added;
     }
 
     /// <summary>根元素有 x:Class 的字典／樣式檔：記下類別全名，讓 &lt;local:SukiTheme/&gt; 這種元素接得回來。</summary>

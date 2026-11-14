@@ -83,6 +83,10 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   而且要**每一個**放置處都有。StaticResource 在控制項被放進宿主之前就解析了，不能放寬。
   C# 也會建立那個控制項的話（`CSharpScanner.ClassesCreatedInCode`）宿主看不全，也不放寬。
 - **「定義在哪」的指路一律先找同一個專案**（out-of-scope、死副本）。整棵樹的第一個常常是別的範例專案。
+- **「有人載入它」不等於「知道它在哪個作用域」**：x:Class 字典在 C# 裡被 new 出來（規則 66）只豁免孤兒。
+  第一版把它加進 Application 作用域，Avalonia 的 `new FluentTheme()`、SukiUI 的主題類別整本進了全專案的作用域，
+  已回報上游的真 bug 被降級成 external —— 是舊語料逐筆比對抓到的。
+- **C++/WinRT**：`.vcxproj` 一律 WinUI；只讀有 XAML 的 vcxproj 底下的 `.cpp`／`.h`（Windows Terminal 有上千個）。
 - **主題套件的鍵名清單是選用的**（`FrameworkKeys.Packs`）：只有樹裡真的合併了那個主題才算。
   清單可以限定方言（`ThemePack.Dialect`）：不同生態系的主題元素會撞名（Uno／Avalonia 的 `SimpleTheme`）。
   新增清單照 `scripts/regenerate-framework-keys.mjs` 的表加一列、`.csproj` 加 EmbeddedResource、

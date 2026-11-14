@@ -56,6 +56,9 @@ public sealed class KeyDefinition
     /// <summary>markup 鍵的型別的 CLR 命名空間（XAML 寫明的才有）。有的話比對型別時連命名空間一起比。</summary>
     public string? MarkupTypeNamespace { get; init; }
 
+    /// <summary>元素上的 x:Name。code-behind 會產生同名的欄位（C#）或存取函式（C++/WinRT）。</summary>
+    public string? FieldName { get; init; }
+
     /// <summary>資源別名：&lt;StaticResource x:Key="A" ResourceKey="B"/&gt; —— 定義 A 的同時引用 B。</summary>
     public string? AliasTarget { get; init; }
 
@@ -180,6 +183,13 @@ public sealed class ResourceDictionaryNode
     /// ⚠ 不認這條的話，「用 C# 套主題」的專案會整批冒出 out-of-scope ——
     /// 實測 wpfui 385 筆、QuillNest 的 DarkTheme.xaml 也是這個形狀。</summary>
     public bool IsRuntimeLoaded { get; set; }
+
+    /// <summary>x:Class 字典在 C# 裡被 new 出來（<c>MergedDictionaries.Add(new DarkTheme())</c>）。只代表「不是孤兒」——
+    /// 不知道它被放進哪個作用域，所以**不**加進 Application 作用域（那是 IsRuntimeLoaded 的事）。</summary>
+    /// <remarks>⚠ 2026-11-15 第八輪：第一版把它當成 IsRuntimeLoaded，Avalonia 自己的 repo 有 new FluentTheme()、
+    ///   SukiUI 有 new 主題類別 —— 它們整本（含看不到的 &lt;SimpleTheme/&gt;）變成全專案的作用域，
+    ///   SukiUI 已回報上游的真 bug（CWhite-）因此被降級成「也許在看不到的那本裡」。</remarks>
+    public bool IsCreatedInCode { get; set; }
 
     public List<KeyDefinition> OwnKeys { get; } = [];
 

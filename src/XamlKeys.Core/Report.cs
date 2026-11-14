@@ -52,6 +52,10 @@ public static class Report
             w.WriteNumber("keysResolvedThroughHosts", r.KeysResolvedThroughHosts);
             w.WriteNumber("keysFromControlResources", r.KeysFromControlResources);
             w.WriteNumber("startupResources", r.StartupResources);
+            w.WriteNumber("layeredOverrides", r.LayeredOverrides);
+            w.WriteNumber("keysUsedAsFields", r.KeysUsedAsFields);
+            w.WriteNumber("dictionariesCreatedInCode", r.DictionariesCreatedInCode);
+            w.WriteNumber("placedTeachingTips", r.PlacedTeachingTips);
             w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
             w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
             w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
@@ -273,6 +277,16 @@ public static class Report
         if (r.KeysResolvedThroughHosts > 0)
             o.WriteLine($"note: {r.KeysResolvedThroughHosts} DynamicResource reference(s) in a UserControl resolve in every place " +
                         $"the control is put in XAML -- not reported as out-of-scope");
+        if (r.PlacedTeachingTips > 0)
+            o.WriteLine($"note: {r.PlacedTeachingTips} TeachingTip(s) placed in Resources open through their own IsOpen -- not reported as unused");
+        if (r.DictionariesCreatedInCode > 0)
+            o.WriteLine($"note: {r.DictionariesCreatedInCode} x:Class dictionar(ies) are created in C# (new X()) -- not reported as orphans; " +
+                        $"where they are merged is not known, so their keys are not added to any scope");
+        if (r.KeysUsedAsFields > 0)
+            o.WriteLine($"note: {r.KeysUsedAsFields} x:Name'd resource(s) are used as fields in their code-behind -- not reported as unused");
+        if (r.LayeredOverrides > 0)
+            o.WriteLine($"note: {r.LayeredOverrides} definition(s) are overridden by a theme layered on top of them but win in " +
+                        $"another theme that uses them directly -- not reported as shadowed");
         if (r.StartupResources > 0)
             o.WriteLine($"note: {r.StartupResources} App.xaml resource(s) exist to be created at startup (a Caliburn.Micro " +
                         $"bootstrapper) -- not reported as unused");

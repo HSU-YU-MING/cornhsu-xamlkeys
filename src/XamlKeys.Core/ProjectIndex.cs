@@ -19,6 +19,9 @@ public sealed partial class ProjectIndex
 {
     private readonly List<(string Dir, bool IsApplication, bool IsWinUi)> _projects = [];
 
+    /// <summary>.vcxproj 專案的目錄（C++/WinRT）。它們的 .cpp／.h 也要讀（見 CSharpScanner 的 C++ 前處理）。</summary>
+    public HashSet<string> CppProjectDirs { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public ProjectIndex(string root, IEnumerable<string> projectFiles, IEnumerable<string> xamlFiles)
     {
         var xamlByDir = xamlFiles.ToLookup(f => Path.GetDirectoryName(Path.GetFullPath(f)) ?? "",
@@ -30,6 +33,7 @@ public sealed partial class ProjectIndex
             if (dir is null) continue;
 
             _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), IsWinUiProject(proj)));
+            if (proj.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)) CppProjectDirs.Add(dir);
         }
 
         // 最深的目錄排前面：巢狀專案要先比對到自己，不是父專案
@@ -160,6 +164,10 @@ public sealed partial class ProjectIndex
                     || t.Equals("Exe", StringComparison.OrdinalIgnoreCase)) return true;
                 if (t.Equals("Library", StringComparison.OrdinalIgnoreCase)) return false;
             }
+            // C++：<ConfigurationType>Application</ConfigurationType>；DynamicLibrary／StaticLibrary 是函式庫
+            var ct = ConfigurationTypeRegex().Match(text);
+            if (ct.Success)
+                return ct.Groups["t"].Value.Trim().Equals("Application", StringComparison.OrdinalIgnoreCase);
         }
         catch (IOException) { /* 讀不到就靠 App.xaml 判斷 */ }
 
@@ -173,6 +181,10 @@ public sealed partial class ProjectIndex
     /// <summary>WinUI 3／UWP 專案的辨識：csproj 的宣告，不是 XAML 的寫法。</summary>
     private static bool IsWinUiProject(string proj)
     {
+        // C++ 能寫 XAML 的只有 UWP／WinUI（WPF 沒有 C++ 的 XAML）。
+        // ⚠ 2026-11-15 第八輪 Windows Terminal：舊版只讀 .csproj，C++ 專案的 XAML 被當成 WPF，
+        //   WinUI 的 TextFillColorPrimaryBrush 等 78 筆變成 external。
+        if (proj.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)) return true;
         try
         {
             var text = File.ReadAllText(proj);
@@ -189,4 +201,7 @@ public sealed partial class ProjectIndex
 
     [GeneratedRegex(@"<OutputType>(?<t>[^<]*)</OutputType>", RegexOptions.IgnoreCase)]
     private static partial Regex OutputTypeRegex();
+
+    [GeneratedRegex(@"<ConfigurationType>(?<t>[^<]*)</ConfigurationType>", RegexOptions.IgnoreCase)]
+    private static partial Regex ConfigurationTypeRegex();
 }

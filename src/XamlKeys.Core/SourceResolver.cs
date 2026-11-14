@@ -173,7 +173,19 @@ public sealed partial class SourceResolver
 
             var link = item.Attribute("Link")?.Value
                     ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Link")?.Value;
-            if (string.IsNullOrWhiteSpace(link) || link.Contains("%(")) continue;
+            if (string.IsNullOrWhiteSpace(link)) continue;
+
+            // <AvaloniaResource Include="..\Other\Controls\**\*.axaml"><Link>Controls\%(RecursiveDir)%(Filename)%(Extension)</Link>
+            // ⚠ 2026-11-15 第八輪 Dock：Simple 主題的 /Controls/ControlStrings.axaml 是從 Fluent 主題這樣連過來的。
+            //   只認這一種形狀：萬用字元只在 Include 的最後兩段（**\*.ext 或 *.ext），Link 是「固定前綴＋%(RecursiveDir)%(Filename)%(Extension)」。
+            if (link.Contains("%("))
+            {
+                if (WildcardLink(include, link) is { } w)
+                    _wildcardLinks.Add((dir, w.LinkPrefix,
+                        Path.GetFullPath(Path.Combine(dir, w.IncludeBase.Replace('\\', Path.DirectorySeparatorChar))),
+                        w.Extension, w.Recursive));
+                continue;
+            }
 
             var target = Path.GetFullPath(Path.Combine(dir, include.Replace('\\', Path.DirectorySeparatorChar)));
             _links[(dir, NormalizeLink(link))] = target;
@@ -182,9 +194,49 @@ public sealed partial class SourceResolver
 
     private static string NormalizeLink(string p) => p.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
 
+    private readonly List<(string Project, string LinkPrefix, string IncludeBase, string Extension, bool Recursive)> _wildcardLinks = [];
+
+    /// <summary>Include「base\**\*.ext」或「base\*.ext」＋ Link「prefix\%(RecursiveDir)%(Filename)%(Extension)」→ 各部分；其餘形狀 null。</summary>
+    internal static (string IncludeBase, string Extension, bool Recursive, string LinkPrefix)? WildcardLink(string include, string link)
+    {
+        const string tail = "%(RecursiveDir)%(Filename)%(Extension)";
+        var l = link.Replace('\\', '/');
+        if (!l.EndsWith(tail, StringComparison.Ordinal)) return null;
+        var prefix = l[..^tail.Length];
+        if (prefix.Contains('%') || prefix.Contains('*') || prefix.Contains("$(")) return null;
+
+        var inc = include.Replace('\\', '/');
+        var star = inc.LastIndexOf("/*.", StringComparison.Ordinal);
+        if (star < 0) return null;
+        var ext = inc[(star + 2)..];                           // ".axaml"
+        if (ext.Contains('*') || ext.Contains('/')) return null;
+        var head = inc[..star];
+        var recursive = head.EndsWith("/**", StringComparison.Ordinal);
+        if (recursive) head = head[..^3];
+        if (head.Contains('*') || head.Contains("$(") || head.Contains('%')) return null;
+        return (head + "/", ext, recursive, prefix);
+    }
+
     /// <summary>這個專案目錄底下的相對路徑，是不是連結進來的檔？</summary>
-    private string? Linked(string projectDir, string relative) =>
-        _links.TryGetValue((projectDir, NormalizeLink(relative)), out var target) && Exists(target) ? target : null;
+    private string? Linked(string projectDir, string relative)
+    {
+        if (_links.TryGetValue((projectDir, NormalizeLink(relative)), out var target) && Exists(target)) return target;
+
+        var rel = relative.Replace('\\', '/').TrimStart('/');
+        foreach (var (proj, prefix, includeBase, ext, recursive) in _wildcardLinks)
+        {
+            if (!string.Equals(proj, projectDir, PathComparison)) continue;
+            if (!rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            var rest = rel[prefix.Length..];
+            if (rest.Length == 0 || !rest.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!recursive && rest.Contains('/')) continue;
+            var candidate = Path.GetFullPath(Path.Combine(includeBase, rest.Replace('/', Path.DirectorySeparatorChar)));
+            // 「..」逃出 Include 的目錄：正規化之後一定不在 includeBase 底下（也擋掉 Controls/../b.axaml）
+            if (!candidate.StartsWith(includeBase, PathComparison)) continue;
+            if (Exists(candidate)) return candidate;
+        }
+        return null;
+    }
 
     public SourceResolution Resolve(string rawSource, string containingFile)
     {
@@ -305,13 +357,14 @@ public sealed partial class SourceResolver
         return (s.TrimStart('/'), null);
     }
 
-    /// <summary>從檔案往上找最近的 *.csproj 目錄；一路找不到就用掃描根。</summary>
+    /// <summary>從檔案往上找最近的 *.csproj／*.vcxproj 目錄；一路找不到就用掃描根。</summary>
     private IEnumerable<string> ProjectRootsFor(string file)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(file));
         while (dir is not null && dir.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
         {
-            if (Directory.EnumerateFiles(dir, "*.csproj").Any()) yield return dir;
+            if (Directory.EnumerateFiles(dir, "*.csproj").Any()
+                || Directory.EnumerateFiles(dir, "*.vcxproj").Any()) yield return dir;
             var parent = Path.GetDirectoryName(dir);
             if (parent == dir) break;
             dir = parent;

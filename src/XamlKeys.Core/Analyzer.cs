@@ -99,6 +99,18 @@ public sealed class AnalysisResult
     /// <summary>程式在執行期合併進來的字典數（主題切換）。</summary>
     public int RuntimeLoadedDictionaries { get; set; }
 
+    /// <summary>分層主題裡被覆寫、但在另一個主題裡是贏家的定義數（Windows11 主題蓋掉一部分 Windows10 的色票）。不報 shadowed。</summary>
+    public int LayeredOverrides { get; set; }
+
+    /// <summary>以 x:Name 命名、code-behind 當欄位（或 C++/WinRT 存取函式）使用的資源數。不報 unused。</summary>
+    public int KeysUsedAsFields { get; set; }
+
+    /// <summary>x:Class 字典在 C# 裡被 new 出來的個數。不報孤兒，但也不加進任何作用域。</summary>
+    public int DictionariesCreatedInCode { get; set; }
+
+    /// <summary>放在 Resources 裡的 TeachingTip（WinUI 的掛法，用自己的 IsOpen 打開）。不報 unused。</summary>
+    public int PlacedTeachingTips { get; set; }
+
     /// <summary>框架隱含載入的主題字典數（Themes/Generic.xaml 之類）。</summary>
     public int ImplicitThemeDictionaries { get; set; }
 
@@ -185,13 +197,27 @@ public sealed class Analyzer
         var xamlFiles = EnumerateFiles(root, "*.xaml", config, () => testSkipped++)
                         .Concat(EnumerateFiles(root, "*.axaml", config, () => testSkipped++)).ToList();
         var csFiles = EnumerateFiles(root, "*.cs", config).ToList();
-        var projFiles = EnumerateFiles(root, "*.csproj", config).ToList();
+        // ⚠ C++/WinRT 的 XAML 專案是 .vcxproj（2026-11-15 第八輪：Windows Terminal、Windows App SDK 範例）
+        var projFiles = EnumerateFiles(root, "*.csproj", config)
+                        .Concat(EnumerateFiles(root, "*.vcxproj", config)).ToList();
         result.TestFilesExcluded = testSkipped;
 
         result.XamlFiles = xamlFiles.Count;
         result.CSharpFiles = csFiles.Count;
 
         var projects = new ProjectIndex(root, projFiles, xamlFiles);
+
+        // 規則 72：C++/WinRT 專案的程式碼也要讀 —— Resources().Lookup(box_value(L"Key"))、
+        // 以及 x:Name 資源的存取函式。只讀有 XAML 的 .vcxproj 專案底下的 .cpp／.h（Windows Terminal 有上千個 C++ 檔）。
+        if (projects.CppProjectDirs.Count > 0)
+        {
+            var xamlProjects = xamlFiles.Select(f => projects.ProjectDirOf(f)).OfType<string>()
+                                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var cppDirs = projects.CppProjectDirs.Where(xamlProjects.Contains).ToList();
+            if (cppDirs.Count > 0)
+                csFiles.AddRange(EnumerateFiles(root, "*.cpp", config).Concat(EnumerateFiles(root, "*.h", config))
+                    .Where(f => projects.ProjectDirOf(f) is { } p && cppDirs.Contains(p, StringComparer.OrdinalIgnoreCase)));
+        }
         result.Projects = projects.ProjectCount;
         result.ApplicationProjects = projects.ApplicationCount;
 
@@ -215,7 +241,7 @@ public sealed class Analyzer
                 cs.WordsToFind.Add(member);
                 if (d.MarkupType is { } type) cs.TypesToFind.Add(type);
             }
-        foreach (var cls in scanner.UsesOfClass.Keys)
+        foreach (var cls in scanner.UsesOfClass.Keys.Concat(scanner.DictionaryByClass.Keys))
             cs.ClassesToFind.Add(cls[(cls.LastIndexOf('.') + 1)..]);
         foreach (var f in csFiles) cs.ScanFile(f);
 
@@ -244,6 +270,19 @@ public sealed class Analyzer
 
         ApplyThemeSides(dicts, config);
         var themeEntries = PropagateThemeSides(dicts);
+        // 規則 66：mergedDictionaries.Add(new DarkTheme()) —— x:Class 字典在 C# 裡被建立（限相關專案）
+        // ⚠ 2026-11-15 第八輪 Xamarin.Forms 的 ThemingDemo：舊版只認字面路徑，DarkTheme.xaml 被報成孤兒。
+        var createdDicts = new HashSet<int>();
+        foreach (var (cls, id) in scanner.DictionaryByClass)
+        {
+            var shortName = cls[(cls.LastIndexOf('.') + 1)..];
+            var dictProject = projects.ProjectDirOf(dicts[id].File);
+            if (cs.ClassesCreatedInCodeByProject.Any(c => c.Class == shortName
+                    && (c.Project is null || dictProject is null || projects.Related(c.Project).Contains(dictProject))))
+                createdDicts.Add(id);
+        }
+        foreach (var id in createdDicts) dicts[id].IsCreatedInCode = true;
+        result.DictionariesCreatedInCode = createdDicts.Count;
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
         result.HasApplication = projects.HasAnyApplication;
 
@@ -288,6 +327,7 @@ public sealed class Analyzer
         var engine = new ScopeEngine(dicts, dialect: null, SidesPresent(dicts));
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
         ctx.ClassOfFile = scanner.ClassOfFile;
+        ctx.XamarinFormsFiles = scanner.XamarinFormsFiles;
         ctx.UsesOfClass = scanner.UsesOfClass;
         ctx.ClassesCreatedInCode.UnionWith(cs.ClassesCreatedInCode);
         foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
@@ -329,7 +369,11 @@ public sealed class Analyzer
         // 規則 35：組出來但有固定開頭／結尾的鍵名（$"Icon{name}"、"Icon" + name）→ 同一個專案裡符合樣式的鍵。
         // ⚠ 這是一條放寬的路，所以：樣式要夠長（DynamicKeySite.MinPatternLength）、只比同一個專案、一定計數。
         var patterns = cs.DynamicSites.Where(s => s.HasPattern).ToList();
-        if (patterns.Count > 0)
+        // 規則 64：組出來、前後都有固定部分的字串字面，即使沒有直接傳給查找（先存進變數）也算。
+        // ⚠ 2026-11-15 第八輪 dnGrep：bgColor = $"Match.Group.{groupIdx}.Highlight.Background"; …SetResourceReference(…, bgColor)
+        //   —— 6 套主題各 9 個鍵被報成沒人用。只收前後各至少 3 個字的（只有一頭的太寬，見 CSharpScanner）。
+        var literalPatterns = cs.ComposedLiteralsInCode.ToList();
+        if (patterns.Count > 0 || literalPatterns.Count > 0)
         {
             var rescued = new HashSet<string>(StringComparer.Ordinal);
             foreach (var d in ctx.Definitions)
@@ -337,7 +381,12 @@ public sealed class Analyzer
                 var proj = ctx.ById[d.DictionaryId].ProjectDir;
                 if (!patterns.Any(p => p.Matches(d.Key)
                                     && (p.Project is null || proj is null
-                                        || ctx.Projects.Related(p.Project).Contains(proj))))
+                                        || ctx.Projects.Related(p.Project).Contains(proj)))
+                    && !literalPatterns.Any(l => d.Key.Length > l.Prefix.Length + l.Suffix.Length
+                                    && d.Key.StartsWith(l.Prefix, StringComparison.Ordinal)
+                                    && d.Key.EndsWith(l.Suffix, StringComparison.Ordinal)
+                                    && (l.Project is null || proj is null
+                                        || ctx.Projects.Related(l.Project).Contains(proj))))
                     continue;
                 if (Rescue(d)) rescued.Add(d.Key);
             }
@@ -444,6 +493,49 @@ public sealed class Analyzer
         public HashSet<string> ExternalLibraryKeyNames { get; } = new(StringComparer.Ordinal);
         public HashSet<string> MarkupTypesInTree { get; } = new(StringComparer.Ordinal);
         public HashSet<string> QualifiedMarkupTypesInTree { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Xamarin.Forms 內建的裝置樣式（Device.Styles.*Key 的值），執行期由框架放進資源。</summary>
+        private static readonly HashSet<string> XamarinFormsDeviceStyles = new(StringComparer.Ordinal)
+            { "TitleStyle", "SubtitleStyle", "BodyStyle", "CaptionStyle", "ListItemTextStyle", "ListItemDetailTextStyle" };
+
+        public IReadOnlySet<string> XamarinFormsFiles { get; set; } = new HashSet<string>();
+
+        private readonly Dictionary<string, string> _codeBehindText = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>XAML 檔的 code-behind 候選：X.xaml.cs、X.cs（WPF-Samples 的 HexSphereDemo），
+        /// 以及 C++/WinRT 的 X.xaml.cpp、X.xaml.h、X.cpp、X.h。</summary>
+        public static string[] CodeBehindCandidates(string xamlFile)
+        {
+            var stem = xamlFile[..^Path.GetExtension(xamlFile).Length];
+            return [xamlFile + ".cs", stem + ".cs", xamlFile + ".cpp", xamlFile + ".h", stem + ".cpp", stem + ".h"];
+        }
+
+        public string CodeBehindText(string file)
+        {
+            if (_codeBehindText.TryGetValue(file, out var text)) return text;
+            var abs = Abs(file);
+            try { text = File.Exists(abs) ? File.ReadAllText(abs) : ""; }
+            catch (IOException) { text = ""; }
+            return _codeBehindText[file] = text;
+        }
+
+        /// <summary>這個 XAML 檔的 code-behind（任一候選）以完整的字提到 word。</summary>
+        public bool CodeBehindMentions(string xamlFile, string word) =>
+            CodeBehindCandidates(xamlFile).Any(cb => MentionsWord(CodeBehindText(cb), word));
+        private HashSet<string>? _xfProjects;
+
+        /// <summary>Xamarin.Forms 的裝置樣式，而且引用在 Xamarin.Forms 的檔或專案裡。
+        /// ⚠ 2026-11-15 第八輪 xamarin-forms-samples：{DynamicResource TitleStyle} 被報成懸空 44 次。
+        ///   .NET MAUI 沒有在語料裡看到同樣的用法，不算（沒證據不放寬）。</summary>
+        public bool IsXamarinFormsDeviceStyle(KeyReference r)
+        {
+            if (!XamarinFormsDeviceStyles.Contains(r.Key)) return false;
+            var abs = Abs(r.Location.File);
+            if (XamarinFormsFiles.Contains(abs)) return true;
+            _xfProjects ??= XamarinFormsFiles.Select(f => Projects.ProjectDirOf(f)).OfType<string>()
+                                             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return Projects.ProjectDirOf(abs) is { } p && _xfProjects.Contains(p);
+        }
 
         /// <summary>有 Application.Resources 的檔（App.xaml）。</summary>
         public HashSet<string> AppScopeFiles => _appScopeFiles ??= Dicts.Where(d => d.IsApplicationScope)
@@ -747,7 +839,8 @@ public sealed class Analyzer
                     && ctx.IsAddedInCode(r.Key, ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File))))
                 { result.KeysAddedInCode++; continue; }
                 if (!ctx.DefinedNames.Contains(r.Key)
-                    && FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse))
+                    && (FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse)
+                        || ctx.IsXamarinFormsDeviceStyle(r)))
                 { result.FrameworkProvided++; continue; }
                 // 程式自己讀、也在別處以字串寫進資源的鍵（dnSpy 的 ToolTipBackground）：同 DynamicResource 的放寬
                 if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
@@ -799,7 +892,8 @@ public sealed class Analyzer
             // ⚠ 框架提供的鍵（WinUI 的 TextFillColorPrimaryBrush 之類）不是懸空。
             //    這一條必須排在查找**之後**：排在前面會把本來解析得到的引用也短路掉 ——
             //    實測 wpfui（WPF 專案，自己定義了同名的鍵）有 3021 筆被誤判成「框架提供」。
-            if (FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse))
+            if (FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse)
+                || ctx.IsXamarinFormsDeviceStyle(r))
             { result.FrameworkProvided++; continue; }
 
             // ⚠ 函式庫專案：它的字典是給**使用者**合併的，我們看不到使用者的作用域。
@@ -972,6 +1066,7 @@ public sealed class Analyzer
         var reported = new HashSet<string>(StringComparer.Ordinal);
         var variantPairs = new HashSet<(int, int)>();
         var overridden = new HashSet<string>(StringComparer.Ordinal);
+        var layered = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var rootDict in ctx.Engine.RootDictionaries)
         {
@@ -1011,6 +1106,15 @@ public sealed class Analyzer
                         continue;
                     }
 
+                    // 規則 67：分層主題 —— Windows11/ColorsDark 先 include Windows10/ColorsDark 再覆寫一部分，
+                    // 而 Windows10 主題直接用 Windows10/ColorsDark。被蓋掉的那份在**別的**主題裡是贏家，不是「永遠贏不了」。
+                    // ⚠ 2026-11-15 第八輪 WoWDatabaseEditor：33 筆假 shadowed。
+                    if (WinsInAnotherRoot(ctx, key, loser))
+                    {
+                        layered.Add($"{loser.Location}|{key}");
+                        continue;
+                    }
+
                     var sig = $"{loser.Location}|{key}";
                     if (!reported.Add(sig)) continue;
 
@@ -1019,9 +1123,12 @@ public sealed class Analyzer
                                  && string.Equals(loser.ContentHash, winner.ContentHash, StringComparison.Ordinal);
 
                     var kind = identical ? FindingKind.ShadowedIdentical : FindingKind.Shadowed;
-                    var how = cfg.Dialect == XamlDialect.Wpf
-                        ? "WPF resolves to the last merged dictionary"
-                        : "WinUI resolves in the inverse of declaration order";
+                    // ⚠ 用**這本字典自己的**方言（一棵樹裡可以混著 WPF、WinUI、Avalonia），不是整次掃描的設定
+                    var how = loserDict.Dialect != XamlDialect.Wpf
+                        ? "WinUI resolves in the inverse of declaration order"
+                        : loserDict.File.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                            ? "Avalonia resolves to the last merged dictionary"
+                            : "WPF resolves to the last merged dictionary";
 
                     result.Findings.Add(new Finding
                     {
@@ -1042,6 +1149,19 @@ public sealed class Analyzer
 
         result.VariantDictionaryGroups = variantPairs.Count;
         result.LibraryKeyOverrides = overridden.Count;
+        result.LayeredOverrides = layered.Count;
+    }
+
+    /// <summary>這份定義在另一個根字典（沒被任何人合併的那層）的作用域裡是贏家嗎？</summary>
+    /// <remarks>目前這個根不用排除：在那裡贏的是別份，Lookup 不會回傳 loser（mutation 測過，排除那行是多餘的）。</remarks>
+    private static bool WinsInAnotherRoot(Context ctx, string key, KeyDefinition loser)
+    {
+        foreach (var other in ctx.Engine.RootDictionaries)
+        {
+            var res = ctx.Engine.Lookup(key, [other.Id], ThemeSide.Neutral, other.ProjectDir);
+            if (res.Status == LookupStatus.Found && ReferenceEquals(res.Definition, loser)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -1156,6 +1276,19 @@ public sealed class Analyzer
             if (ctx.ReferencedNames.Contains(d.Key)) continue;
             if (ctx.UsedByCode.Contains(d)) continue;
 
+            // 規則 73：WinUI 的 TeachingTip 放在 Resources 裡是官方的掛法（不佔版面），用自己的 IsOpen 打開 —— 不是被人用鍵查找的。
+            // ⚠ 2026-11-15 第八輪重跑 Files：BulkRenameDialog 的 InvalidNameWarning 綁 IsOpen="{x:Bind …}"，被報成沒人用。
+            if (IsPlacedUi(d)) { result.PlacedTeachingTips++; continue; }
+
+            // 規則 71：<Storyboard x:Name="Fade"/> —— code-behind 用欄位（Fade.Begin()）或 C++/WinRT 的存取函式（Fade().Begin()）取，
+            // 不是 FindResource，所以不是字串。
+            // ⚠ 2026-11-15 第八輪 Windows App SDK 範例：AnimationPage.cpp 的 myStoryBoard().Begin()。
+            if (d.FieldName is { } field && ctx.CodeBehindMentions(ctx.ById[d.DictionaryId].File, field))
+            {
+                result.KeysUsedAsFields++;
+                continue;
+            }
+
             // markup 鍵：框架的鍵是框架的樣板在讀（同輕量樣式覆寫）；專案的鍵，C# 提到成員名就算有人用
             //（FindResource(Keys.Accent)、Resources.Add(Keys.Accent, …) 都是用變數，看不出讀或寫）。
             if (d.IsMarkupKey)
@@ -1266,7 +1399,6 @@ public sealed class Analyzer
                 files.Add(r.Location.File);
             }
 
-        var codeBehindText = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var d in ctx.Definitions)
         {
@@ -1305,11 +1437,11 @@ public sealed class Analyzer
             if (ctx.CSharpNames.Contains(d.Key)) continue;
 
             // ⚠ code-behind 有兩種命名：X.xaml.cs，以及 WPF-Samples 的 HexSphereDemo 那種 X.cs
-            var stem = rel[..^Path.GetExtension(rel).Length];
-            string[] codeBehind = [rel + ".cs", stem + ".cs"];
+            var codeBehind = Context.CodeBehindCandidates(rel);
             if (codeBehind.Any(ctx.DynamicSiteFiles.Contains)) continue;
             // x:Name 給的鍵會變成欄位，code-behind 直接用名字取（不是 FindResource）
-            if (codeBehind.Any(cb => MentionsWord(CodeBehindText(cb), d.Key))) continue;
+            if (ctx.CodeBehindMentions(rel, d.Key)) continue;
+            if (IsPlacedUi(d)) { result.PlacedTeachingTips++; continue; }
 
             if (d.SuppressedReason is not null) { result.Suppressed++; continue; }
             if (cfg.UsedAtRuntime.Any(p => Config.MatchesGlob(d.Key, p))) { result.Suppressed++; continue; }
@@ -1334,15 +1466,10 @@ public sealed class Analyzer
             ctx.UnusedDefs.Add(d);
         }
 
-        string CodeBehindText(string relPath)
-        {
-            if (codeBehindText.TryGetValue(relPath, out var text)) return text;
-            var abs = ctx.Abs(relPath);
-            try { text = File.Exists(abs) ? File.ReadAllText(abs) : ""; }
-            catch (IOException) { text = ""; }
-            return codeBehindText[relPath] = text;
-        }
     }
+
+    /// <summary>放在 Resources 裡、靠自己的 IsOpen 顯示的 UI（WinUI 的 TeachingTip）。</summary>
+    private static bool IsPlacedUi(KeyDefinition d) => d.ElementName == "TeachingTip";
 
     private static bool MentionsWord(string text, string word)
     {
@@ -1449,6 +1576,8 @@ public sealed class Analyzer
             if (d.OwnKeys.Count == 0) continue;
             // 程式在執行期載入的、以及框架隱含載入的主題字典，都不是孤兒（MarkRuntimeLoaded 標過）
             if (d.IsRuntimeLoaded) continue;
+            // 規則 66：x:Class 字典在 C# 裡被 new 出來 —— 有人載入它，只是不知道放進哪裡
+            if (d.IsCreatedInCode) continue;
             // 執行期才挑一本的家族（語系檔、主題檔）：見 RuntimeSelectedFamilies
             if (families.Contains(d.Id)) continue;
 
