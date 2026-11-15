@@ -44,6 +44,8 @@ public sealed class AnalysisResult
 
     /// <summary>XAML 沒有定義、但 C# 用 Resources.Add／Resources[…] = 加進資源的鍵的引用數。不報懸空。</summary>
     public int KeysAddedInCode { get; set; }
+    /// <summary>引用的鍵以「C# 組鍵名寫進資源」的固定開頭起頭（規則 90）—— 不報懸空。</summary>
+    public int KeysMatchingComposedWrites { get; set; }
 
     /// <summary>UserControl 裡的 DynamicResource：自己的作用域沒有，但它在 XAML 裡**每一個**被放置的地方都有。
     /// 不報 out-of-scope。⚠ 放寬的路，一定要計數。</summary>
@@ -101,6 +103,8 @@ public sealed class AnalysisResult
 
     /// <summary>分層主題裡被覆寫、但在另一個主題裡是贏家的定義數（Windows11 主題蓋掉一部分 Windows10 的色票）。不報 shadowed。</summary>
     public int LayeredOverrides { get; set; }
+    /// <summary>被合併順序蓋掉、但有 {StaticResource} 在載入時解析到它的定義（規則 88）—— 不報 shadowed。</summary>
+    public int ShadowedButResolvedByStatic { get; set; }
 
     /// <summary>以 x:Name 命名、code-behind 當欄位（或 C++/WinRT 存取函式）使用的資源數。不報 unused。</summary>
     public int KeysUsedAsFields { get; set; }
@@ -305,7 +309,7 @@ public sealed class Analyzer
             result.RuntimeLoadedDictionaries++;
         }
         result.DictionariesCreatedInCode = createdDicts.Count;
-        MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
+        MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result, resolver.ProjectDirsOfAssembly);
         result.HasApplication = projects.HasAnyApplication;
 
         var sides = DetermineSides(dicts);
@@ -350,6 +354,7 @@ public sealed class Analyzer
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
         ctx.ClassOfFile = scanner.ClassOfFile;
         ctx.XamarinFormsFiles = scanner.XamarinFormsFiles;
+        ctx.AvaloniaFiles = scanner.AvaloniaFiles;
         ctx.LinkedInto = resolver.LinkedInto;
         ctx.UsesOfClass = scanner.UsesOfClass;
         ctx.ClassesCreatedInCode.UnionWith(cs.ClassesCreatedInCode);
@@ -435,6 +440,8 @@ public sealed class Analyzer
         ctx.NamesInCode.UnionWith(cs.NamesInCode.Select(n => n.Text));
         ctx.ComposedSuffixesInCode.AddRange(cs.ComposedSuffixesInCode);
         ctx.ComposedNamesInCode.AddRange(cs.ComposedNamesInCode);
+        foreach (var (prefix, proj) in cs.KeyPrefixesAddedInCode)
+            ctx.KeyPrefixesAddedInCode.Add((prefix, proj ?? ""));
         foreach (var (k, proj) in cs.KeysAddedInCode)
         {
             if (!ctx.KeysAddedInCode.TryGetValue(proj ?? "", out var set))
@@ -502,6 +509,9 @@ public sealed class Analyzer
 
         /// <summary>至少被一個 XAML 引用靜態解析到的定義（以參考比較）。</summary>
         public HashSet<KeyDefinition> Reached { get; } = [];
+        /// <summary>有 {StaticResource} 解析到的定義。StaticResource 在載入那一刻解析，字典檔裡的引用拿到的是同檔（前面）的那份，
+        /// 不管之後合併順序誰蓋掉誰 —— 這種定義不是「永遠贏不了」（規則 88）。</summary>
+        public HashSet<KeyDefinition> ReachedByStatic { get; } = [];
 
         /// <summary>有引用在靜態上**沒有**解析成功的鍵名（解析不到、被 ignore 掉而沒查）。
         /// 執行期沿著視覺樹往上找時，這種引用可能落到任何一份同名的定義上 —— 見 EmitDeadLocalCopies。</summary>
@@ -522,6 +532,7 @@ public sealed class Analyzer
             { "TitleStyle", "SubtitleStyle", "BodyStyle", "CaptionStyle", "ListItemTextStyle", "ListItemDetailTextStyle" };
 
         public IReadOnlySet<string> XamarinFormsFiles { get; set; } = new HashSet<string>();
+        public IReadOnlySet<string> AvaloniaFiles { get; set; } = new HashSet<string>();
 
         public Func<string, IReadOnlyList<string>> LinkedInto { get; set; } = _ => [];
 
@@ -611,6 +622,17 @@ public sealed class Analyzer
 
         /// <summary>專案 → C# 加進資源的鍵（見 CSharpScanner.KeysAddedInCode）。</summary>
         public Dictionary<string, HashSet<string>> KeysAddedInCode { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>專案 → C# 用固定開頭組出來寫進資源的鍵（規則 90）。</summary>
+        public List<(string Prefix, string Project)> KeyPrefixesAddedInCode { get; } = [];
+
+        /// <summary>這個鍵的開頭，是不是引用所在專案（或相關專案）的 C# 用來組鍵名寫進資源的那個（規則 90）。</summary>
+        public bool IsAddedInCodeByPrefix(string key, string? project)
+        {
+            var related = Projects.Related(project);
+            return KeyPrefixesAddedInCode.Any(p => key.StartsWith(p.Prefix, StringComparison.Ordinal)
+                                                   && related.Contains(p.Project));
+        }
 
         /// <summary>這個鍵是不是由引用所在專案（或相關專案）的 C# 加進資源的。</summary>
         public bool IsAddedInCode(string key, string? project)
@@ -759,9 +781,11 @@ public sealed class Analyzer
             if (!Config.DialectAutoDetected || Projects.ProjectCount == 0) return Config.Dialect;
             if (DictOfRef(r) is { } d) return d.Dialect;
             var abs = Abs(r.Location.File);
-            return Projects.IsInWinUi(abs) || LooksWinUi(abs)
-                   || (Projects.ProjectDirOf(abs) is null && LinkedInto(abs).FirstOrDefault() is { } linker && Projects.IsWinUiDir(linker))
-                ? XamlDialect.WinUi : XamlDialect.Wpf;
+            if (Projects.IsInWinUi(abs) || LooksWinUi(abs)) return XamlDialect.WinUi;
+            if (Projects.ProjectDirOf(abs) is not null) return XamlDialect.Wpf;
+            var linkers = LinkedInto(abs).ToList();
+            if (linkers.Count > 0) return Projects.IsWinUiDir(linkers[0]) ? XamlDialect.WinUi : XamlDialect.Wpf;
+            return Projects.NearestProjectsAreWinUi(abs) ? XamlDialect.WinUi : XamlDialect.Wpf;   // 規則 91
         }
 
         /// <summary>
@@ -894,6 +918,9 @@ public sealed class Analyzer
                     && ctx.IsAddedInCode(r.Key, ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File))))
                 { result.KeysAddedInCode++; continue; }
                 if (!ctx.DefinedNames.Contains(r.Key)
+                    && ctx.IsAddedInCodeByPrefix(r.Key, ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File))))
+                { result.KeysMatchingComposedWrites++; continue; }
+                if (!ctx.DefinedNames.Contains(r.Key)
                     && (FrameworkKeys.IsProvidedByFramework(r.Key, ctx.DialectOfRef(r), result.ThemePacksInUse)
                         || ctx.IsXamarinFormsDeviceStyle(r)))
                 { result.FrameworkProvided++; continue; }
@@ -921,7 +948,11 @@ public sealed class Analyzer
             {
                 var res = ctx.Engine.Lookup(r.Key, r.ScopeChain, side, refProject);
                 if (res.Status != LookupStatus.Found) failures.Add((side, res));
-                else if (res.Definition is { } def) ctx.Reached.Add(def);
+                else if (res.Definition is { } def)
+                {
+                    ctx.Reached.Add(def);
+                    if (r.Kind == RefKind.Static) ctx.ReachedByStatic.Add(def);
+                }
             }
 
             if (failures.Count == 0) continue;
@@ -931,6 +962,11 @@ public sealed class Analyzer
             if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsAddedInCode(r.Key, refProject))
             {
                 result.KeysAddedInCode++;
+                continue;
+            }
+            if (!ctx.DefinedNames.Contains(r.Key) && ctx.IsAddedInCodeByPrefix(r.Key, refProject))
+            {
+                result.KeysMatchingComposedWrites++;
                 continue;
             }
 
@@ -1122,6 +1158,7 @@ public sealed class Analyzer
         var variantPairs = new HashSet<(int, int)>();
         var overridden = new HashSet<string>(StringComparer.Ordinal);
         var layered = new HashSet<string>(StringComparer.Ordinal);
+        var staticallyResolved = new HashSet<string>(StringComparer.Ordinal);
         // 只經由「執行期挑一本」的子字典才進得來的字典（含它合併的）
         var optional = new HashSet<int>();
         var pending = new Stack<int>(ctx.ById.Values.Where(d => d.IsSelectedAtRuntime).Select(d => d.Id));
@@ -1187,6 +1224,15 @@ public sealed class Analyzer
                         continue;
                     }
 
+                    // 規則 88：有 {StaticResource} 解析到這份 —— 載入時它就是贏家（同一個字典檔裡的引用），不是「永遠贏不了」
+                    // ⚠ 2026-11-15 第十四輪 Material.Avalonia：Button.axaml 與 ToggleButton.axaml 各自定義 ButtonHoveredOpacity、
+                    //   各自用 StaticResource 引用自己那份。DynamicResource 不算：它在執行期從元素往上找，拿到的是合併後的贏家。
+                    if (ctx.ReachedByStatic.Contains(loser))
+                    {
+                        staticallyResolved.Add($"{loser.Location}|{key}");
+                        continue;
+                    }
+
                     var sig = $"{loser.Location}|{key}";
                     if (!reported.Add(sig)) continue;
 
@@ -1198,7 +1244,7 @@ public sealed class Analyzer
                     // ⚠ 用**這本字典自己的**方言（一棵樹裡可以混著 WPF、WinUI、Avalonia），不是整次掃描的設定
                     var how = loserDict.Dialect != XamlDialect.Wpf
                         ? "WinUI resolves in the inverse of declaration order"
-                        : loserDict.File.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                        : ctx.AvaloniaFiles.Contains(ctx.Abs(loserDict.File))
                             ? "Avalonia resolves to the last merged dictionary"
                             : "WPF resolves to the last merged dictionary";
 
@@ -1222,6 +1268,7 @@ public sealed class Analyzer
         result.VariantDictionaryGroups = variantPairs.Count;
         result.LibraryKeyOverrides = overridden.Count;
         result.LayeredOverrides = layered.Count;
+        result.ShadowedButResolvedByStatic = staticallyResolved.Count;
     }
 
     /// <summary>這份定義在另一個根字典（沒被任何人合併的那層）的作用域裡是贏家嗎？</summary>
@@ -1708,6 +1755,17 @@ public sealed class Analyzer
     ///   <c>{name}.xaml</c> 去比，永遠對不上，那些字典全被報成沒人合併。
     /// ⚠ 門檻：<c>$"{name}.xaml"</c> 只剩副檔名，會把整個專案的字典都算成「程式會載入」，等於關掉檢查。
     /// </remarks>
+    /// <summary>pack URI 寫明的組件名（<c>/Name;component/…</c>、<c>pack://application:,,,/Name;component/…</c>）。
+    /// 組件名是組出來的（<c>{asm}</c>）就對不到任何專案，照舊比程式所在的專案。</summary>
+    internal static string? AssemblyOfPath(string path)
+    {
+        var p = path.Replace('\\', '/');
+        var component = p.IndexOf(";component/", StringComparison.OrdinalIgnoreCase);
+        if (component <= 0) return null;
+        var start = p.LastIndexOf('/', component - 1) + 1;
+        return p[start..component];
+    }
+
     internal static (string Prefix, string Suffix)? ComposedPathPattern(string path)
     {
         var first = path.IndexOf('{');
@@ -1737,7 +1795,7 @@ public sealed class Analyzer
 
     private static void MarkRuntimeLoaded(IReadOnlyList<ResourceDictionaryNode> dicts,
                                           IReadOnlyList<(string Path, string? Project)> loadedPaths,
-                                          AnalysisResult result)
+                                          AnalysisResult result, Func<string, IReadOnlyList<string>> projectDirsOfAssembly)
     {
         // ⚠ 檔名比對要**限定在同一個專案裡**。
         //   實測（dotnet/maui-samples，231 個範例專案）：只比檔名的話，
@@ -1750,7 +1808,11 @@ public sealed class Analyzer
             // 組出來的路徑（$"Themes/{name}.xaml"）：當成「開頭…結尾」的樣式，下面另外比對
             if (ComposedPathPattern(path) is { } pattern)
             {
-                composed.Add((pattern.Prefix, pattern.Suffix, project ?? ""));
+                // 規則 89：寫明組件名（/Dopamine;component/…）而那個組件就在樹裡 —— 比那個專案的字典，不是程式所在的專案
+                // ⚠ 2026-11-15 第十四輪 Dopamine：Dopamine.Services 的 AppearanceService 載入 /Dopamine;component/Resources/Themes/{themeName}.xaml
+                var owners = AssemblyOfPath(path) is { } asm ? projectDirsOfAssembly(asm) : [];
+                if (owners.Count == 0) composed.Add((pattern.Prefix, pattern.Suffix, project ?? ""));
+                else foreach (var owner in owners) composed.Add((pattern.Prefix, pattern.Suffix, owner));
                 continue;
             }
 
@@ -1870,6 +1932,8 @@ public sealed class Analyzer
         foreach (var d in dicts)
             d.Dialect = projects.IsInWinUi(d.File) || LooksWinUi(d.File)
                         || (d.ProjectDir is null && d.LinkedProjects.Any(projects.IsWinUiDir))   // 規則 77：連結進 WinUI 專案的檔
+                        // 規則 91：不屬於任何專案、也沒被連結的字典照附近的專案判（Uno.Toolkit 的 samples/…/Styles/*.xaml）
+                        || (d.ProjectDir is null && d.LinkedProjects.Count == 0 && projects.NearestProjectsAreWinUi(d.File))
                 ? XamlDialect.WinUi : XamlDialect.Wpf;
 
         // 報告要印一個值：以「字典數比較多的那一邊」為代表。

@@ -129,6 +129,8 @@ public sealed partial class XamlScanner
             _classOfFile[Path.GetFullPath(file)] = rootClass;
         if (root.Name.NamespaceName == "http://xamarin.com/schemas/2014/forms")
             _xamarinFormsFiles.Add(Path.GetFullPath(file));
+        if (root.Name.NamespaceName == "https://github.com/avaloniaui")
+            _avaloniaFiles.Add(Path.GetFullPath(file));
 
         if (root.Name.LocalName == "ResourceDictionary")
         {
@@ -751,6 +753,10 @@ public sealed partial class XamlScanner
     private readonly HashSet<string> _xamarinFormsFiles = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>根元素是 Xamarin.Forms 命名空間的檔（絕對路徑）。</summary>
     public IReadOnlySet<string> XamarinFormsFiles => _xamarinFormsFiles;
+
+    /// <summary>根元素在 Avalonia 命名空間的檔（副檔名不一定是 .axaml —— Core2D 的主題檔是 .xaml）。</summary>
+    public IReadOnlySet<string> AvaloniaFiles => _avaloniaFiles;
+    private readonly HashSet<string> _avaloniaFiles = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>有 x:Class 的字典檔：類別全名 → 字典 Id。</summary>
     public IReadOnlyDictionary<string, int> DictionaryByClass => _dictionaryByClass;

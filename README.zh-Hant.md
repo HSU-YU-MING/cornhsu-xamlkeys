@@ -169,8 +169,8 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 
 ## 已知盲區
 
-每一條都是拿十七個公開專案（WPF、WinUI、Avalonia、.NET MAUI，約 5,600 個 XAML 檔）實跑找出來的 —— 完整歸因見
-[docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md)。
+每一條都是拿公開專案實跑找出來的 —— 目前 90 個（WPF、WinUI、UWP、Uno、Avalonia、.NET MAUI、Xamarin.Forms，約 17,700 個 XAML 檔；
+釘死 commit 的清單在 [docs/corpus.tsv](docs/corpus.tsv)），完整歸因見 [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md)。
 
 | 盲區 | 後果 | 工具怎麼處理 |
 |---|---|---|

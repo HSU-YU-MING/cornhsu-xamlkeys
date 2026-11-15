@@ -49,10 +49,12 @@ public static class Report
             w.WriteNumber("keysNamedInCode", r.KeysNamedInCode);
             w.WriteNumber("dynamicKeysNamedInCode", r.DynamicKeysNamedInCode);
             w.WriteNumber("keysAddedInCode", r.KeysAddedInCode);
+            w.WriteNumber("keysMatchingComposedWrites", r.KeysMatchingComposedWrites);
             w.WriteNumber("keysResolvedThroughHosts", r.KeysResolvedThroughHosts);
             w.WriteNumber("keysFromControlResources", r.KeysFromControlResources);
             w.WriteNumber("startupResources", r.StartupResources);
             w.WriteNumber("layeredOverrides", r.LayeredOverrides);
+            w.WriteNumber("shadowedButResolvedByStatic", r.ShadowedButResolvedByStatic);
             w.WriteNumber("keysUsedAsFields", r.KeysUsedAsFields);
             w.WriteNumber("dictionariesCreatedInCode", r.DictionariesCreatedInCode);
             w.WriteNumber("placedTeachingTips", r.PlacedTeachingTips);
@@ -274,6 +276,9 @@ public static class Report
         if (r.LibraryKeyOverrides > 0)
             o.WriteLine($"note: {r.LibraryKeyOverrides} key(s) belong to a library and are redefined to restyle it " +
                         $"-- not reported as shadowed or unused");
+        if (r.KeysMatchingComposedWrites > 0)
+            o.WriteLine($"note: {r.KeysMatchingComposedWrites} reference(s) start with a prefix that C# composes keys from when it writes " +
+                        $"resources (Resources[\"Language_\" + key] = ...) -- not reported as dangling");
         if (r.KeysAddedInCode > 0)
             o.WriteLine($"note: {r.KeysAddedInCode} reference(s) name a key that C# adds to resources (Resources.Add) -- not reported as dangling");
         if (r.KeysResolvedThroughHosts > 0)
@@ -294,6 +299,9 @@ public static class Report
         if (r.LayeredOverrides > 0)
             o.WriteLine($"note: {r.LayeredOverrides} definition(s) are overridden only by a layered theme or an optional keyed " +
                         $"dictionary and win where that is not applied -- not reported as shadowed");
+        if (r.ShadowedButResolvedByStatic > 0)
+            o.WriteLine($"note: {r.ShadowedButResolvedByStatic} definition(s) are overridden by merge order but a StaticResource in their own " +
+                        $"dictionary resolves to them at load time -- not reported as shadowed");
         if (r.StartupResources > 0)
             o.WriteLine($"note: {r.StartupResources} App.xaml resource(s) exist to be created at startup (a Caliburn.Micro " +
                         $"bootstrapper) -- not reported as unused");

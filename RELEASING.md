@@ -16,11 +16,11 @@
 
 ## 每次發布
 
-1. `CHANGELOG.md` 的版本段落寫完整（**tag 推出去就發佈了，沒有反悔的機會**）
+1. `CHANGELOG.md` 的版本段落寫完整，標題的日期改成發版當天（**tag 推出去就發佈了，沒有反悔的機會**）
 2. `dotnet test XamlKeys.slnx` 全綠
 3. `scripts/verify-readme-sample.ps1` 綠 —— 動過 console 輸出就會紅，確認新輸出正確後跑 `-Update`
 4. `scripts/verify-baselines.ps1` 綠 —— 自家三個專案的結果沒有無聲變動
-5. **動到解析或判定規則時，外部專案比對值得再跑一次**（下一節）
+5. **動到解析或判定規則時，外部專案比對要再跑一次**（下一節），`corpus-compare.mjs` 要綠
 6. 相依升版或增減時，`THIRD-PARTY-NOTICES.md` 要跟著改
 7. 推 tag：
 
@@ -34,32 +34,27 @@ git push origin v0.1.0
 自家三個專案**全部是 WPF 應用程式**，測不到函式庫、pack URI、ThemeDictionaries、WinUI
 那幾類缺陷。`verify-baselines.ps1` 守不到它們。
 
-做法（照 XamlContrast 的流程）：sparse clone 只拿 `*.xaml`、`*.axaml`、`*.cs`、`*.csproj`，
-新舊兩版各跑 `--json`、逐筆比 findings：
+語料清單在 `docs/corpus.tsv`：每個公開專案一列，**釘死 commit**，並記著上一次的 XAML 檔數、finding 總數、
+gate（fail 級）筆數。兩支腳本照它跑：
 
 ```bash
-# 四輪語料的完整清單（WPF 應用程式與函式庫、WinUI 3、Avalonia、.NET MAUI）
-for repo in NickeManarin/ScreenToGif HandyOrg/HandyControl MahApps/MahApps.Metro \
-            lepoco/wpfui MaterialDesignInXAML/MaterialDesignInXamlToolkit \
-            microsoft/WinUI-Gallery icsharpcode/ILSpy \
-            files-community/Files Flow-Launcher/Flow.Launcher Kinnara/ModernWpf \
-            fluentribbon/Fluent.Ribbon microsoft/WPF-Samples QL-Win/QuickLook \
-            AvaloniaUI/Avalonia amwx/FluentAvalonia irihitech/Semi.Avalonia \
-            dotnet/maui-samples dotnet/eShop; do
-  name=$(basename "$repo")
-  git clone --filter=blob:none --no-checkout --depth 1 "https://github.com/$repo.git" "$name"
-  (cd "$name" && git sparse-checkout init --cone \
-     && git sparse-checkout set --no-cone '/**/*.xaml' '/**/*.axaml' '/**/*.cs' '/**/*.csproj' \
-     && git checkout)
-  xamlkeys "$name" --min-coverage 0 --json "$name.json"
-done
+dotnet build -c Release
+# sparse clone（只抓 XamlKeys 會讀的檔）到釘死的 commit，逐一跑 --json；已經 clone 過的不重抓
+scripts/corpus-run.sh src/XamlKeys.Cli/bin/Release/net10.0/xamlkeys "$WORK/clones" "$WORK/new"
+# 跟 corpus.tsv 的計數比；再給一個舊輸出目錄會逐筆列出增減。有差異就 exit 1
+node scripts/corpus-compare.mjs "$WORK/new" "$WORK/old"
 ```
 
-2026-11-14 的基準數字記在 `docs/實查歸因-2026-11-14.md`（四輪各一節）。
-**任何一類的計數大幅變動都要能解釋**，而且有三筆已知的真 finding 要盯住有沒有消失：
-wpfui 的 `TreeViewItemFocusVisual`、WPF-Samples 的 `CustomNavWindowStyle` 與
-`NavButtonFocusVisualStyle`。它們不見了，多半不是對方修好了，是我們把檢查弄丟了
-（這種「假的進步」在開發期間發生過三次）。
+**每一筆差異都要能解釋**：規則改了該消失的消失、該出現的出現，其他專案一筆都不該動。
+確認之後把 `corpus.tsv` 的計數更新成新值，跟改規則的 commit 放在一起。
+gate 的筆數尤其要盯：每一筆都人工驗證過是真的，**新出現的 gate 一定要逐筆查證**才能進 tsv。
+
+有三筆已知的真 finding 要盯住有沒有消失：wpfui 的 `TreeViewItemFocusVisual`、WPF-Samples 的
+`CustomNavWindowStyle` 與 `NavButtonFocusVisualStyle`。它們不見了，多半不是對方修好了
+（commit 是釘死的），是我們把檢查弄丟了（這種「假的進步」在開發期間發生過三次）。
+
+加新專案：在 `corpus.tsv` 加一列（commit 用完整 40 碼），跑一次，每一筆 finding 都在
+`docs/實查歸因-2026-11-14.md` 寫明真的假的，再把計數填進去。逐輪的歸因也在那份文件。
 
 ## 框架鍵清單（WinUI 與 WPF Fluent）
 

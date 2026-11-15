@@ -81,6 +81,10 @@ public sealed partial class SourceResolver
         }
     }
 
+    /// <summary>用這個組件名的專案目錄（沒有就是空的）。</summary>
+    public IReadOnlyList<string> ProjectDirsOfAssembly(string assembly) =>
+        _assemblies.TryGetValue(assembly, out var dirs) ? dirs : [];
+
     /// <summary>用這個組件名的專案目錄：引用所在的那個專案排第一（最深的優先），其餘照讀到的順序。</summary>
     private IEnumerable<string> AssemblyDirs(string assembly, string containingFile)
     {

@@ -114,6 +114,12 @@ public sealed partial class CSharpScanner
     ///   <c>{StaticResource StringToListConverter}</c> —— 完全合法的寫法，工具卻報成 gate 擋的懸空。
     /// </remarks>
     public IReadOnlyCollection<(string Key, string? Project)> KeysAddedInCode => _keysAddedInCode;
+
+    /// <summary>C# 用「固定開頭＋組出來的部分」把鍵寫進資源：<c>Resources["Language_" + text.Key] = …</c>、
+    /// <c>Resources.Add($"Language_{k}", …)</c>。開頭至少 <see cref="DynamicKeySite.MinPatternLength"/> 個字。</summary>
+    /// <remarks>⚠ 2026-11-15 第十四輪 Dopamine：語系字串放在 XML，I18nService 逐條寫成 Language_* —— 418 筆假懸空、2 筆假 gate。</remarks>
+    public IReadOnlyCollection<(string Prefix, string? Project)> KeyPrefixesAddedInCode => _keyPrefixesAddedInCode;
+    private readonly HashSet<(string Prefix, string? Project)> _keyPrefixesAddedInCode = [];
     private readonly HashSet<(string Key, string? Project)> _keysAddedInCode = [];
 
     /// <summary>要找的識別字（markup 鍵的成員名，見 MarkupKeys）。掃描前由 Analyzer 填。</summary>
@@ -247,6 +253,8 @@ public sealed partial class CSharpScanner
             else k = Unescape(k[1..^1]);
             if (k.Length > 0) _keysAddedInCode.Add((k, project));
         }
+        foreach (var m in ComposedResourceAddRegex().Matches(code).Cast<Match>())
+            if (m.Groups["p"].Value.Length >= DynamicKeySite.MinPatternLength) _keyPrefixesAddedInCode.Add((m.Groups["p"].Value, project));
         // $"TEInherited{name}Foreground"（dnSpy）：只有一個洞、前後都是像鍵名的字，合計至少 3 個字
         foreach (var m in ComposedNameRegex().Matches(code).Cast<Match>())
         {
@@ -565,6 +573,10 @@ public sealed partial class CSharpScanner
     // 把鍵加進資源：Resources.Add("K", …)／Resources.Add(nameof(K), …)／Resources["K"] = …／Resources[nameof(K)] = …
     [GeneratedRegex("""\b\w*[Rr]esources\s*(?:\.\s*(?:Add|TryAdd)\s*\(\s*(?<k>"(?:[^"\\]|\\.)*"|nameof\s*\(\s*[\w.]+\s*\))\s*,|\[\s*(?<k>"(?:[^"\\]|\\.)*"|nameof\s*\(\s*[\w.]+\s*\))\s*\]\s*=(?!=))""")]
     private static partial Regex ResourceAddRegex();
+
+    // 規則 90：Resources["Pre" + x] = …／Resources.Add("Pre" + x, …)／Resources[$"Pre{x}"] = …／Resources.Add($"Pre{x}", …)
+    [GeneratedRegex("""\b\w*[Rr]esources\s*(?:\.\s*(?:Add|TryAdd)\s*\(|\[)\s*(?:"(?<p>[A-Za-z0-9_.\-]+)"\s*\+|\$"(?<p>[A-Za-z0-9_.\-]+)\{)""")]
+    private static partial Regex ComposedResourceAddRegex();
 
     // 緊接在查找後面的「= 值」—— 那是寫入，不是讀取（== 是比較，不算）
     [GeneratedRegex("""\G\s*=(?!=)""")]

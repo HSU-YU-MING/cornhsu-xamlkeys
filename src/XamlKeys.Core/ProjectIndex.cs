@@ -102,6 +102,23 @@ public sealed partial class ProjectIndex
         return false;
     }
 
+    /// <summary>規則 91：不屬於任何專案的檔，往上找到第一個「底下有專案」的資料夾 —— 那些專案全是 WinUI 嗎？</summary>
+    /// <remarks>⚠ 2026-11-15 第十四輪 Windows-universal-samples：<c>Samples/ContentIndexer/shared/xaml/</c> 裡有幾頁是沒人收的舊副本
+    ///   （cs 專案用自己資料夾裡那份），同一個範例的 cs、cpp 專案都是 UWP。舊版把這種檔當 WPF，
+    ///   <c>ApplicationPageBackgroundThemeBrush</c> 這種 UWP 內建的鍵就被報成懸空（11 筆）。</remarks>
+    public bool NearestProjectsAreWinUi(string file)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(file));
+        while (dir is not null)
+        {
+            var under = _projects.Where(p => p.Dir.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                                             || string.Equals(p.Dir, dir, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (under.Count > 0) return under.All(p => p.IsWinUi);
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
+    }
+
     /// <summary>這個檔所屬的專案目錄（找不到回 null）。</summary>
     private readonly Dictionary<string, HashSet<string>> _references = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _referencedBy = new(StringComparer.OrdinalIgnoreCase);

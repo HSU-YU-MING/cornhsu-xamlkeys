@@ -9,16 +9,17 @@ see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-14
+## [0.1.0] - unreleased
 
-First release.
+First release. (The heading gets the release date when the tag is pushed.)
 
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
-against twenty real projects — seventeen public ones and three of the maintainer's, about 5,600
-XAML files — in four rounds; the sections below are in the order the work happened, so the first
+against 93 real projects — 90 public ones and three of the maintainer's, about 17,700 XAML files —
+in fourteen rounds; the sections below are in the order the work happened, so the first
 "Validated against" section describes round one only. Across the final corpus the default gate
-fires on 42 findings in two projects, every one of them verified by hand.
+fires on 50 findings in seven projects, every one of them verified by hand; the public corpus is
+listed with pinned commits and expected counts in `docs/corpus.tsv`.
 
 ### What it does
 
@@ -235,6 +236,24 @@ coincidental name match.
     library, which in a monorepo made nearly the whole tree related.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
+
+- **A fourteenth corpus round, and the corpus made reproducible.** The public projects are now listed in
+  `docs/corpus.tsv` with a pinned commit and their expected counts; `scripts/corpus-run.sh` re-clones them sparsely
+  and runs the tool, `scripts/corpus-compare.mjs` checks the counts. Re-fetching with one consistent file set
+  exposed files the early rounds had not fetched (HandyControl's Avalonia port, PowerToys' C++ WinUI project, the
+  UWP samples' VB and C++ code); every resulting change was attributed. Seven new projects (Dopamine, Collapse
+  Launcher, UniGetUI, Core2D, Screenbox, BetterGI, Uno.Toolkit): 1,529 findings on the first run, 266 after; the two
+  gated findings were false and are gone; nothing appeared in the earlier projects. New:
+  - a definition that a later merged dictionary overrides is not reported as shadowed when a `{StaticResource}`
+    resolves to it -- StaticResource resolves at load time to the earlier definition in its own dictionary
+    (counted in `shadowedButResolvedByStatic`). This also stops `shadowed-identical` from calling a local copy
+    "redundant" when deleting it would break that file's StaticResource;
+  - a composed pack URI that names an assembly in the tree (`/App;component/Themes/{name}.xaml`) loads that
+    project's dictionaries, not the calling project's;
+  - C# that writes keys composed from a fixed prefix (`Resources["Language_" + key] = value`) covers references
+    starting with that prefix in the same or a related project (counted in `keysMatchingComposedWrites`);
+  - a XAML file in no project takes the dialect of the nearest projects around it when they all agree;
+  - the shadowed message says "Avalonia" for Avalonia dictionaries with a `.xaml` extension.
 
 - **A thirteenth corpus round: keyed ResourceInclude and dictionaries added by a C# Application** (SourceGit,
   egvijayanand's MAUI samples, Material.Avalonia, StabilityMatrix, ScottPlot and two smaller repos): 1,492 findings

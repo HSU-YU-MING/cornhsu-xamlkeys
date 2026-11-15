@@ -89,6 +89,9 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **C++/WinRT**：`.vcxproj` 一律 WinUI；只讀有 XAML 的 vcxproj 底下的 `.cpp`／`.h`（Windows Terminal 有上千個）。
 - **連結進專案的檔屬於連它的專案**（`SourceResolver.LinkedInto`、`Analyzer.Context.ProjectOfFile`）：根目錄路徑、App.xaml 作用域、
   方言、應用程式或函式庫、code-behind 位置**全部**要跟著改 —— 只改一半，Windows-universal-samples 的 391 筆 external 會變成 314 筆假懸空。
+- **外部專案比對用 `docs/corpus.tsv` ＋ `scripts/corpus-run.sh` ＋ `scripts/corpus-compare.mjs`**，不要再手抓。
+  改了要讀的副檔名，`corpus-run.sh` 的 PATTERNS 要加，tsv 的計數要整批重算（第十四輪踩過：早期 clone 少抓檔）。
+- **shadowed 要問「有沒有引用解析到輸家」**（`ctx.ReachedByStatic`）：StaticResource 載入時拿同檔那份；DynamicResource、ThemeResource 不算。
 - **C# 加進 Application.Resources 的字典**（`CSharpScanner.DictionariesAddedToApplication`）只認宣告 `: Application`
   的那個檔，而且要同專案 —— 一般地方 `new` 出來的字典不知道放進哪裡（規則 66），不要放寬成「看到 new 就算」。
 - **專案設定可能在 Directory.Build.props**（`ProjectIndex.IsWinUiProject`）：只看**最近的**那一個（MSBuild 也是），
