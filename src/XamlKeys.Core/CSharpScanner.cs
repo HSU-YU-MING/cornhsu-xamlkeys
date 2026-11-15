@@ -121,6 +121,12 @@ public sealed partial class CSharpScanner
     /// <summary>WordsToFind 裡，在某個 C# 檔以完整的字出現過的。</summary>
     public HashSet<string> WordsFound { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Application 類別的程式碼裡 <c>Resources.Add(new X())</c>／<c>Resources.MergedDictionaries.Add(new X())</c> 的 X（短名），與專案。</summary>
+    /// <remarks>⚠ 2026-11-15 第十三輪 egvijayanand 的 MauiAppCS（C# 標記寫的 MAUI App）：App.cs 依序加 Colors、Styles ——
+    ///   這是 Application.Resources 的合併，Styles 裡引用 Colors 的鍵執行期找得到。舊版報 172 筆 out-of-scope。
+    ///   只認「宣告 : Application 的那個檔」裡的寫法：一般地方 new 出來的字典不知道放進哪裡（見 Analyzer 規則 66）。</remarks>
+    public HashSet<(string Class, string? Project)> DictionariesAddedToApplication { get; } = [];
+
     /// <summary>要找「在程式裡建立」的控制項類別（短名）。掃描前由 Analyzer 填：在 XAML 裡被放置過的 x:Class。</summary>
     public HashSet<string> ClassesToFind { get; } = new(StringComparer.Ordinal);
     /// <summary>ClassesToFind 裡，C# 有 <c>new X(</c>、<c>typeof(X)</c>、<c>&lt;X&gt;</c>（DI 註冊、導覽）的 ——
@@ -209,6 +215,9 @@ public sealed partial class CSharpScanner
         if (WordsToFind.Count > 0) FindWords(code);
         if (TypesToFind.Count > 0) FindTypes(code);
         if (ClassesToFind.Count > 0) FindCreatedClasses(code, project);
+        if (ApplicationClassRegex().IsMatch(code))
+            foreach (var m in AppResourcesAddRegex().Matches(code).Cast<Match>())
+                DictionariesAddedToApplication.Add((m.Groups["c"].Value, project));
 
         // 不是查找參數的字串字面（見 NamesInCode）。讀取的查找要排除；寫入（Resources["K"] = v）留著。
         // ⚠ 這一段要對**每一個** C# 檔做：鍵名常常在跟資源完全無關的檔裡（dnSpy 的 TabGroup.cs 只寫了
@@ -510,6 +519,12 @@ public sealed partial class CSharpScanner
     private static partial Regex DynamicLookupRegex();
 
     // 長得像鍵名的一般字串字面（不含 $"…" 與 @"…"）。用在 LiteralsNearDynamicLookups。
+    [GeneratedRegex(@"\bclass\s+\w+\s*:\s*(?:[\w.]+\.)?Application\b")]
+    private static partial Regex ApplicationClassRegex();
+
+    [GeneratedRegex(@"\bResources\s*(?:\.\s*MergedDictionaries\s*)?\.\s*Add\s*\(\s*new\s+(?:[\w.]+\.)?(?<c>[A-Za-z_]\w*)\s*\(")]
+    private static partial Regex AppResourcesAddRegex();
+
     [GeneratedRegex(@"(?<![\w])L""")]
     private static partial Regex CppWideString();
 

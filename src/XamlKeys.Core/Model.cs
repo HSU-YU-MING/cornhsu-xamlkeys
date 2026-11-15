@@ -180,6 +180,9 @@ public sealed class ResourceDictionaryNode
     /// 靠鍵名推會判成互相覆蓋。</summary>
     public int? ThemeGroupId { get; set; }
 
+    /// <summary>有 x:Key 的子字典（規則 38、86）：執行期由程式挑出來才生效，沒挑的時候不在查找路徑上。</summary>
+    public bool IsSelectedAtRuntime { get; set; }
+
     /// <summary>根元素是 &lt;Styles&gt; 的 Avalonia 樣式檔。它不是 ResourceDictionary，
     /// 不判 orphan-dictionary（以元素寫法或程式載入的樣式檔很常見，也不在舊版的檢查範圍）。</summary>
     public bool IsStylesFile { get; set; }

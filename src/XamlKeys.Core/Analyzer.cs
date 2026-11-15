@@ -293,6 +293,17 @@ public sealed class Analyzer
                 createdDicts.Add(id);
         }
         foreach (var id in createdDicts) dicts[id].IsCreatedInCode = true;
+        // 規則 87：Application 類別把它加進 Application.Resources —— 這種知道放在哪裡，算那個專案的 Application 作用域
+        foreach (var (cls, id) in scanner.DictionaryByClass)
+        {
+            var shortName = cls[(cls.LastIndexOf('.') + 1)..];
+            var dictProject = projects.ProjectDirOf(dicts[id].File);
+            if (!cs.DictionariesAddedToApplication.Any(c => c.Class == shortName
+                    && string.Equals(c.Project, dictProject, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            dicts[id].IsRuntimeLoaded = true;
+            result.RuntimeLoadedDictionaries++;
+        }
         result.DictionariesCreatedInCode = createdDicts.Count;
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result);
         result.HasApplication = projects.HasAnyApplication;
@@ -1111,6 +1122,13 @@ public sealed class Analyzer
         var variantPairs = new HashSet<(int, int)>();
         var overridden = new HashSet<string>(StringComparer.Ordinal);
         var layered = new HashSet<string>(StringComparer.Ordinal);
+        // 只經由「執行期挑一本」的子字典才進得來的字典（含它合併的）
+        var optional = new HashSet<int>();
+        var pending = new Stack<int>(ctx.ById.Values.Where(d => d.IsSelectedAtRuntime).Select(d => d.Id));
+        while (pending.TryPop(out var oid))
+            if (optional.Add(oid))
+                foreach (var m in ctx.ById[oid].Merged)
+                    if (m.ResolvedDictionaryId is { } child) pending.Push(child);
 
         foreach (var rootDict in ctx.Engine.RootDictionaries)
         {
@@ -1156,6 +1174,14 @@ public sealed class Analyzer
                     // 而 Windows10 主題直接用 Windows10/ColorsDark。被蓋掉的那份在**別的**主題裡是贏家，不是「永遠贏不了」。
                     // ⚠ 2026-11-15 第八輪 WoWDatabaseEditor：33 筆假 shadowed。
                     if (WinsInAnotherRoot(ctx, key, loser))
+                    {
+                        layered.Add($"{loser.Location}|{key}");
+                        continue;
+                    }
+                    // 蓋掉它的那本是**選用**的（有 x:Key、程式挑了才合併）：沒挑的時候這份就是贏家。
+                    // ⚠ 2026-11-15 第十三輪 Avalonia：FluentTheme 的 <ResourceInclude x:Key="CompactStyles">，
+                    //   DensityStyle=Compact 才加進來 —— 59 筆假 shadowed 報在 BaseResources 上。
+                    if (optional.Contains(winner.DictionaryId) && !optional.Contains(loser.DictionaryId))
                     {
                         layered.Add($"{loser.Location}|{key}");
                         continue;

@@ -292,8 +292,8 @@ public static class Report
         if (r.KeysUsedAsFields > 0)
             o.WriteLine($"note: {r.KeysUsedAsFields} x:Name'd resource(s) are used as fields in their code-behind -- not reported as unused");
         if (r.LayeredOverrides > 0)
-            o.WriteLine($"note: {r.LayeredOverrides} definition(s) are overridden by a theme layered on top of them but win in " +
-                        $"another theme that uses them directly -- not reported as shadowed");
+            o.WriteLine($"note: {r.LayeredOverrides} definition(s) are overridden only by a layered theme or an optional keyed " +
+                        $"dictionary and win where that is not applied -- not reported as shadowed");
         if (r.StartupResources > 0)
             o.WriteLine($"note: {r.StartupResources} App.xaml resource(s) exist to be created at startup (a Caliburn.Micro " +
                         $"bootstrapper) -- not reported as unused");

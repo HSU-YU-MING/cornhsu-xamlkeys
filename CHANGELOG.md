@@ -236,6 +236,17 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **A thirteenth corpus round: keyed ResourceInclude and dictionaries added by a C# Application** (SourceGit,
+  egvijayanand's MAUI samples, Material.Avalonia, StabilityMatrix, ScottPlot and two smaller repos): 1,492 findings
+  on the first run, 296 after; no new gated finding; the earlier 76 projects are unchanged. New:
+  - Avalonia's `<ResourceInclude x:Key="…" Source="…"/>` inside a dictionary is a runtime-selected alternative, like
+    a keyed `<ResourceDictionary>` (counted in `keyedDictionaries`), not an opaque library subclass;
+  - `Resources.Add(new X())` / `Resources.MergedDictionaries.Add(new X())` in the class that derives from
+    `Application` puts the x:Class dictionary `X` of the same project in Application scope (counted in
+    `runtimeLoadedDictionaries`); the same call in a page still adds it to no scope;
+  - a definition overridden only by such an optional keyed dictionary (Avalonia's `CompactStyles` density include)
+    is not reported as shadowed -- it wins whenever that dictionary is not selected (counted in `layeredOverrides`).
+
 - **A twelfth corpus round: Directory.Build.props and property-valued assembly names** (DevWinUI, MAUIsland,
   Telepathy, Dots and three smaller apps): 1,345 findings on the first run, 189 after; the earlier 69 projects are
   unchanged; the one new gated finding is real (Telepathy). New:

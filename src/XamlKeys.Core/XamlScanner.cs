@@ -311,7 +311,7 @@ public sealed partial class XamlScanner
 
         // 規則 83：ResourceDictionary 的子類別直接當 X.Resources 的根（<controls:XamlControlsResources>、Stylet 的 <s:ApplicationLoader>）。
         // 它自己帶的內容在組件裡（WinUI 的 XamlControlsResources 有清單），照主題物件記一筆；它的 X.MergedDictionaries 照常讀。
-        var subclass = rdEl.Name.LocalName != "ResourceDictionary";
+        var subclass = rdEl.Name.LocalName is not ("ResourceDictionary" or "ResourceInclude" or "MergeResourceInclude");
         if (subclass)
         {
             dict.Merged.Add(new MergedReference
@@ -389,6 +389,14 @@ public sealed partial class XamlScanner
                 }
 
                 default:
+                    // 規則 86：Avalonia 的 <ResourceInclude x:Key="en_US" Source="…"/> 跟 <ResourceDictionary x:Key> 一樣是執行期挑一本
+                    // ⚠ 2026-11-15 第十三輪 SourceGit：語系檔這樣放在 Application.Resources，App.SetLocale 挑一本合併 —— 1,024 筆 external。
+                    if (child.Name.LocalName is "ResourceInclude" or "MergeResourceInclude" && XamlAttr(child, "Key") is not null)
+                    {
+                        keyed ??= [];
+                        keyed.Add(child);
+                        break;
+                    }
                     if (child.Name.LocalName == "ResourceDictionary")
                     {
                         if (XamlAttr(child, "Key") is { } k && !k.Value.TrimStart().StartsWith('{'))
@@ -427,6 +435,7 @@ public sealed partial class XamlScanner
                 var sub = NewDictionary(dict.File, $"ResourceDictionary[{name}]", LineOf(t),
                                         standalone: false, appScope: false);
                 sub.ThemeGroupId = groupId;
+                sub.IsSelectedAtRuntime = true;
                 ReadDictionaryElement(t, sub, Prepend(sub.Id, chain), ignorable, suppressed);
                 dict.Merged.Add(new MergedReference
                 {
