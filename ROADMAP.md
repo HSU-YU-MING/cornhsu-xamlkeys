@@ -36,6 +36,10 @@
          （`DialogBorderStyle` 引用不存在的 `TabItemSelectedBackground`）送出當天，維護者 ElektroKill 以
          [5d63b7f](https://github.com/dnSpyEx/dnSpy/commit/5d63b7fb38f220b4f52d8d23b57a2bf7333fe499)
          「Fix reference to non existent XAML resource (fixes #536)」修掉，改法與回報建議的一字不差。
+         **第二則，2026-11-15**：[MaterialDesignInXamlToolkit#4124](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit/issues/4124)
+         （DataGrid 下拉清單鍵盤焦點那一項引用不存在的 `…TextBox.ComboBoxHover`），貢獻者 corvinsz 開
+         [#4125](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit/pull/4125)「fix(DataGrid): use defined brush for keyboard-focused ComboBoxItem」，
+         維護者 Keboo 合併。
          其他送出的：[lepoco/wpfui#1780](https://github.com/lepoco/wpfui/issues/1780)
          （`TreeViewItemFocusVisual`）、[microsoft/WPF-Samples#819 的留言](https://github.com/microsoft/WPF-Samples/pull/819#issuecomment-6877668604)
          （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`）、
