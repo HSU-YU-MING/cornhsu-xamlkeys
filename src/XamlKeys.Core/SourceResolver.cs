@@ -49,7 +49,9 @@ public sealed partial class SourceResolver
             {
                 var text = File.ReadAllText(proj);
                 var m = AssemblyNameRegex().Match(text);
-                if (m.Success && m.Groups["n"].Value.Trim() is { Length: > 0 } overridden)
+                // ⚠ 2026-11-15 第十二輪 DevWinUI：<AssemblyName>$(BaseNamespace)</AssemblyName> —— 屬性在別的檔裡、展不開。
+                //   照字面記成「$(BaseNamespace)」的話，ms-appx:///DevWinUI/… 永遠對不上；退回檔名（DevWinUI.csproj → DevWinUI）。
+                if (m.Success && m.Groups["n"].Value.Trim() is { Length: > 0 } overridden && !overridden.Contains("$("))
                     name = overridden;
             }
             catch (IOException) { /* 讀不到就用檔名 */ }

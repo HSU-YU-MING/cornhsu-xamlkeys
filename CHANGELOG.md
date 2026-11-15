@@ -236,6 +236,13 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **A twelfth corpus round: Directory.Build.props and property-valued assembly names** (DevWinUI, MAUIsland,
+  Telepathy, Dots and three smaller apps): 1,345 findings on the first run, 189 after; the earlier 69 projects are
+  unchanged; the one new gated finding is real (Telepathy). New:
+  - when the project file declares no dialect, the nearest `Directory.Build.props` (the one MSBuild imports) is
+    checked for WinUI markers, conditional `UseWinUI` included; an explicit `<UseWPF>true</UseWPF>` wins;
+  - an `<AssemblyName>` that is an unexpandable property falls back to the project file name.
+
 - **An eleventh corpus round: conditional XAML and ResourceDictionary subclasses as the resources root**
   (Microsoft Calculator, Stylophone, SyncTrayzor, Windows Community Toolkit, ModernFlyouts, Pixeval and four
   smaller apps): 448 findings on the first run, 278 after; the earlier 59 projects and their 49 gated findings are

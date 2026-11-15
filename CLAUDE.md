@@ -89,6 +89,8 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
 - **C++/WinRT**：`.vcxproj` 一律 WinUI；只讀有 XAML 的 vcxproj 底下的 `.cpp`／`.h`（Windows Terminal 有上千個）。
 - **連結進專案的檔屬於連它的專案**（`SourceResolver.LinkedInto`、`Analyzer.Context.ProjectOfFile`）：根目錄路徑、App.xaml 作用域、
   方言、應用程式或函式庫、code-behind 位置**全部**要跟著改 —— 只改一半，Windows-universal-samples 的 391 筆 external 會變成 314 筆假懸空。
+- **專案設定可能在 Directory.Build.props**（`ProjectIndex.IsWinUiProject`）：只看**最近的**那一個（MSBuild 也是），
+  專案檔自己寫明 UseWPF 的優先。AssemblyName 是 `$(…)` 時退回檔名，不要照字面記。
 - **條件式 XAML**（命名空間「?IsApiContractPresent(...)」）：同一個鍵寫兩次、條件互補是合法的二選一（Microsoft Calculator）。
   判互補要「同一個 API、同一個版本、一正一反」—— 只看有沒有問號會把真的重複鍵也放過。
 - **UWP 應用程式的 OutputType 是 AppContainerExe**。漏認它，UWP App 全部被當成函式庫（懸空降級、unused 不判）——

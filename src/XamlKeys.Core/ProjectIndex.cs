@@ -32,7 +32,7 @@ public sealed partial class ProjectIndex
             var dir = Path.GetDirectoryName(Path.GetFullPath(proj));
             if (dir is null) continue;
 
-            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), IsWinUiProject(proj)));
+            _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), IsWinUiProject(proj, root)));
             if (proj.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)) CppProjectDirs.Add(dir);
         }
 
@@ -186,7 +186,7 @@ public sealed partial class ProjectIndex
     }
 
     /// <summary>WinUI 3／UWP 專案的辨識：csproj 的宣告，不是 XAML 的寫法。</summary>
-    private static bool IsWinUiProject(string proj)
+    private static bool IsWinUiProject(string proj, string root)
     {
         // C++ 能寫 XAML 的只有 UWP／WinUI（WPF 沒有 C++ 的 XAML）。
         // ⚠ 2026-11-15 第八輪 Windows Terminal：舊版只讀 .csproj，C++ 專案的 XAML 被當成 WPF，
@@ -196,15 +196,42 @@ public sealed partial class ProjectIndex
         try
         {
             var text = File.ReadAllText(proj);
+            if (HasWinUiMarker(text)) return true;
+            // 專案檔自己寫明 WPF 的就是 WPF，不看上層的 Directory.Build.props
+            if (text.Contains("<UseWPF>true</UseWPF>", StringComparison.OrdinalIgnoreCase)) return false;
+
+            // 規則 84：MSBuild 會自動匯入**最近的** Directory.Build.props（往上找，找到第一個就停）。
+            // ⚠ 2026-11-15 第十二輪 DevWinUI：<UseWinUI> 寫在 repo 根的 Directory.Build.props，專案檔裡沒有 ——
+            //   舊版把整個 WinUI 函式庫當成 WPF，991 筆假懸空（SymbolThemeFontFamily、UseSystemFocusVisuals…）。
+            //   只在掃描根底下找。
+            var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (var d = Path.GetDirectoryName(Path.GetFullPath(proj)); d is not null
+                 && (string.Equals(d, fullRoot, StringComparison.OrdinalIgnoreCase)
+                     || d.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+                 d = Path.GetDirectoryName(d))
+            {
+                var props = Path.Combine(d, "Directory.Build.props");
+                if (!File.Exists(props)) continue;
+                return HasWinUiMarker(File.ReadAllText(props));
+            }
+            return false;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private static bool HasWinUiMarker(string text)
+    {
+        {
             // ⚠ 2026-11-15 第七輪 Uno Chefs：Uno 的單一專案格式只寫 <Project Sdk="Uno.Sdk">（UnoFeatures 帶進 WinUI），
             //   csproj 裡沒有 UseWinUI 也沒有 Microsoft.UI.Xaml —— 舊版判成 WPF，Uno Material 的清單沒套上，93 筆 external。
             return text.Contains("<UseWinUI>true</UseWinUI>", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("Sdk=\"Uno.Sdk", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("Microsoft.WindowsAppSDK", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("<TargetPlatformIdentifier>UAP", StringComparison.OrdinalIgnoreCase)
-                || text.Contains("Microsoft.UI.Xaml", StringComparison.OrdinalIgnoreCase);
+                || text.Contains("Microsoft.UI.Xaml", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("<UseWinUI Condition=", StringComparison.OrdinalIgnoreCase) && text.Contains(">true</UseWinUI>", StringComparison.OrdinalIgnoreCase);
         }
-        catch (IOException) { return false; }
     }
 
     [GeneratedRegex(@"<OutputType>(?<t>[^<]*)</OutputType>", RegexOptions.IgnoreCase)]
