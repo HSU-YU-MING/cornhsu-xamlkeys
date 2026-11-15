@@ -159,8 +159,7 @@ public sealed partial class XamlScanner
                 if (IsIgnorable(child, ignorable)) continue;
                 if (child.Name.LocalName == root.Name.LocalName + ".Resources")
                 {
-                    var wrapper = child.Elements().FirstOrDefault(e => e.Name.LocalName == "ResourceDictionary"
-                                                                    && !IsIgnorable(e, ignorable));
+                    var wrapper = child.Elements().FirstOrDefault(e => IsDictionaryWrapper(e) && !IsIgnorable(e, ignorable));
                     if (wrapper is not null) ReadDictionaryElement(wrapper, dict, chain, ignorable, null);
                     else ReadDictionaryBody(child, dict, chain, ignorable, null);
                 }
@@ -210,8 +209,7 @@ public sealed partial class XamlScanner
 
             // <X.Resources> 底下可能直接放資源，也可能包一層 <ResourceDictionary>
             var wrapper = resProp.Elements()
-                                 .FirstOrDefault(e => e.Name.LocalName == "ResourceDictionary"
-                                                   && !IsIgnorable(e, ignorable));
+                                 .FirstOrDefault(e => IsDictionaryWrapper(e) && !IsIgnorable(e, ignorable));
 
             chainHere = Prepend(dict.Id, chainHere);
             if (el.Parent is null) _rootResourcesOfFile[Path.GetFullPath(file)] = dict.Id;
@@ -300,7 +298,8 @@ public sealed partial class XamlScanner
     private static bool IsCustomTyped(XElement el) =>
         el.Name.NamespaceName.Length > 0
         && !el.Name.LocalName.Contains('.')
-        && !FrameworkNamespaces.Contains(el.Name.NamespaceName);
+        // 條件式 XAML 的命名空間是「框架命名空間?IsApiContractPresent(...)」—— 去掉問號後面再比
+        && !FrameworkNamespaces.Contains(el.Name.NamespaceName.Split('?')[0]);
 
     /// <summary>讀一個 &lt;ResourceDictionary&gt; 元素：Source、MergedDictionaries、ThemeDictionaries、以及自己的鍵。</summary>
     private void ReadDictionaryElement(XElement rdEl, ResourceDictionaryNode dict,
@@ -310,12 +309,32 @@ public sealed partial class XamlScanner
         if (rdEl.Attribute("Source")?.Value is { Length: > 0 } ownSource)
             AddMerged(dict, ownSource, dict.File, LineOf(rdEl));
 
+        // 規則 83：ResourceDictionary 的子類別直接當 X.Resources 的根（<controls:XamlControlsResources>、Stylet 的 <s:ApplicationLoader>）。
+        // 它自己帶的內容在組件裡（WinUI 的 XamlControlsResources 有清單），照主題物件記一筆；它的 X.MergedDictionaries 照常讀。
+        var subclass = rdEl.Name.LocalName != "ResourceDictionary";
+        if (subclass)
+        {
+            dict.Merged.Add(new MergedReference
+            {
+                RawSource = $"<{rdEl.Name.LocalName}/>",
+                Location = new SourceLocation(Rel(dict.File), LineOf(rdEl)),
+                ResolvedDictionaryId = null,
+                ExternalReason = $"'{rdEl.Name.LocalName}' is a ResourceDictionary subclass supplied by a library; "
+                               + "its own contents are not visible in the source tree",
+            });
+            LinkByClassLater(rdEl, dict.Merged[^1]);
+        }
+
         List<XElement>? keyed = null;
         foreach (var child in rdEl.Elements())
         {
             if (IsIgnorable(child, ignorable)) continue;
 
-            switch (child.Name.LocalName)
+            // 子類別的屬性元素寫成 XamlControlsResources.MergedDictionaries —— 當成 ResourceDictionary.* 讀
+            var childName = subclass && child.Name.LocalName.StartsWith(rdEl.Name.LocalName + ".", StringComparison.Ordinal)
+                ? "ResourceDictionary" + child.Name.LocalName[rdEl.Name.LocalName.Length..]
+                : child.Name.LocalName;
+            switch (childName)
             {
                 case "ResourceDictionary.MergedDictionaries":
                     foreach (var m in child.Elements())
@@ -517,6 +536,7 @@ public sealed partial class XamlScanner
                     ElementName = el.Name.LocalName,
                     AliasTarget = alias,
                     FieldName = XamlAttr(el, "Name")?.Value?.Trim() is { Length: > 0 } fieldName ? fieldName : null,
+                    Condition = el.Name.NamespaceName.IndexOf('?') is var q and > 0 ? el.Name.NamespaceName[(q + 1)..] : null,
                     SuppressedReason = suppressed,
                     ContentHash = ContentOf(el),
                 };
@@ -848,6 +868,15 @@ public sealed partial class XamlScanner
             LinkByClassLater(e, dict.Merged[^1]);
         }
     }
+
+    /// <summary>X.Resources 底下當根的那一個元素：&lt;ResourceDictionary&gt;，或帶著自己的 X.MergedDictionaries 的子類別。</summary>
+    /// <remarks>⚠ 2026-11-15 第十一輪 Stylophone（&lt;controls:XamlControlsResources&gt;）、SyncTrayzor（Stylet 的 &lt;s:ApplicationLoader&gt;）：
+    ///   舊版只認 &lt;ResourceDictionary&gt;，子類別裡的 MergedDictionaries 從來沒被讀 —— 152 筆假 out-of-scope、假孤兒字典。</remarks>
+    private static bool IsDictionaryWrapper(XElement e) =>
+        e.Name.LocalName == "ResourceDictionary"
+        || (!e.Name.LocalName.Contains('.')
+            && e.Elements().Any(c => c.Name.LocalName == e.Name.LocalName + ".MergedDictionaries"
+                                  || c.Name.LocalName == e.Name.LocalName + ".ThemeDictionaries"));
 
     /// <summary>
     /// 主題物件、自訂 include 元素用屬性帶進來的字典：屬性名以 Source 結尾（不含 Source 本身，那由呼叫端處理）。

@@ -57,6 +57,7 @@ public static class Report
             w.WriteNumber("dictionariesCreatedInCode", r.DictionariesCreatedInCode);
             w.WriteNumber("placedTeachingTips", r.PlacedTeachingTips);
             w.WriteNumber("inlineDictionaryKeys", r.InlineDictionaryKeys);
+            w.WriteNumber("conditionalAlternatives", r.ConditionalAlternatives);
             w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
             w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
             w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
@@ -278,6 +279,9 @@ public static class Report
         if (r.KeysResolvedThroughHosts > 0)
             o.WriteLine($"note: {r.KeysResolvedThroughHosts} DynamicResource reference(s) in a UserControl resolve in every place " +
                         $"the control is put in XAML -- not reported as out-of-scope");
+        if (r.ConditionalAlternatives > 0)
+            o.WriteLine($"note: {r.ConditionalAlternatives} key(s) are defined twice under complementary conditional-XAML namespaces " +
+                        $"(IsApiContractPresent / NotPresent) -- only one exists at runtime, not reported as duplicates");
         if (r.InlineDictionaryKeys > 0)
             o.WriteLine($"note: {r.InlineDictionaryKeys} key(s) sit in a ResourceDictionary outside any Resources (a chart palette) -- read by that control, not reported as unused");
         if (r.PlacedTeachingTips > 0)

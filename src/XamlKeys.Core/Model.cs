@@ -56,6 +56,19 @@ public sealed class KeyDefinition
     /// <summary>markup 鍵的型別的 CLR 命名空間（XAML 寫明的才有）。有的話比對型別時連命名空間一起比。</summary>
     public string? MarkupTypeNamespace { get; init; }
 
+    /// <summary>UWP／WinUI 的條件式 XAML：元素命名空間「?」後面那段（<c>IsApiContractPresent(Windows.Foundation.UniversalApiContract,7)</c>）。沒有條件是 null。</summary>
+    public string? Condition { get; init; }
+
+    /// <summary>兩個定義的條件互補（同一個 API 的 Present 與 NotPresent）—— 執行期只會有其中一個。</summary>
+    public static bool Complementary(KeyDefinition a, KeyDefinition b)
+    {
+        if (a.Condition is not { } x || b.Condition is not { } y) return false;
+        var xNot = x.Contains("NotPresent(", StringComparison.Ordinal);
+        var yNot = y.Contains("NotPresent(", StringComparison.Ordinal);
+        return xNot != yNot
+            && string.Equals(x.Replace("NotPresent(", "Present("), y.Replace("NotPresent(", "Present("), StringComparison.Ordinal);
+    }
+
     /// <summary>元素上的 x:Name。code-behind 會產生同名的欄位（C#）或存取函式（C++/WinRT）。</summary>
     public string? FieldName { get; init; }
 

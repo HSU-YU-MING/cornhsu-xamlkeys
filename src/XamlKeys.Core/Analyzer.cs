@@ -114,6 +114,9 @@ public sealed class AnalysisResult
     /// <summary>不在 Resources 裡的 &lt;ResourceDictionary&gt; 元素（圖表 Palette）裡的鍵。由那個控制項讀，不報 unused。</summary>
     public int InlineDictionaryKeys { get; set; }
 
+    /// <summary>同一本字典裡、條件互補（條件式 XAML 的 Present／NotPresent）的同名定義數。執行期只有一個存在，不報重複鍵與覆蓋。</summary>
+    public int ConditionalAlternatives { get; set; }
+
     /// <summary>框架隱含載入的主題字典數（Themes/Generic.xaml 之類）。</summary>
     public int ImplicitThemeDictionaries { get; set; }
 
@@ -834,9 +837,18 @@ public sealed class Analyzer
                 if (group.Count() < 2) continue;
 
                 var ordered = group.OrderBy(k => k.Location.Line).ToList();
-                foreach (var dup in ordered.Skip(1))
+                for (var i = 1; i < ordered.Count; i++)
                 {
+                    var dup = ordered[i];
                     if (dup.SuppressedReason is not null) { result.Suppressed++; continue; }
+
+                    // 規則 82：條件式 XAML —— <contract7Present:Style x:Key="K"/> 與 <contract7NotPresent:Style x:Key="K"/>
+                    // 互補，執行期只會載入其中一個。⚠ 2026-11-15 第十一輪 Microsoft Calculator：10 筆 gate 擋的假重複鍵。
+                    if (ordered.Take(i).All(o => KeyDefinition.Complementary(o, dup)))
+                    {
+                        result.ConditionalAlternatives++;
+                        continue;
+                    }
 
                     result.Findings.Add(new Finding
                     {
@@ -1115,6 +1127,8 @@ public sealed class Analyzer
                     //   所以它們之間永遠不是覆蓋。這條比用鍵名去推穩健 ——
                     //   實測 Files 的 GridSplitter.xaml 是 Default ＋ HighContrast,靠鍵名會判錯。
                     if (MutuallyExclusive(ctx, winner.DictionaryId, loser.DictionaryId)) continue;
+                    // 規則 82：條件互補的兩個定義不是覆蓋（計數在 EmitDuplicateKeys）
+                    if (KeyDefinition.Complementary(winner, loser)) continue;
 
                     // 使用者的 App 刻意蓋掉函式庫的預設值（輕量樣式覆寫）：函式庫那份在**別的**使用者那裡照樣會贏，
                     // 報在函式庫的檔上說「永遠贏不了」是錯的。

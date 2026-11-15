@@ -236,6 +236,16 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **An eleventh corpus round: conditional XAML and ResourceDictionary subclasses as the resources root**
+  (Microsoft Calculator, Stylophone, SyncTrayzor, Windows Community Toolkit, ModernFlyouts, Pixeval and four
+  smaller apps): 448 findings on the first run, 278 after; the earlier 59 projects and their 49 gated findings are
+  unchanged. New:
+  - two definitions of one key under complementary conditional-XAML namespaces (`?IsApiContractPresent(X)` /
+    `?IsApiContractNotPresent(X)`) are alternatives, not duplicate keys or shadowing (`conditionalAlternatives`) —
+    Microsoft Calculator had 10 false gated duplicates;
+  - when `X.Resources` holds a ResourceDictionary subclass (`<controls:XamlControlsResources>`, Stylet's
+    `<s:ApplicationLoader>`), its `X.MergedDictionaries` and `X.ThemeDictionaries` are read.
+
 - **A tenth corpus round: UWP shared content, native WinUI resources, chart palettes** (DesktopWidgets3, Uno.Samples,
   AvaloniaEdit, SteamTools, Windows-universal-samples, ImageGlass, PicView): 2,212 findings on the first run, 1,142 after;
   the earlier 52 projects are unchanged but for one false `external`; the 49 gated findings are unchanged (PicView's 2 are real).
