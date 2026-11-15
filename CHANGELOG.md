@@ -236,6 +236,20 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **A tenth corpus round: UWP shared content, native WinUI resources, chart palettes** (DesktopWidgets3, Uno.Samples,
+  AvaloniaEdit, SteamTools, Windows-universal-samples, ImageGlass, PicView): 2,212 findings on the first run, 1,142 after;
+  the earlier 52 projects are unchanged but for one false `external`; the 49 gated findings are unchanged (PicView's 2 are real).
+  New:
+  - a file linked into projects (`<Page Include="..\shared\X.xaml"><Link>…`) belongs to those projects: root-relative
+    sources resolve from them, their App.xaml is in scope, and dialect, application-or-library and code-behind follow
+    them. Project properties are expanded when they are literal, `$(MSBuildThisFileDirectory)` or
+    `$([MSBuild]::GetDirectoryNameOfFileAbove(...))` (searched inside the scan root only). `.vbproj` projects are read;
+  - `<OutputType>AppContainerExe</OutputType>` (UWP) is an application — UWP apps were being treated as libraries;
+  - the WinUI key list also holds keys WinUI's own theme files use but never define (native resources such as
+    `ScrollViewerScrollBarlessTemplate`);
+  - a `<ResourceDictionary>` outside any Resources (a chart palette) is its own scope (`inlineDictionaryKeys`);
+  - optional key lists for FluentAvalonia and AvaloniaEdit.
+
 - **A ninth corpus round: popular WPF libraries** (HandBrake, Playnite, NETworkManager, Bloxstrap, v2rayN,
   VladislavAntonyuk/MauiSamples, dotnet/maui): 1,271 findings on the first run, 243 after; the earlier 45 projects
   went from 4,948 to 3,519. The 4 new gated findings are real (HandBrake, MauiSamples) and the 43 earlier ones are

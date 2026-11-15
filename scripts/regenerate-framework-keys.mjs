@@ -18,6 +18,8 @@
 //   mahapps                 MahApps/MahApps.Metro                     MahAppsKeys.json
 //   materialdesign          MaterialDesignInXAML/MaterialDesignInXamlToolkit  MaterialDesignKeys.json
 //   wpfui                   lepoco/wpfui                              WpfUiKeys.json
+//   fluent-avalonia         amwx/FluentAvalonia                       FluentAvaloniaKeys.json
+//   avaloniaedit            AvaloniaUI/AvaloniaEdit                   AvaloniaEditKeys.json
 //
 // 為什麼需要這份資料：專案的 XAML 大量引用框架或主題套件內建的鍵
 // （TextFillColorPrimaryBrush、ControlCornerRadius、SettingsCardWrapThreshold…），
@@ -39,6 +41,9 @@ const PACKS = {
     repo: 'microsoft/microsoft-ui-xaml', out: 'WinUiFrameworkKeys.json',
     // 任何 *themeresources*.xaml、generic.xaml、以及 controls/dev 底下的控制項樣式檔（它們被 generic.xaml 合併）
     take: (unix, name) => name.includes('themeresources') || name === 'generic.xaml' || unix.includes('/controls/dev/'),
+    // WinUI 自己的樣板引用、但整個 repo 都沒有定義的鍵（ScrollViewerScrollBarlessTemplate 之類）：由框架原生提供。
+    // ⚠ 2026-11-15 第十輪 Windows-universal-samples 的 XamlPivot：引用它被報成 gate 擋的懸空 —— WinUI 的 Pivot 樣板自己也這樣引用。
+    referencedUndefined: true,
   },
   fluent: {
     repo: 'dotnet/wpf', out: 'WpfFluentKeys.json',
@@ -103,6 +108,14 @@ const PACKS = {
     repo: 'lepoco/wpfui', out: 'WpfUiKeys.json',
     take: unix => unix.includes('/src/Wpf.Ui/'),
   },
+  'fluent-avalonia': {
+    repo: 'amwx/FluentAvalonia', out: 'FluentAvaloniaKeys.json',
+    take: unix => unix.includes('/src/FluentAvalonia/'),
+  },
+  avaloniaedit: {
+    repo: 'AvaloniaUI/AvaloniaEdit', out: 'AvaloniaEditKeys.json',
+    take: unix => unix.includes('/src/AvaloniaEdit/'),
+  },
   toolkit: {
     repo: 'CommunityToolkit/Windows', out: 'CommunityToolkitKeys.json',
     // 每個元件的 src/（控制項樣式與 lightweight styling 鍵）；samples、tests 不算
@@ -135,9 +148,17 @@ function* walk(dir) {
 }
 
 const KEY_RE = /\bx:Key\s*=\s*"([^"]+)"/g;
+const REF_RE = /\{(?:StaticResource|ThemeResource)\s+(?:ResourceKey\s*=\s*)?([A-Za-z_][\w.]*)\s*\}/g;
 
 const keys = new Set();
+const referenced = new Set();
+const definedAnywhere = new Set();
 let files = 0;
+if (pack.referencedUndefined) {
+  for (const file of walk(root)) {
+    for (const m of readFileSync(file, 'utf8').matchAll(KEY_RE)) definedAnywhere.add(m[1].trim());
+  }
+}
 
 for (const file of walk(root)) {
   const unix = file.split(sep).join('/');
@@ -145,6 +166,10 @@ for (const file of walk(root)) {
   files++;
 
   const text = readFileSync(file, 'utf8');
+  // 只看框架真正的主題檔（*themeresources*.xaml、generic.xaml）—— controls/dev 底下也有測試頁，裡面的鍵不能當成框架的
+  const lname = basename(file).toLowerCase();
+  if (pack.referencedUndefined && (lname.includes('themeresources') || lname === 'generic.xaml'))
+    for (const m of text.matchAll(REF_RE)) referenced.add(m[1]);
   for (const m of text.matchAll(KEY_RE)) {
     const k = m[1].trim();
     // {x:Type …} 之類的型別鍵不是字串鍵；Dark/Light/HighContrast 是 ThemeDictionaries 的分側鍵
@@ -154,6 +179,11 @@ for (const file of walk(root)) {
   }
 }
 
+let addedReferenced = 0;
+for (const k of referenced) {
+  if (!definedAnywhere.has(k) && !keys.has(k)) { keys.add(k); addedReferenced++; }
+}
+if (pack.referencedUndefined) console.log(`${addedReferenced} keys referenced by the framework's own XAML but defined nowhere in it (native resources)`);
 const target = `src/XamlKeys.Core/${pack.out}`;
 const out = {
   source: `${pack.repo}@${commit}`,

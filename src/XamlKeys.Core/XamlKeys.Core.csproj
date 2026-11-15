@@ -32,6 +32,8 @@
     <EmbeddedResource Include="MahAppsKeys.json" LogicalName="XamlKeys.Core.MahAppsKeys.json" />
     <EmbeddedResource Include="MaterialDesignKeys.json" LogicalName="XamlKeys.Core.MaterialDesignKeys.json" />
     <EmbeddedResource Include="WpfUiKeys.json" LogicalName="XamlKeys.Core.WpfUiKeys.json" />
+    <EmbeddedResource Include="FluentAvaloniaKeys.json" LogicalName="XamlKeys.Core.FluentAvaloniaKeys.json" />
+    <EmbeddedResource Include="AvaloniaEditKeys.json" LogicalName="XamlKeys.Core.AvaloniaEditKeys.json" />
   </ItemGroup>
 
 </Project>

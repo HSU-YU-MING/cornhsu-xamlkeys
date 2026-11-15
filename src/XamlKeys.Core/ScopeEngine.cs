@@ -107,7 +107,8 @@ public sealed class ScopeEngine
             //   2026-11-15 第九輪 dotnet/maui：src/ProfiledAot/src/maui/App.xaml 沒有 csproj，它合併一本不存在的 Styles.xaml
             //   —— 舊版把它接進整個 repo 每一個專案的作用域，真的懸空全部被降級成「也許在那本看不到的裡面」。
             if (project is not null && _byId.TryGetValue(id, out var app)
-                && !string.Equals(app.ProjectDir, project, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(app.ProjectDir, project, StringComparison.OrdinalIgnoreCase)
+                && !app.LinkedProjects.Contains(project, StringComparer.OrdinalIgnoreCase))   // 規則 77：連結進這個專案的 App.xaml 也是它的
                 continue;
 
             yield return id;

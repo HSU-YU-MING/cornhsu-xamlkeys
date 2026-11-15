@@ -236,6 +236,18 @@ public sealed partial class XamlScanner
             }
         }
 
+        // 規則 79：不在 <X.Resources>／MergedDictionaries 裡的 <ResourceDictionary> 元素（圖表的 Palette：
+        // <toolkit:ResourceDictionaryCollection><ResourceDictionary> 裡定義 Background 與用它的 DataPointStyle）。
+        // 它自己就是一個作用域；裡面的鍵是給那個控制項照慣例讀的，不判 unused。
+        // ⚠ 2026-11-15 第十輪 Uno.Samples（封存的 Silverlight 專案 TimeEntryRia）：16 筆假懸空 —— 在應用程式專案裡會是 gate 擋的那一級。
+        if (el.Name.LocalName == "ResourceDictionary" && el.Parent is not null)
+        {
+            var inline = NewDictionary(file, "ResourceDictionary (inline)", LineOf(el), standalone: false, appScope: false);
+            inline.IsInlineCollectionItem = true;
+            ReadDictionaryElement(el, inline, Prepend(inline.Id, chainHere), ignorable, suppressed);
+            return;
+        }
+
         // 自訂型別的元素（<views:SearchView/>）：記下它被放在哪裡、當時的作用域 ——
         // 那是 SearchView.xaml 的 DynamicResource 在執行期往上找得到的地方（見 Analyzer.HostsProvide）。
         var custom = IsCustomTyped(el);

@@ -641,3 +641,73 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## amwx/FluentAvalonia
+
+**Used for**: `src/XamlKeys.Core/FluentAvaloniaKeys.json` — the key names of FluentAvalonia (Fluent design controls and theme for Avalonia). These files contain
+**key names only** (no code, no styles, no values), extracted from the theme resource dictionaries at the
+commit recorded in each file's `source` field. They apply only when the scanned tree merges that library.
+
+- Source: https://github.com/amwx/FluentAvalonia
+- Commit: `e6def96e6281b79cb859e7984c7807e911e90878`
+- License: MIT
+- Regenerate: `node scripts/regenerate-framework-keys.mjs <fluent-avalonia> <clone> <sha>`
+
+```
+MIT License
+
+Copyright (c) 2025 amwx
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## AvaloniaUI/AvaloniaEdit
+
+**Used for**: `src/XamlKeys.Core/AvaloniaEditKeys.json` — the key names of AvaloniaEdit (the text editor control for Avalonia). These files contain
+**key names only** (no code, no styles, no values), extracted from the theme resource dictionaries at the
+commit recorded in each file's `source` field. They apply only when the scanned tree merges that library.
+
+- Source: https://github.com/AvaloniaUI/AvaloniaEdit
+- Commit: `9eeba9bd10ebfc96d1a20ec95f42789debf99e51`
+- License: MIT
+- Regenerate: `node scripts/regenerate-framework-keys.mjs <avaloniaedit> <clone> <sha>`
+
+```
+MIT License
+
+Copyright (c) 2017 Eli Arbel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

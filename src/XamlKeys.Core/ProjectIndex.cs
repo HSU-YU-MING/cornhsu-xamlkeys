@@ -70,6 +70,10 @@ public sealed partial class ProjectIndex
     public int ApplicationCount => _projects.Count(p => p.IsApplication);
 
     /// <summary>這個檔屬於應用程式專案嗎？找不到所屬專案時當成應用程式（保守：維持完整檢查）。</summary>
+    /// <summary>這個專案目錄是應用程式嗎？／是 WinUI 嗎？（給「連結進專案」的檔用，見 Analyzer.Context.ProjectOfFile）</summary>
+    public bool IsApplicationDir(string dir) => _projects.Any(p => string.Equals(p.Dir, dir, StringComparison.OrdinalIgnoreCase) && p.IsApplication);
+    public bool IsWinUiDir(string dir) => _projects.Any(p => string.Equals(p.Dir, dir, StringComparison.OrdinalIgnoreCase) && p.IsWinUi);
+
     public bool IsInApplication(string file)
     {
         var full = Path.GetFullPath(file);
@@ -160,8 +164,11 @@ public sealed partial class ProjectIndex
             {
                 var t = m.Groups["t"].Value.Trim();
                 // WinExe／Exe = 應用程式；Library（或沒寫）= 函式庫
+                // ⚠ AppContainerExe 是 UWP 應用程式的寫法（2026-11-15 第十輪 Windows-universal-samples）。
+                //   不認的話，每個 UWP App 都被當成函式庫：懸空降到 warn、unused 不判。
                 if (t.Equals("WinExe", StringComparison.OrdinalIgnoreCase)
-                    || t.Equals("Exe", StringComparison.OrdinalIgnoreCase)) return true;
+                    || t.Equals("Exe", StringComparison.OrdinalIgnoreCase)
+                    || t.Equals("AppContainerExe", StringComparison.OrdinalIgnoreCase)) return true;
                 if (t.Equals("Library", StringComparison.OrdinalIgnoreCase)) return false;
             }
             // C++：<ConfigurationType>Application</ConfigurationType>；DynamicLibrary／StaticLibrary 是函式庫
@@ -185,6 +192,7 @@ public sealed partial class ProjectIndex
         // ⚠ 2026-11-15 第八輪 Windows Terminal：舊版只讀 .csproj，C++ 專案的 XAML 被當成 WPF，
         //   WinUI 的 TextFillColorPrimaryBrush 等 78 筆變成 external。
         if (proj.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)) return true;
+        // VB 的 UWP 專案照 csproj 的方式判（TargetPlatformIdentifier UAP），往下走
         try
         {
             var text = File.ReadAllText(proj);

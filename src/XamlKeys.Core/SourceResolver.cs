@@ -164,10 +164,12 @@ public sealed partial class SourceResolver
         try { doc = System.Xml.Linq.XDocument.Load(proj); }
         catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { return; }
 
+        var props = ReadProperties(doc, dir);
         foreach (var item in doc.Descendants())
         {
             var include = item.Attribute("Include")?.Value;
             if (include is null) continue;
+            if (include.Contains("$(")) include = ExpandProperties(include, props);
             if (!include.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase)
                 && !include.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -189,8 +191,72 @@ public sealed partial class SourceResolver
 
             var target = Path.GetFullPath(Path.Combine(dir, include.Replace('\\', Path.DirectorySeparatorChar)));
             _links[(dir, NormalizeLink(link))] = target;
+            if (!_linkedInto.TryGetValue(target, out var projects)) _linkedInto[target] = projects = [];
+            if (!projects.Contains(dir, StringComparer.OrdinalIgnoreCase)) projects.Add(dir);
         }
     }
+
+    /// <summary>用 Link 把這個檔（絕對路徑）連進去的專案目錄。</summary>
+    public IReadOnlyList<string> LinkedInto(string file) =>
+        _linkedInto.TryGetValue(Path.GetFullPath(file), out var p) ? p : [];
+
+    /// <summary>檔案（絕對路徑） → 用 Link 把它連進去的專案目錄。連結進來的檔，根目錄形式的 Source 要從那些專案解析。</summary>
+    private readonly Dictionary<string, List<string>> _linkedInto = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 同一個專案檔裡宣告的屬性，只認三種值：字面路徑、<c>$(MSBuildThisFileDirectory)</c>／<c>$(MSBuildProjectDirectory)</c>、
+    /// 以及 <c>$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), 檔名))</c>（往上找到那個檔所在的目錄）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠ 2026-11-15 第十輪 Windows-universal-samples：每個範例專案都寫
+    ///   <c>&lt;SharedContentDir&gt;$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), LICENSE))\SharedContent&lt;/SharedContentDir&gt;</c>，
+    ///   App.xaml、Styles.xaml 都從那裡連結進來 —— 不展開的話 391 筆 external、覆蓋率 61%、exit 3。
+    /// ⚠ 往上找只在**掃描根底下**，存在檢查一律走 <see cref="Exists"/>（安全閘門）。算不出來的屬性就不展開（維持 external）。
+    /// </remarks>
+    private Dictionary<string, string> ReadProperties(System.Xml.Linq.XDocument doc, string projectDir)
+    {
+        var props = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["MSBuildThisFileDirectory"] = projectDir + Path.DirectorySeparatorChar,
+            ["MSBuildProjectDirectory"] = projectDir,
+        };
+        foreach (var group in doc.Descendants().Where(e => e.Name.LocalName == "PropertyGroup"))
+            foreach (var p in group.Elements())
+            {
+                if (p.HasElements || p.Attribute("Condition") is not null) continue;
+                var raw = p.Value.Trim();
+                if (raw.Length == 0) continue;
+                if (EvaluateProperty(raw, props, projectDir) is { } value) props[p.Name.LocalName] = value;
+            }
+        return props;
+    }
+
+    private string? EvaluateProperty(string raw, Dictionary<string, string> props, string projectDir)
+    {
+        var m = FileAboveRegex().Match(raw);
+        if (m.Success)
+        {
+            var file = m.Groups["f"].Value.Trim();
+            if (file.Length == 0 || file.IndexOfAny(['/', '\\', '$', '*', ':']) >= 0) return null;
+            string? found = null;
+            // 往上找：掃描根以外的路徑由 Exists 的安全閘門擋掉（不會真的去碰磁碟）
+            for (var d = projectDir; d is not null; d = Path.GetDirectoryName(d))
+                if (Exists(Path.Combine(d, file))) { found = d; break; }
+            if (found is null) return null;
+            raw = found + raw[(m.Index + m.Length)..];
+        }
+        return raw.Contains("$(") ? ExpandProperties(raw, props) : raw;
+    }
+
+    /// <summary>把 $(Name) 換成已知的屬性；不認得的照原樣留著（含「$(」的路徑在磁碟上不存在，解析自然失敗 —— 不猜）。</summary>
+    private static string ExpandProperties(string text, Dictionary<string, string> props) =>
+        PropertyRefRegex().Replace(text, m => props.TryGetValue(m.Groups["n"].Value, out var v) ? v : m.Value);
+
+    [GeneratedRegex(@"^\$\(\[MSBuild\]::GetDirectoryNameOfFileAbove\(\s*\$\(MSBuildThisFileDirectory\)\s*,\s*(?<f>[^)]+)\)\)")]
+    private static partial Regex FileAboveRegex();
+
+    [GeneratedRegex(@"\$\((?<n>[A-Za-z_][A-Za-z0-9_.\-]*)\)")]
+    private static partial Regex PropertyRefRegex();
 
     private static string NormalizeLink(string p) => p.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
 
@@ -360,11 +426,16 @@ public sealed partial class SourceResolver
     /// <summary>從檔案往上找最近的 *.csproj／*.vcxproj 目錄；一路找不到就用掃描根。</summary>
     private IEnumerable<string> ProjectRootsFor(string file)
     {
+        // 規則 77：用 Link 連進某些專案的檔（Windows-universal-samples 的 shared/、SharedContent/），根目錄形式的路徑相對於**那些專案**
+        if (_linkedInto.TryGetValue(Path.GetFullPath(file), out var linkers))
+            foreach (var p in linkers) yield return p;
+
         var dir = Path.GetDirectoryName(Path.GetFullPath(file));
         while (dir is not null && dir.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
         {
             if (Directory.EnumerateFiles(dir, "*.csproj").Any()
-                || Directory.EnumerateFiles(dir, "*.vcxproj").Any()) yield return dir;
+                || Directory.EnumerateFiles(dir, "*.vcxproj").Any()
+                || Directory.EnumerateFiles(dir, "*.vbproj").Any()) yield return dir;
             var parent = Path.GetDirectoryName(dir);
             if (parent == dir) break;
             dir = parent;

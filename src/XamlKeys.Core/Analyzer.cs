@@ -111,6 +111,9 @@ public sealed class AnalysisResult
     /// <summary>放在 Resources 裡的 TeachingTip（WinUI 的掛法，用自己的 IsOpen 打開）。不報 unused。</summary>
     public int PlacedTeachingTips { get; set; }
 
+    /// <summary>不在 Resources 裡的 &lt;ResourceDictionary&gt; 元素（圖表 Palette）裡的鍵。由那個控制項讀，不報 unused。</summary>
+    public int InlineDictionaryKeys { get; set; }
+
     /// <summary>框架隱含載入的主題字典數（Themes/Generic.xaml 之類）。</summary>
     public int ImplicitThemeDictionaries { get; set; }
 
@@ -199,7 +202,8 @@ public sealed class Analyzer
         var csFiles = EnumerateFiles(root, "*.cs", config).ToList();
         // ⚠ C++/WinRT 的 XAML 專案是 .vcxproj（2026-11-15 第八輪：Windows Terminal、Windows App SDK 範例）
         var projFiles = EnumerateFiles(root, "*.csproj", config)
-                        .Concat(EnumerateFiles(root, "*.vcxproj", config)).ToList();
+                        .Concat(EnumerateFiles(root, "*.vcxproj", config))
+                        .Concat(EnumerateFiles(root, "*.vbproj", config)).ToList();   // VB.NET 的 WPF／UWP 專案（Windows-universal-samples 的 vb/）
         result.TestFilesExcluded = testSkipped;
 
         result.XamlFiles = xamlFiles.Count;
@@ -266,7 +270,11 @@ public sealed class Analyzer
 
         // 每本字典記住自己屬於哪個專案 —— Application.Resources 的作用域是該專案的,
         // 不是整棵樹的（見 ScopeEngine.EffectiveChain）。
-        foreach (var d in dicts) d.ProjectDir = projects.ProjectDirOf(d.File);
+        foreach (var d in dicts)
+        {
+            d.ProjectDir = projects.ProjectDirOf(d.File);
+            if (d.ProjectDir is null) d.LinkedProjects = resolver.LinkedInto(d.File);
+        }
 
         ApplyThemeSides(dicts, config);
         var themeEntries = PropagateThemeSides(dicts);
@@ -328,6 +336,7 @@ public sealed class Analyzer
         var ctx = new Context(root, dicts, projects, scanner.Definitions, allRefs, engine, config, themeEntries);
         ctx.ClassOfFile = scanner.ClassOfFile;
         ctx.XamarinFormsFiles = scanner.XamarinFormsFiles;
+        ctx.LinkedInto = resolver.LinkedInto;
         ctx.UsesOfClass = scanner.UsesOfClass;
         ctx.ClassesCreatedInCode.UnionWith(cs.ClassesCreatedInCode);
         foreach (var site in cs.DynamicSites) ctx.DynamicSiteFiles.Add(site.Location.File);
@@ -500,6 +509,17 @@ public sealed class Analyzer
 
         public IReadOnlySet<string> XamarinFormsFiles { get; set; } = new HashSet<string>();
 
+        public Func<string, IReadOnlyList<string>> LinkedInto { get; set; } = _ => [];
+
+        /// <summary>檔案所屬的專案：專案目錄底下的就是那個；不在任何專案底下、但被 Link 連進專案的，算第一個連它的專案（規則 77）。</summary>
+        /// <remarks>⚠ 2026-11-15 第十輪 Windows-universal-samples：每個範例的頁面放在 shared/，連進 cs／cpp／vb 三個專案。
+        ///   當成「不屬於任何專案」的話它會接進整個 repo 每一本 App.xaml，任何一本讀不到就全部變成 external。</remarks>
+        public string? ProjectOfFile(string file)
+        {
+            var abs = Abs(file);
+            return Projects.ProjectDirOf(abs) ?? LinkedInto(abs).FirstOrDefault();
+        }
+
         private readonly Dictionary<string, string> _codeBehindText = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>XAML 檔的 code-behind 候選：X.xaml.cs、X.cs（WPF-Samples 的 HexSphereDemo），
@@ -507,7 +527,7 @@ public sealed class Analyzer
         public static string[] CodeBehindCandidates(string xamlFile)
         {
             var stem = xamlFile[..^Path.GetExtension(xamlFile).Length];
-            return [xamlFile + ".cs", stem + ".cs", xamlFile + ".cpp", xamlFile + ".h", stem + ".cpp", stem + ".h"];
+            return [xamlFile + ".cs", stem + ".cs", xamlFile + ".cpp", xamlFile + ".h", stem + ".cpp", stem + ".h", xamlFile + ".vb", stem + ".vb"];
         }
 
         public string CodeBehindText(string file)
@@ -521,7 +541,10 @@ public sealed class Analyzer
 
         /// <summary>這個 XAML 檔的 code-behind（任一候選）以完整的字提到 word。</summary>
         public bool CodeBehindMentions(string xamlFile, string word) =>
-            CodeBehindCandidates(xamlFile).Any(cb => MentionsWord(CodeBehindText(cb), word));
+            CodeBehindCandidates(xamlFile)
+                // 連結進專案的 XAML（Windows-universal-samples 的 shared/）：code-behind 在連它的專案資料夾裡（cs/Scenario1.xaml.cs）
+                .Concat(LinkedInto(Abs(xamlFile)).SelectMany(p => CodeBehindCandidates(Path.Combine(p, Path.GetFileName(xamlFile)))))
+                .Any(cb => MentionsWord(CodeBehindText(cb), word));
         private HashSet<string>? _xfProjects;
 
         /// <summary>Xamarin.Forms 的裝置樣式，而且引用在 Xamarin.Forms 的檔或專案裡。
@@ -722,7 +745,9 @@ public sealed class Analyzer
             if (!Config.DialectAutoDetected || Projects.ProjectCount == 0) return Config.Dialect;
             if (DictOfRef(r) is { } d) return d.Dialect;
             var abs = Abs(r.Location.File);
-            return Projects.IsInWinUi(abs) || LooksWinUi(abs) ? XamlDialect.WinUi : XamlDialect.Wpf;
+            return Projects.IsInWinUi(abs) || LooksWinUi(abs)
+                   || (Projects.ProjectDirOf(abs) is null && LinkedInto(abs).FirstOrDefault() is { } linker && Projects.IsWinUiDir(linker))
+                ? XamlDialect.WinUi : XamlDialect.Wpf;
         }
 
         /// <summary>
@@ -781,7 +806,14 @@ public sealed class Analyzer
             Path.IsPathRooted(file) ? file : Path.GetFullPath(Path.Combine(_root, file));
 
         /// <summary>這個引用所在的檔，是在函式庫專案裡嗎？</summary>
-        public bool InLibrary(string file) => !Projects.IsInApplication(Abs(file));
+        public bool InLibrary(string file)
+        {
+            var abs = Abs(file);
+            // 連結進專案的檔（規則 77）：照連它的那個專案判
+            if (Projects.ProjectDirOf(abs) is null && LinkedInto(abs).FirstOrDefault() is { } linker)
+                return !Projects.IsApplicationDir(linker);
+            return !Projects.IsInApplication(abs);
+        }
 
         public bool DefinedSomewhereInProjectOf(string file, string key)
         {
@@ -859,7 +891,7 @@ public sealed class Analyzer
 
             // ⚠ 專案由**引用所在的檔案**決定,不是鏈的第一個字典 ——
             //   畫面檔常常沒有自己的 <X.Resources>,鏈是空的。
-            var refProject = ctx.Projects.ProjectDirOf(ctx.Abs(r.Location.File));
+            var refProject = ctx.ProjectOfFile(r.Location.File);
 
             var failures = new List<(ThemeSide Side, LookupResult Res)>();
             foreach (var side in evaluate)
@@ -1279,6 +1311,7 @@ public sealed class Analyzer
             // 規則 73：WinUI 的 TeachingTip 放在 Resources 裡是官方的掛法（不佔版面），用自己的 IsOpen 打開 —— 不是被人用鍵查找的。
             // ⚠ 2026-11-15 第八輪重跑 Files：BulkRenameDialog 的 InvalidNameWarning 綁 IsOpen="{x:Bind …}"，被報成沒人用。
             if (IsPlacedUi(d)) { result.PlacedTeachingTips++; continue; }
+            if (ctx.ById[d.DictionaryId].IsInlineCollectionItem) { result.InlineDictionaryKeys++; continue; }   // 規則 79
 
             // 規則 71：<Storyboard x:Name="Fade"/> —— code-behind 用欄位（Fade.Begin()）或 C++/WinRT 的存取函式（Fade().Begin()）取，
             // 不是 FindResource，所以不是字串。
@@ -1795,7 +1828,9 @@ public sealed class Analyzer
         }
 
         foreach (var d in dicts)
-            d.Dialect = projects.IsInWinUi(d.File) || LooksWinUi(d.File) ? XamlDialect.WinUi : XamlDialect.Wpf;
+            d.Dialect = projects.IsInWinUi(d.File) || LooksWinUi(d.File)
+                        || (d.ProjectDir is null && d.LinkedProjects.Any(projects.IsWinUiDir))   // 規則 77：連結進 WinUI 專案的檔
+                ? XamlDialect.WinUi : XamlDialect.Wpf;
 
         // 報告要印一個值：以「字典數比較多的那一邊」為代表。
         // summary 另外帶 dialectMixed，讓混合的情形看得出來。

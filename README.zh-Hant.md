@@ -175,11 +175,11 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 | 盲區 | 後果 | 工具怎麼處理 |
 |---|---|---|
 | 執行期組出來的鍵名 | 可能看起來沒人用 | 有 3 個字以上的固定部分（`$"Icon{n}"`、`"Icon" + n`、`n + "Brush"`）時，同專案裡符合的鍵算有人用，summary 會講有幾個；完全由變數決定的計入動態查找點，`usedAtRuntime` 可壓制 |
-| 第三方組件裡的字典 | 看不到內容 | 標 `external`、計數、拉低覆蓋率。例外：工具內建鍵名清單的主題 —— WinUI 的 `XamlControlsResources`、.NET 的 WPF Fluent、Avalonia 的 Fluent／Fluent2／Simple／ColorPicker／DataGrid／TreeDataGrid、Windows Community Toolkit、Semi.Avalonia、Uno Material／Cupertino／Toolkit、ModernWpf、MahApps.Metro、MaterialDesignThemes、WPF-UI —— 算解析得到，而且只在這棵樹真的合併了才算 |
+| 第三方組件裡的字典 | 看不到內容 | 標 `external`、計數、拉低覆蓋率。例外：工具內建鍵名清單的主題 —— WinUI 的 `XamlControlsResources`、.NET 的 WPF Fluent、Avalonia 的 Fluent／Fluent2／Simple／ColorPicker／DataGrid／TreeDataGrid、Windows Community Toolkit、Semi.Avalonia、Uno Material／Cupertino／Toolkit、ModernWpf、MahApps.Metro、MaterialDesignThemes、WPF-UI、FluentAvalonia、AvaloniaEdit —— 算解析得到，而且只在這棵樹真的合併了才算 |
 | 程式用組出來的 URI 載入的字典 | 可能看起來是孤兒 | 認得 C# 裡的字面 `.xaml` 路徑，也認得有固定部分的（`$"Themes/{name}.xaml"` 會載入該專案的每一本 `Themes/*.xaml`）；`$"{name}.xaml"` 與用 `+` 串的路徑認不得 |
 | 作用域是靜態近似 | `UserControl` 真正的父層不在它自己的檔裡 | `DynamicResource`：控制項在 XAML 裡每一個被放置的地方都有這個鍵（而且 C# 沒有另外建立它）就算解析得到。其餘鍵在別處存在時報 `out-of-scope`（warn），不報懸空（fail）。`StaticResource` 不從宿主找：它在控制項被放進去之前就解析了 |
 | `ComponentResourceKey`、`{x:Static …Key}` | 不是字串鍵 | 框架的鍵（`SystemColors.…Key`、`MenuItem.SeparatorStyleKey`）認得：引用不算懸空、重新定義不算沒人用。專案自己的鍵以型別＋成員（或型別＋`ResourceId`）比對：重複、覆蓋、不在作用域、沒人用都會判。找不到的照舊計入 unresolved、不報懸空 —— 它可能定義在 C# 或別的組件裡 |
-| 從別的專案連結進來的字典（`<Page Include="..\x.xaml" Link="…">`） | 合併路徑在磁碟上不存在 | 照 csproj 的 `Link` 解析，也認 `Include="..\X\**\*.axaml"`＋`Link="X\%(RecursiveDir)%(Filename)%(Extension)"` 這種形狀。其他萬用字元與 `$(…)` 屬性靜態算不出來，照舊 external |
+| 從別的專案連結進來的字典（`<Page Include="..\x.xaml" Link="…">`） | 合併路徑在磁碟上不存在 | 照 csproj 的 `Link` 解析，也認 `Include="..\X\**\*.axaml"`＋`Link="X\%(RecursiveDir)%(Filename)%(Extension)"` 這種形狀，以及專案檔裡設成字面路徑、`$(MSBuildThisFileDirectory)` 或 `GetDirectoryNameOfFileAbove` 的屬性；連結進來的檔屬於連它的專案。其他萬用字元與屬性靜態算不出來，照舊 external。同一個檔連進好幾個專案時，根目錄形式的合併只解析一次 |
 | 函式庫專案 | 它的鍵是公開 API | 不判 `unused` 與 `orphan-dictionary` |
 | 符號連結與目錄接合點 | 裡面的內容會被跳過 | 跟著走的話，指回祖先的接合點會讓掃描永遠跑不完 |
 | Avalonia 的自訂主題變體（`x:Key="{x:Static …}"`） | 當成中性側 | 互斥規則仍然適用，所以它們之間不會互相覆蓋 |

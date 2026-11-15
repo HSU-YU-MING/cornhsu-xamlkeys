@@ -56,6 +56,7 @@ public static class Report
             w.WriteNumber("keysUsedAsFields", r.KeysUsedAsFields);
             w.WriteNumber("dictionariesCreatedInCode", r.DictionariesCreatedInCode);
             w.WriteNumber("placedTeachingTips", r.PlacedTeachingTips);
+            w.WriteNumber("inlineDictionaryKeys", r.InlineDictionaryKeys);
             w.WriteNumber("keyedDictionaries", r.KeyedDictionaries);
             w.WriteNumber("classBackedDictionaries", r.ClassBackedDictionaries);
             w.WriteNumber("libraryKeyOverrides", r.LibraryKeyOverrides);
@@ -277,6 +278,8 @@ public static class Report
         if (r.KeysResolvedThroughHosts > 0)
             o.WriteLine($"note: {r.KeysResolvedThroughHosts} DynamicResource reference(s) in a UserControl resolve in every place " +
                         $"the control is put in XAML -- not reported as out-of-scope");
+        if (r.InlineDictionaryKeys > 0)
+            o.WriteLine($"note: {r.InlineDictionaryKeys} key(s) sit in a ResourceDictionary outside any Resources (a chart palette) -- read by that control, not reported as unused");
         if (r.PlacedTeachingTips > 0)
             o.WriteLine($"note: {r.PlacedTeachingTips} TeachingTip(s) placed in Resources open through their own IsOpen -- not reported as unused");
         if (r.DictionariesCreatedInCode > 0)

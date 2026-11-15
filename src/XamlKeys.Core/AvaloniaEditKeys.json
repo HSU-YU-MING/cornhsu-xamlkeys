@@ -1,0 +1,32 @@
+{
+ "source": "AvaloniaUI/AvaloniaEdit@9eeba9bd10ebfc96d1a20ec95f42789debf99e51",
+ "license": "MIT",
+ "generatedBy": "scripts/regenerate-framework-keys.mjs",
+ "files": 9,
+ "keys": [
+  "CaseSensitiveIconPath",
+  "ChevronRightIconPath",
+  "CloseIconPath",
+  "CompleteWordIconPath",
+  "CompletionToolTipBackground",
+  "CompletionToolTipBorderBrush",
+  "CompletionToolTipBorderThickness",
+  "CompletionToolTipForeground",
+  "FindNextIconPath",
+  "FindPreviousIconPath",
+  "OverloadViewerBackground",
+  "OverloadViewerBorderBrush",
+  "OverloadViewerButtonTheme",
+  "OverloadViewerForeground",
+  "RegularExpressionIconPath",
+  "ReplaceAllIconPath",
+  "ReplaceNextIconPath",
+  "SearchPanelBackgroundBrush",
+  "SearchPanelBorderBrush",
+  "SearchPanelExpanderToggle",
+  "SearchPanelFontFamily",
+  "SearchPanelFontSize",
+  "SearchPanelTextBoxButton",
+  "TextAreaSelectionBrush"
+ ]
+}

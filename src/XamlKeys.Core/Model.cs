@@ -157,6 +157,9 @@ public sealed class ResourceDictionaryNode
     /// 一筆真的懸空引用因此被降級成 external。</summary>
     public string? ProjectDir { get; set; }
 
+    /// <summary>不在任何專案目錄底下、但被專案用 Link 連進去的字典：那些專案（例如 Windows-universal-samples 的 SharedContent/xaml/App.xaml）。</summary>
+    public IReadOnlyList<string> LinkedProjects { get; set; } = [];
+
     /// <summary>同一個 &lt;ResourceDictionary.ThemeDictionaries&gt; 群組的識別碼（不是主題字典就是 null）。
     /// ⚠ 同一組裡的字典**本質上互斥**（執行期只會選中一本），所以它們之間永遠不是「覆蓋」。
     /// 這條比用鍵名（Dark／Light／Default／HighContrast）去推穩健得多 ——
@@ -167,6 +170,9 @@ public sealed class ResourceDictionaryNode
     /// <summary>根元素是 &lt;Styles&gt; 的 Avalonia 樣式檔。它不是 ResourceDictionary，
     /// 不判 orphan-dictionary（以元素寫法或程式載入的樣式檔很常見，也不在舊版的檢查範圍）。</summary>
     public bool IsStylesFile { get; set; }
+
+    /// <summary>不在任何 Resources／MergedDictionaries 裡的 &lt;ResourceDictionary&gt; 元素（圖表的 Palette 項目）。鍵由那個控制項照慣例讀，不判 unused。</summary>
+    public bool IsInlineCollectionItem { get; set; }
 
     /// <summary>這本字典依哪一套合併優先序解析。
     /// ⚠ 逐**專案**決定，不是整次掃描一個值：一棵樹裡可以同時有 WPF 與 WinUI 專案

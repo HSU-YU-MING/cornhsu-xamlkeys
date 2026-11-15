@@ -89,6 +89,10 @@ public static class FrameworkKeys
                  || Has(s, "/MaterialDesignThemes.Wpf;component/") || Has(s, "/MaterialDesignColors;component/"), XamlDialect.Wpf),
         new("wpfui", "XamlKeys.Core.WpfUiKeys.json",
             s => s is "<ControlsDictionary/>" or "<ThemesDictionary/>" || Has(s, "/Wpf.Ui;component/"), XamlDialect.Wpf),
+        // 2026-11-15 第十輪 SteamTools（Watt Toolkit）：<sty:FluentAvaloniaTheme/>＋avares://AvaloniaEdit/…，501 筆 external。
+        new("fluent-avalonia", "XamlKeys.Core.FluentAvaloniaKeys.json",
+            s => s == "<FluentAvaloniaTheme/>" || Has(s, "avares://FluentAvalonia/")),
+        new("avaloniaedit", "XamlKeys.Core.AvaloniaEditKeys.json", s => Has(s, "avares://AvaloniaEdit/")),
         new("uno-material", "XamlKeys.Core.UnoMaterialKeys.json",
             s => s is "<MaterialTheme/>" or "<MaterialColors/>" or "<MaterialFonts/>" or "<MaterialResources/>"
                      or "<MaterialToolkitTheme/>" || Has(s, "ms-appx:///Uno.Material"), XamlDialect.WinUi),
