@@ -1829,7 +1829,12 @@ public sealed class Analyzer
                 var buffer = new char[8192];
                 var head = new string(buffer, 0, reader.ReadBlock(buffer, 0, buffer.Length));
                 result = head.Contains("using:Microsoft.UI.Xaml", StringComparison.Ordinal)
-                      || head.Contains("using:Windows.UI.Xaml", StringComparison.Ordinal);
+                      || head.Contains("using:Windows.UI.Xaml", StringComparison.Ordinal)
+                      // 規則 75：WPF 的命名空間寫法只有 clr-namespace:，using: 是 UWP／WinUI／Uno 的（Avalonia 也有，但它的預設命名空間不同）。
+                      // ⚠ 2026-11-15 第九輪 dotnet/maui：src/Controls/src/Core/Platform/Windows/ 的樣式檔（xmlns:uwp="using:Microsoft.Maui.Controls.Platform"）
+                      //   引用 WinUI 的 TitleTextBlockStyle、InfoBadgeBackground，被當成 WPF 檔。
+                      || (head.Contains("\"using:", StringComparison.Ordinal)
+                          && head.Contains("\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"", StringComparison.Ordinal));
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }

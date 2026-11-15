@@ -103,8 +103,10 @@ public sealed class ScopeEngine
             if (chain.Contains(id)) continue;
 
             // 專案推不出來時（檔案不在任何 csproj 底下）保守一點：全部都接
+            // ⚠ 反過來不行：引用在某個專案裡時，**不屬於任何專案**的 App.xaml 不接。
+            //   2026-11-15 第九輪 dotnet/maui：src/ProfiledAot/src/maui/App.xaml 沒有 csproj，它合併一本不存在的 Styles.xaml
+            //   —— 舊版把它接進整個 repo 每一個專案的作用域，真的懸空全部被降級成「也許在那本看不到的裡面」。
             if (project is not null && _byId.TryGetValue(id, out var app)
-                && app.ProjectDir is not null
                 && !string.Equals(app.ProjectDir, project, StringComparison.OrdinalIgnoreCase))
                 continue;
 

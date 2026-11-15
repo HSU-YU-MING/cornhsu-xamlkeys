@@ -29,6 +29,9 @@
     <EmbeddedResource Include="UnoCupertinoKeys.json" LogicalName="XamlKeys.Core.UnoCupertinoKeys.json" />
     <EmbeddedResource Include="UnoToolkitKeys.json" LogicalName="XamlKeys.Core.UnoToolkitKeys.json" />
     <EmbeddedResource Include="ModernWpfKeys.json" LogicalName="XamlKeys.Core.ModernWpfKeys.json" />
+    <EmbeddedResource Include="MahAppsKeys.json" LogicalName="XamlKeys.Core.MahAppsKeys.json" />
+    <EmbeddedResource Include="MaterialDesignKeys.json" LogicalName="XamlKeys.Core.MaterialDesignKeys.json" />
+    <EmbeddedResource Include="WpfUiKeys.json" LogicalName="XamlKeys.Core.WpfUiKeys.json" />
   </ItemGroup>
 
 </Project>

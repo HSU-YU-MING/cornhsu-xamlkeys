@@ -15,6 +15,9 @@
 //   uno-cupertino           unoplatform/Uno.Themes（Cupertino）        UnoCupertinoKeys.json
 //   uno-toolkit             unoplatform/uno.toolkit.ui                UnoToolkitKeys.json
 //   modernwpf               Kinnara/ModernWpf                         ModernWpfKeys.json
+//   mahapps                 MahApps/MahApps.Metro                     MahAppsKeys.json
+//   materialdesign          MaterialDesignInXAML/MaterialDesignInXamlToolkit  MaterialDesignKeys.json
+//   wpfui                   lepoco/wpfui                              WpfUiKeys.json
 //
 // 為什麼需要這份資料：專案的 XAML 大量引用框架或主題套件內建的鍵
 // （TextFillColorPrimaryBrush、ControlCornerRadius、SettingsCardWrapThreshold…），
@@ -86,6 +89,19 @@ const PACKS = {
     repo: 'Kinnara/ModernWpf', out: 'ModernWpfKeys.json',
     // WPF 上仿 WinUI 外觀的函式庫：主題資源與控制項樣式（Gallery、samples、test、tools 不算）
     take: unix => unix.includes('/ModernWpf/') || unix.includes('/ModernWpf.Controls/'),
+  },
+  mahapps: {
+    repo: 'MahApps/MahApps.Metro', out: 'MahAppsKeys.json',
+    take: unix => unix.includes('/src/MahApps.Metro/'),
+  },
+  materialdesign: {
+    repo: 'MaterialDesignInXAML/MaterialDesignInXamlToolkit', out: 'MaterialDesignKeys.json',
+    // 主題本身＋色盤（MaterialDesignColors）；Demo、MahApps／Dragablz 的整合專案不算
+    take: unix => unix.includes('/src/MaterialDesignThemes.Wpf/') || unix.includes('/src/MaterialDesignColors.Wpf/'),
+  },
+  wpfui: {
+    repo: 'lepoco/wpfui', out: 'WpfUiKeys.json',
+    take: unix => unix.includes('/src/Wpf.Ui/'),
   },
   toolkit: {
     repo: 'CommunityToolkit/Windows', out: 'CommunityToolkitKeys.json',

@@ -236,6 +236,16 @@ coincidental name match.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
 
+- **A ninth corpus round: popular WPF libraries** (HandBrake, Playnite, NETworkManager, Bloxstrap, v2rayN,
+  VladislavAntonyuk/MauiSamples, dotnet/maui): 1,271 findings on the first run, 243 after; the earlier 45 projects
+  went from 4,948 to 3,519. The 4 new gated findings are real (HandBrake, MauiSamples) and the 43 earlier ones are
+  unchanged. New:
+  - optional key lists for MahApps.Metro, MaterialDesignThemes and WPF-UI (WPF only, used only when the tree
+    merges them);
+  - a file in the WPF presentation namespace that maps any `using:` namespace is a WinUI file;
+  - an App.xaml that belongs to no project no longer joins the scope of references inside a project — it was
+    turning real dangling references anywhere in the repo into `external`.
+
 - **An eighth corpus round: C++/WinRT, Xamarin.Forms and layered themes** (dnGrep, Prism-Samples-Wpf,
   WoWDatabaseEditor, Dock, Windows Terminal, Windows App SDK samples, xamarin-forms-samples): 506 findings on
   the first run, 214 after; 80 fewer and none added in the earlier 38 projects; the 43 gated findings unchanged.

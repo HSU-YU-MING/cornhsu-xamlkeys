@@ -536,3 +536,108 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## MahApps/MahApps.Metro
+
+**Used for**: `src/XamlKeys.Core/MahAppsKeys.json` — the key names of MahApps.Metro (a WPF UI toolkit). These files contain
+**key names only** (no code, no styles, no values), extracted from the theme resource dictionaries at the
+commit recorded in each file's `source` field. They apply only when the scanned tree merges that library.
+
+- Source: https://github.com/MahApps/MahApps.Metro
+- Commit: `9466e8acd96591e1f552841bc5357f376552bb57`
+- License: MIT
+- Regenerate: `node scripts/regenerate-framework-keys.mjs <mahapps> <clone> <sha>`
+
+```
+MIT License
+
+Copyright (c) .NET Foundation and Contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## MaterialDesignInXAML/MaterialDesignInXamlToolkit
+
+**Used for**: `src/XamlKeys.Core/MaterialDesignKeys.json` — the key names of MaterialDesignInXamlToolkit (MaterialDesignThemes and MaterialDesignColors). These files contain
+**key names only** (no code, no styles, no values), extracted from the theme resource dictionaries at the
+commit recorded in each file's `source` field. They apply only when the scanned tree merges that library.
+
+- Source: https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit
+- Commit: `087728011a8d71926ccf86cb28dc99439e9b1c3f`
+- License: MIT
+- Regenerate: `node scripts/regenerate-framework-keys.mjs <materialdesign> <clone> <sha>`
+
+```
+The MIT License (MIT)
+
+Copyright (c) James Willock,  Mulholland Software and Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## lepoco/wpfui
+
+**Used for**: `src/XamlKeys.Core/WpfUiKeys.json` — the key names of WPF UI (lepoco/wpfui). These files contain
+**key names only** (no code, no styles, no values), extracted from the theme resource dictionaries at the
+commit recorded in each file's `source` field. They apply only when the scanned tree merges that library.
+
+- Source: https://github.com/lepoco/wpfui
+- Commit: `ffebacd61058170cf63864b7d5aa730cffff848a`
+- License: MIT
+- Regenerate: `node scripts/regenerate-framework-keys.mjs <wpfui> <clone> <sha>`
+
+```
+MIT License
+
+Copyright (c) 2021-2025 Leszek Pomianowski and WPF UI Contributors. https://lepo.co/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

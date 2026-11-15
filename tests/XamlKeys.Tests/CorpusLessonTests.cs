@@ -486,7 +486,7 @@ public class CorpusLessonTests : IDisposable
                   <Application.Resources>
                     <ResourceDictionary>
                       <ResourceDictionary.MergedDictionaries>
-                        <ui:ThemesDictionary />
+                        <ui:SomeLibraryDictionary />
                       </ResourceDictionary.MergedDictionaries>
                     </ResourceDictionary>
                   </Application.Resources>
@@ -497,7 +497,8 @@ public class CorpusLessonTests : IDisposable
 
         Assert.DoesNotContain(r.Findings, f => f.Kind == FindingKind.DanglingStatic);
         Assert.Contains(r.Findings, f => f.Kind == FindingKind.External);
-        Assert.Contains(r.ExternalSources, s => s.Contains("ThemesDictionary"));
+        // 2026-11-15 起 WPF-UI 的 <ThemesDictionary/> 有內建的鍵名清單（規則 74），這裡改用一個不認得的名字
+        Assert.Contains(r.ExternalSources, s => s.Contains("SomeLibraryDictionary"));
     }
 
     [Fact]

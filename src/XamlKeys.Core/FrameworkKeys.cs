@@ -81,6 +81,14 @@ public static class FrameworkKeys
         //   UseSystemFocusVisuals、RadioButtonForegroundPointerOver 不再被 WinUI 的清單蓋到 —— 那本來就是誤打誤撞。
         new("modernwpf", "XamlKeys.Core.ModernWpfKeys.json",
             s => s is "<XamlControlsResources/>" or "<ThemeResources/>" || Has(s, "/ModernWpf;component/"), XamlDialect.Wpf),
+        // 2026-11-15 第九輪：NETworkManager（MahApps）、v2rayN（MaterialDesign）、Bloxstrap（WPF-UI）的 external 幾乎全是這三套。
+        // 三套都是 WPF 函式庫；鍵名從語料裡的 clone 產生，只在樹真的合併了它們時才算。
+        new("mahapps", "XamlKeys.Core.MahAppsKeys.json", s => Has(s, "/MahApps.Metro;component/"), XamlDialect.Wpf),
+        new("materialdesign", "XamlKeys.Core.MaterialDesignKeys.json",
+            s => s is "<BundledTheme/>" or "<CustomColorTheme/>" or "<MaterialDesignTheme/>"
+                 || Has(s, "/MaterialDesignThemes.Wpf;component/") || Has(s, "/MaterialDesignColors;component/"), XamlDialect.Wpf),
+        new("wpfui", "XamlKeys.Core.WpfUiKeys.json",
+            s => s is "<ControlsDictionary/>" or "<ThemesDictionary/>" || Has(s, "/Wpf.Ui;component/"), XamlDialect.Wpf),
         new("uno-material", "XamlKeys.Core.UnoMaterialKeys.json",
             s => s is "<MaterialTheme/>" or "<MaterialColors/>" or "<MaterialFonts/>" or "<MaterialResources/>"
                      or "<MaterialToolkitTheme/>" || Has(s, "ms-appx:///Uno.Material"), XamlDialect.WinUi),

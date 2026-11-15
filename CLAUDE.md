@@ -87,6 +87,8 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   第一版把它加進 Application 作用域，Avalonia 的 `new FluentTheme()`、SukiUI 的主題類別整本進了全專案的作用域，
   已回報上游的真 bug 被降級成 external —— 是舊語料逐筆比對抓到的。
 - **C++/WinRT**：`.vcxproj` 一律 WinUI；只讀有 XAML 的 vcxproj 底下的 `.cpp`／`.h`（Windows Terminal 有上千個）。
+- **作用域的放寬要看「會不會藏 bug」**：不屬於任何專案的 App.xaml 以前會接進每個專案（`ScopeEngine.EffectiveChain`），
+  它合併的一本看不到的字典讓整個 repo 的真懸空都變成 external。「保守」是對**推不出專案的引用**保守，不是對別人的 App.xaml。
 - **主題套件的鍵名清單是選用的**（`FrameworkKeys.Packs`）：只有樹裡真的合併了那個主題才算。
   清單可以限定方言（`ThemePack.Dialect`）：不同生態系的主題元素會撞名（Uno／Avalonia 的 `SimpleTheme`）。
   新增清單照 `scripts/regenerate-framework-keys.mjs` 的表加一列、`.csproj` 加 EmbeddedResource、
