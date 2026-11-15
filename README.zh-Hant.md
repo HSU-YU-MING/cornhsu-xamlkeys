@@ -169,11 +169,12 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 
 ## 已知盲區
 
-每一條都是拿公開專案實跑找出來的 —— 目前 90 個（WPF、WinUI、UWP、Uno、Avalonia、.NET MAUI、Xamarin.Forms，約 17,700 個 XAML 檔；
+每一條都是拿公開專案實跑找出來的 —— 目前 96 個（WPF、WinUI、UWP、Uno、Avalonia、.NET MAUI、Xamarin.Forms，約 18,100 個 XAML 檔；
 釘死 commit 的清單在 [docs/corpus.tsv](docs/corpus.tsv)），完整歸因見 [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md)。
 
 | 盲區 | 後果 | 工具怎麼處理 |
 |---|---|---|
+| 函式庫自己的鍵名慣例（CarinaStudio.AppSuite 的 `{asXaml:StringResource 名稱}` 與 `GetString("名稱")` 都對到 `String/名稱` 這個鍵） | 可能看起來沒人用 | 不猜：對應關係寫在函式庫裡。用 `usedAtRuntime` 加一條（`"String/*"`）。App 類別繼承樹外的基底時，那個基底當成看不到的來源 —— 函式庫提供的鍵是 `external`，不是懸空 |
 | 執行期組出來的鍵名 | 可能看起來沒人用 | 有 3 個字以上的固定部分（`$"Icon{n}"`、`"Icon" + n`、`n + "Brush"`）時，同專案裡符合的鍵算有人用，summary 會講有幾個；完全由變數決定的計入動態查找點，`usedAtRuntime` 可壓制 |
 | 第三方組件裡的字典 | 看不到內容 | 標 `external`、計數、拉低覆蓋率。例外：工具內建鍵名清單的主題 —— WinUI 的 `XamlControlsResources`、.NET 的 WPF Fluent、Avalonia 的 Fluent／Fluent2／Simple／ColorPicker／DataGrid／TreeDataGrid、Windows Community Toolkit、Semi.Avalonia、Uno Material／Cupertino／Toolkit、ModernWpf、MahApps.Metro、MaterialDesignThemes、WPF-UI、FluentAvalonia、AvaloniaEdit —— 算解析得到，而且只在這棵樹真的合併了才算 |
 | 程式用組出來的 URI 載入的字典 | 可能看起來是孤兒 | 認得 C# 裡的字面 `.xaml` 路徑，也認得有固定部分的（`$"Themes/{name}.xaml"` 會載入該專案的每一本 `Themes/*.xaml`）；`$"{name}.xaml"` 與用 `+` 串的路徑認不得 |

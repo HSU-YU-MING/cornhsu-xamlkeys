@@ -163,6 +163,13 @@ public sealed partial class CSharpScanner
     ///   但 AvalonDock 自己也有一個叫 ResourceKeys 的類別 —— 只比短名的話，10 個覆寫被報成沒人用。</remarks>
     public HashSet<string> QualifiedTypesDeclared { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>每個 C# 類別宣告的第一個基底（短名）—— 規則 92 用來看 App 繼承誰。</summary>
+    public Dictionary<string, string> ClassBases { get; } = new(StringComparer.Ordinal);
+    /// <summary>樹裡宣告過的所有類別短名。</summary>
+    public HashSet<string> ClassesDeclared { get; } = new(StringComparer.Ordinal);
+    /// <summary>型別別名：<c>using AvApplication = Avalonia.Application;</c> → AvApplication → Application。</summary>
+    public Dictionary<string, string> TypeAliases { get; } = new(StringComparer.Ordinal);
+
     private void FindTypes(string code)
     {
         List<string>? namespaces = null;
@@ -221,6 +228,13 @@ public sealed partial class CSharpScanner
         if (WordsToFind.Count > 0) FindWords(code);
         if (TypesToFind.Count > 0) FindTypes(code);
         if (ClassesToFind.Count > 0) FindCreatedClasses(code, project);
+        foreach (var m in TypeAliasRegex().Matches(code).Cast<Match>())
+            TypeAliases.TryAdd(m.Groups["a"].Value, m.Groups["t"].Value);
+        foreach (var m in ClassDeclRegex().Matches(code).Cast<Match>())
+        {
+            ClassesDeclared.Add(m.Groups["c"].Value);
+            if (m.Groups["b"].Success) ClassBases.TryAdd(m.Groups["c"].Value, m.Groups["b"].Value);
+        }
         if (ApplicationClassRegex().IsMatch(code))
             foreach (var m in AppResourcesAddRegex().Matches(code).Cast<Match>())
                 DictionariesAddedToApplication.Add((m.Groups["c"].Value, project));
@@ -285,9 +299,25 @@ public sealed partial class CSharpScanner
                 IsWrite = WriteAfterRegex().IsMatch(code, m.Index + m.Length),
             });
 
+        // 規則 94：Resources[nameof(addActionMenu)]、FindResource(nameof(X)) —— 鍵名在編譯時就定了，跟字串字面一樣
+        // ⚠ 2026-11-15 第十五輪 ULogViewer：17 處這樣讀 ContextMenu，舊版當成「執行期組出來、看不到」的動態查找，那些鍵被報成沒人用
+        foreach (var m in NameofLookupRegex().Matches(code).Cast<Match>())
+        {
+            var inner = m.Groups["k"].Value;
+            _references.Add(new KeyReference
+            {
+                Key = inner.Contains('.') ? inner[(inner.LastIndexOf('.') + 1)..] : inner,
+                Location = new SourceLocation(rel, LineAt(code, m.Index)),
+                Kind = RefKind.CSharp,
+                ScopeChain = [],
+                IsWrite = WriteAfterRegex().IsMatch(code, m.Index + m.Length),
+            });
+        }
+
         var dynamicBefore = _dynamicSites.Count;
         foreach (var m in DynamicLookupRegex().Matches(code).Cast<Match>())
         {
+            if (NameofLookupRegex().IsMatch(m.Value)) continue;
             var (prefix, suffix) = ComposedPattern(m.Value);
             _dynamicSites.Add(new DynamicKeySite(
                 new SourceLocation(rel, LineAt(code, m.Index)),
@@ -491,10 +521,12 @@ public sealed partial class CSharpScanner
     //   Avalonia   TryFindResource("K", out v)、TryFindResource("K", theme, out v)、TryGetResource("K", theme, out v)、
     //              GetResourceObservable("K")、new DynamicResourceExtension("K")
     //   MAUI       SetDynamicResource(prop, "K")、Resources.TryGetValue("K", out v)
+    //   泛型擴充   FindResourceOrDefault<T>("K")、TryFindResource<T>("K", out v)（規則 93）
+    //              ⚠ 2026-11-15 第十五輪 ULogViewer（CarinaStudio.AppSuite）：泛型寫法對不上，圖示、選單、尺寸被報成沒人用
     // ⚠ 2026-11-14 之前只認 WPF 那四種。Avalonia 的 TryFindResource 多一個 out 參數，
     //   原本的「字串後面緊接右括號」對不上，於是那些鍵被當成沒人用。
     [GeneratedRegex("""
-        (?:(?:Try)?FindResource\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*[,)])
+        (?:(?:Try)?FindResource(?:OrDefault)?\s*(?:<[^<>()"]{1,80}>)?\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*[,)])
         | (?:Set(?:ResourceReference|DynamicResource)\s*\([^,()]*,\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
         | (?:Resources\s*\[\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\])
         | (?:TryGetResource\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*,)
@@ -503,6 +535,12 @@ public sealed partial class CSharpScanner
         | (?:(?:Dynamic|Static)ResourceExtension\s*\(\s*"(?<k>(?:[^"\\]|\\.)*)"\s*\))
         """, RegexOptions.IgnorePatternWhitespace)]
     private static partial Regex LiteralLookupRegex();
+
+    [GeneratedRegex("""
+        (?:Resources\s*\[\s*nameof\s*\(\s*(?<k>[\w.]+)\s*\)\s*\])
+        | (?:(?:Try)?FindResource(?:OrDefault)?\s*(?:<[^<>()"]{1,80}>)?\s*\(\s*nameof\s*\(\s*(?<k>[\w.]+)\s*\)\s*[,)])
+        """, RegexOptions.IgnorePatternWhitespace)]
+    private static partial Regex NameofLookupRegex();
 
     // 同樣的呼叫但鍵名不是字面字串 —— $"Icon{name}"、變數、常數、三元。
     // ⚠ (?!["\s]) 而不是 (?!")：「FindResource( "K")」左括號後面有空白時，\s* 會退回去，
@@ -527,6 +565,12 @@ public sealed partial class CSharpScanner
     private static partial Regex DynamicLookupRegex();
 
     // 長得像鍵名的一般字串字面（不含 $"…" 與 @"…"）。用在 LiteralsNearDynamicLookups。
+    [GeneratedRegex(@"\bclass\s+(?<c>[A-Za-z_]\w*)(?:\s*<[^>{]*>)?(?:\s*:\s*(?:global::)?(?:[\w]+\.)*(?<b>[A-Za-z_]\w*))?")]
+    private static partial Regex ClassDeclRegex();
+
+    [GeneratedRegex(@"\busing\s+(?<a>[A-Za-z_]\w*)\s*=\s*(?:global::)?(?:[\w]+\.)*(?<t>[A-Za-z_]\w*)\s*;")]
+    private static partial Regex TypeAliasRegex();
+
     [GeneratedRegex(@"\bclass\s+\w+\s*:\s*(?:[\w.]+\.)?Application\b")]
     private static partial Regex ApplicationClassRegex();
 
@@ -536,7 +580,7 @@ public sealed partial class CSharpScanner
     [GeneratedRegex(@"(?<![\w])L""")]
     private static partial Regex CppWideString();
 
-    [GeneratedRegex("""(?<![@$\w"])"(?<s>[A-Za-z_][\w.\-]{0,99})(?=")""")]
+    [GeneratedRegex("""(?<![@$\w"])"(?<s>[A-Za-z_][\w.\-/]{0,99})(?=")""")]
     private static partial Regex KeyLikeLiteralRegex();
 
     // ⚠ .axaml 也要認（Avalonia）。組出來的路徑（$"Themes/{name}.xaml"）也會被這條抓到，
@@ -583,7 +627,7 @@ public sealed partial class CSharpScanner
     private static partial Regex WriteAfterRegex();
 
     // $"Pre{x}Suf" —— 恰好一個洞、前後只有像鍵名的字元（有空白、冒號的是訊息字串，不是鍵）
-    [GeneratedRegex("""\$@?"(?<p>[A-Za-z0-9_.\-]*)\{[^{}"]{1,80}\}(?<s>[A-Za-z0-9_.\-]*)"(?!")""")]
+    [GeneratedRegex("""\$@?"(?<p>[A-Za-z0-9_.\-/]*)\{[^{}"]{1,80}\}(?<s>[A-Za-z0-9_.\-]*)"(?!")""")]
     private static partial Regex ComposedNameRegex();
 
     // $"{baseName}75" —— 以洞開頭、固定結尾的內插字串，取結尾

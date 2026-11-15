@@ -196,10 +196,55 @@ public sealed partial class SourceResolver
             }
 
             var target = Path.GetFullPath(Path.Combine(dir, include.Replace('\\', Path.DirectorySeparatorChar)));
-            _links[(dir, NormalizeLink(link))] = target;
-            if (!_linkedInto.TryGetValue(target, out var projects)) _linkedInto[target] = projects = [];
-            if (!projects.Contains(dir, StringComparer.OrdinalIgnoreCase)) projects.Add(dir);
+            AddLink(dir, link, target);
         }
+
+        // 規則 95：共用專案 <Import Project="…\X.projitems" Label="Shared"/> —— 裡面的 XAML 編進匯入它的專案，
+        // 路徑是相對於 .projitems 所在的資料夾（App.xaml 寫 Source="Views/Styles/…" 就是那個路徑）。
+        // ⚠ 2026-11-15 第十五輪 NuGetPackageExplorer：WinUI 頭專案匯入 NugetPackageExplorer.Shared.Legacy.projitems，
+        //   13 本樣式字典全在共用專案裡 —— 舊版一本都解析不到，覆蓋率 50%，213 筆 external。
+        foreach (var import in doc.Descendants().Where(e => e.Name.LocalName == "Import"))
+        {
+            var project = import.Attribute("Project")?.Value;
+            if (project is null || !project.EndsWith(".projitems", StringComparison.OrdinalIgnoreCase)) continue;
+            if (project.Contains("$(")) project = ExpandProperties(project, props);
+            if (project.Contains("$(")) continue;
+            var itemsFile = Path.GetFullPath(Path.Combine(dir, project.Replace('\\', Path.DirectorySeparatorChar)));
+            if (!Exists(itemsFile)) continue;
+            ReadSharedItems(itemsFile, dir);
+        }
+    }
+
+    private void ReadSharedItems(string itemsFile, string importingDir)
+    {
+        System.Xml.Linq.XDocument doc;
+        try { doc = System.Xml.Linq.XDocument.Load(itemsFile); }
+        catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { return; }
+
+        var itemsDir = Path.GetDirectoryName(itemsFile)!;
+        var props = ReadProperties(doc, itemsDir);
+        foreach (var item in doc.Descendants())
+        {
+            var include = item.Attribute("Include")?.Value;
+            if (include is null) continue;
+            if (include.Contains("$(")) include = ExpandProperties(include, props);
+            if (include.Contains("$(") || include.Contains('*')) continue;
+            if (!include.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase)
+                && !include.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var target = Path.GetFullPath(Path.Combine(itemsDir, include.Replace('\\', Path.DirectorySeparatorChar)));
+            var link = item.Attribute("Link")?.Value
+                    ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Link")?.Value
+                    ?? Path.GetRelativePath(itemsDir, target);
+            AddLink(importingDir, link, target);
+        }
+    }
+
+    private void AddLink(string dir, string link, string target)
+    {
+        _links[(dir, NormalizeLink(link))] = target;
+        if (!_linkedInto.TryGetValue(target, out var projects)) _linkedInto[target] = projects = [];
+        if (!projects.Contains(dir, StringComparer.OrdinalIgnoreCase)) projects.Add(dir);
     }
 
     /// <summary>用 Link 把這個檔（絕對路徑）連進去的專案目錄。</summary>

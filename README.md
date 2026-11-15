@@ -217,12 +217,13 @@ be able to reach `\\host\share` or the rest of the machine.
 
 ## Known limitations
 
-Every one of these was found by running the tool over public projects — 90 of them by now (WPF, WinUI,
-UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 17,700 XAML files; the list with pinned commits is
+Every one of these was found by running the tool over public projects — 96 of them by now (WPF, WinUI,
+UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 18,100 XAML files; the list with pinned commits is
 [docs/corpus.tsv](docs/corpus.tsv)) — see [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md).
 
 | Limitation | Effect | What the tool does about it |
 |---|---|---|
+| A library's own key convention (CarinaStudio.AppSuite's `{asXaml:StringResource Name}` and `GetString("Name")` both reach the key `String/Name`) | Could look unused | Not guessed: the mapping lives in the library. Add a `usedAtRuntime` pattern (`"String/*"`). An application class that derives from a base class outside the tree is treated as an unseen source, so keys the library supplies are `external`, not dangling |
 | Keys composed at runtime (`$"Icon{n}"`) | Could look unused | With a fixed part of three characters or more (`$"Icon{n}"`, `"Icon" + n`, `n + "Brush"`), keys in the same project that match count as used, and the summary says how many. Fully variable lookups are counted as dynamic sites; `usedAtRuntime` patterns suppress the keys they reach |
 | Dictionaries inside third-party assemblies | Their contents are invisible | Marked `external`, counted, and they lower the coverage figure. Exception: themes whose key names ship with the tool — WinUI's `XamlControlsResources`, .NET's WPF Fluent theme, Avalonia's Fluent/Fluent2/Simple/ColorPicker/DataGrid/TreeDataGrid themes the Windows Community Toolkit, Semi.Avalonia, Uno Material/Cupertino/Toolkit, ModernWpf, MahApps.Metro, MaterialDesignThemes, WPF-UI, FluentAvalonia and AvaloniaEdit — count as resolved, and only when the tree merges them |
 | Dictionaries merged by composed URIs in code | May look orphaned | Literal `.xaml` paths in C# are detected, and so are composed ones with a fixed part (`$"Themes/{name}.xaml"` loads every `Themes/*.xaml` in that project). `$"{name}.xaml"` and paths built with `+` are not |

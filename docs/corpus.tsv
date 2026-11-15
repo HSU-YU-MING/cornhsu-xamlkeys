@@ -6,6 +6,7 @@ avaloniaedit	AvaloniaUI/AvaloniaEdit	9eeba9bd10ebfc96d1a20ec95f42789debf99e51	11
 avbehaviors	AvaloniaUI/Avalonia.Xaml.Behaviors	4f21f265b14b129b9117853e0175e323b6c132fd	27	0	0
 avsamples	AvaloniaUI/Avalonia.Samples	21ec7b0a2393b3f1057f62397fd2dc229b7fedb4	69	1	0
 bettergi	babalae/better-genshin-impact	cc3099a1a8e6470bdbd649dd232aa06011cd60a0	150	15	0
+bililive	BililiveRecorder/BililiveRecorder	2744d605b93fec44d00a7957de93ec3148e412fc	26	4	0
 bloxstrap	bloxstraplabs/bloxstrap	02db76006741f039b79ac7547b8054d7f3ccfc05	40	2	0
 calculator	microsoft/calculator	79e1ac53bba690cdf930e5dcd6ed9dbc4cbfb128	28	72	0
 collapse	CollapseLauncher/Collapse	9b249a8fac06e67b8325c4318a6ed317e7ba97f9	73	96	0
@@ -25,9 +26,10 @@ fileconverter	Tichau/FileConverter	5dce6c0980635e3a6ae8d8acff235bcc9b1441a4	11	3
 files	files-community/Files	f6f35e798a81664d73aa0fbfdc6a223bd753909e	136	38	0
 flowlauncher	Flow-Launcher/Flow.Launcher	ff99ea05d7ad198de6e26e2878215f7221860dac	393	491	0
 fluentavalonia	amwx/FluentAvalonia	e6def96e6281b79cb859e7984c7807e911e90878	191	52	0
+fluenthub	0x5bfa/FluentHub	eb08f0dbcbb43880ab34038b0cb6742f0c0deca5	22	0	0
 fluentribbon	fluentribbon/Fluent.Ribbon	8572cb2123b235c40ac69aea8fb0e9ee9a2d501a	70	60	0
 handbrake	HandBrake/HandBrake	6f084c5fe6e8348ec129ec832b88bfad7367307e	58	20	2
-handycontrol	HandyOrg/HandyControl	e9ad3d701b90e724399a413569fbd7f35a141053	487	93	0
+handycontrol	HandyOrg/HandyControl	e9ad3d701b90e724399a413569fbd7f35a141053	487	99	0
 imageglass	d2phap/ImageGlass	642f0d791671c9d6f1b54f15074bf5c03fae62a1	63	59	0
 livecharts2	beto-rodriguez/LiveCharts2	8537b90ffb100a947cd0b1f6be49f896ae6050eb	467	31	0
 lively	rocksdanister/lively	25a0a5f4ed1988ff42117d3a17feb321062237fe	57	13	0
@@ -48,6 +50,7 @@ naudio	naudio/NAudio	174bb499e5d36df1617377cbc1c72e503fc8f22e	28	1	0
 netsparkle	Deadpikle/NetSparkle	7552120742ad34ec5b9c2793889831881f64d5fe	23	0	0
 networkmanager	BornToBeRoot/NETworkManager	306e14b8909ff651cce312613cfb142d3b0dd6af	173	76	0
 notepads	0x7c13/Notepads	6ec270c134b115d6bff38bc3966784e8893a419c	34	4	0
+nugetpe	NuGetPackageExplorer/NuGetPackageExplorer	e2b0d9c8e0264d1580c1fc33a4bd866294856357	52	39	0
 picview	Ruben2776/PicView	f1b6cba6f8e3a03bda2640fa6cb2a2023d1e182b	162	49	2
 pixeval	Pixeval/Pixeval	3ebcbc3561426e2f1e2cab4d9bc29c29cea63504	107	40	0
 pixieditor	PixiEditor/PixiEditor	7395f4d753e01958f4654c98137d22b23955e41b	229	74	0
@@ -71,11 +74,13 @@ sukiui	kikipoulet/SukiUI	a7ce56d527eda5e796daa823f324cec86a7b523b	219	93	0
 synctrayzor	canton7/SyncTrayzor	234ff60a160f87e574869dd6d761643f40125dfa	25	5	0
 telepathy	davidortinau/Telepathy	61992656f5c49d2531e438eb1152c2696c9da154	28	69	1
 terminal	microsoft/terminal	f6de9e0618015def1c9dda5b82f9d3abf03eb799	50	0	0
+ulogviewer	carina-studio/ULogViewer	cec7f75bf76b650bf63158f9b2176951569fad5b	65	1976	0
 unigetui	marticliment/UniGetUI	da6be7b86100302a79a208e7ab4d5c6fcd695fd5	68	60	0
 unochefs	unoplatform/Uno.Chefs	d3591606dae2e5f4892ab4872a8dd94c2fc9e211	36	21	0
+unoextensions	unoplatform/uno.extensions	87ccada786d23832cf169f39c8041938e266f6dd	52	51	0
 unogallery	unoplatform/Uno.Gallery	e724bfda8d59ac72398d6bfb7865d0e298e21354	138	135	0
-unosamples	unoplatform/Uno.Samples	da93d84026032f3ad07dc41ab5e044c88d232027	818	863	0
-unotoolkit	unoplatform/uno.toolkit.ui	b587c5573ffc5f06b32ec1ff284e5a3b7f72a0a0	136	1	0
+unosamples	unoplatform/Uno.Samples	da93d84026032f3ad07dc41ab5e044c88d232027	818	973	0
+unotoolkit	unoplatform/uno.toolkit.ui	b587c5573ffc5f06b32ec1ff284e5a3b7f72a0a0	136	3	0
 ursa	irihitech/Ursa.Avalonia	68b7fbbc196f63ba6f724e2508e8decd621bb67b	304	16	0
 uwpsamples	microsoft/Windows-universal-samples	4eb2fcb499c5bc549e918920cfd2b64396a650d9	1249	79	0
 v2rayn	2dust/v2rayN	2c90ed1a9438a499aaaea0b612ffd5d705970106	53	16	0
@@ -83,6 +88,7 @@ wasabi	WalletWasabi/WalletWasabi	579794494f276bb1d7c0ead33871e511a9b1584c	208	10
 wasdksamples	microsoft/WindowsAppSDK-Samples	671ddff695f4d45526f7e18362623228595dd5e9	365	43	0
 wct	CommunityToolkit/WindowsCommunityToolkit	c8f76d072df53d3622fb5440d63afb06cb9e7a10	164	66	0
 weather21	davidortinau/WeatherTwentyOne	4044b7c35459848af973db7e9e96f521b005d9ba	12	26	1
+winomail	bkaankose/Wino-Mail	fc4c6774b3292c34347d675500b439c42a014fb5	213	30	0
 winui-gallery	microsoft/WinUI-Gallery	6de91feccadfbb0a796b71caedead5a2284f730e	194	15	0
 wowdbeditor	BAndysc/WoWDatabaseEditor	0f96a022de476e020d2b8e58eeed9ad0f66696dc	370	66	0
 wpfsamples	microsoft/WPF-Samples	811d01e95c8c929e68539d698d0a0609e94fd185	745	116	2

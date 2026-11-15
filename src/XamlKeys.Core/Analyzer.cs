@@ -309,6 +309,28 @@ public sealed class Analyzer
             result.RuntimeLoadedDictionaries++;
         }
         result.DictionariesCreatedInCode = createdDicts.Count;
+        // 規則 92：App 繼承的是樹外的類別（AppSuiteApplication 之類）—— 那個基底可能在程式裡加資源，Application 作用域裡有看不到的東西
+        // ⚠ 2026-11-15 第十五輪 ULogViewer：App : AppSuiteApplication（CarinaStudio.AppSuite，NuGet），Fluent 主題、圖示都由它載入 —— 720 筆假懸空、232 筆假 gate。
+        foreach (var d in dicts.Where(d => d.IsApplicationScope))
+        {
+            if (!scanner.ClassOfFile.TryGetValue(Path.GetFullPath(d.File), out var appClass)) continue;
+            var shortName = appClass[(appClass.LastIndexOf('.') + 1)..];
+            if (!cs.ClassBases.TryGetValue(shortName, out var baseClass)) continue;
+            if (cs.TypeAliases.TryGetValue(baseClass, out var aliased)) baseClass = aliased;   // Avalonia 的範例：using AvApplication = Avalonia.Application
+            // WPF 的 code-behind 常常只寫介面（partial class App : IDisposable, ISingleInstanceApp）—— 基底在 XAML 的根元素
+            // ⚠ 2026-11-15 第十五輪 Flow Launcher、ScreenToGif：第一版把 IDisposable 當成樹外的基底，程式查找的真懸空跟著被遮掉
+            if (baseClass.Length > 1 && baseClass[0] == 'I' && char.IsUpper(baseClass[1])) continue;
+            if (ResourceFreeApplicationBases.Contains(baseClass) || cs.ClassesDeclared.Contains(baseClass)) continue;
+            d.Merged.Add(new MergedReference
+            {
+                RawSource = $"<{baseClass}/> (base class of {shortName})",
+                Location = new SourceLocation(Path.GetRelativePath(root, d.File).Replace(Path.DirectorySeparatorChar, '/'), 1),
+                ResolvedDictionaryId = null,
+                ExternalReason = $"the application class derives from '{baseClass}', which is not in this tree; a library base class can add resources in code",
+            });
+            externalMerges.Add((d.Merged[^1].RawSource, d));   // 算進看不到的來源（覆蓋率、程式查找的「樹裡有沒有看不到的東西」）
+            result.MergeEdges++;
+        }
         MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result, resolver.ProjectDirsOfAssembly);
         result.HasApplication = projects.HasAnyApplication;
 
@@ -1766,6 +1788,14 @@ public sealed class Analyzer
         return p[start..component];
     }
 
+    /// <summary>框架本身的 Application 類別，與已知不加資源的框架基底（規則 92 不把它們當成看不到的來源）。</summary>
+    /// <remarks>PrismApplication：Prism 只接管啟動流程（Dopamine）。MauiApplication：MAUI 在 Android／iOS 的宿主類別（egmaui）。
+    ///   名單只放查過的，不要猜。</remarks>
+    private static readonly HashSet<string> ResourceFreeApplicationBases = new(StringComparer.Ordinal)
+    {
+        "Application", "PrismApplication", "MauiApplication",
+    };
+
     internal static (string Prefix, string Suffix)? ComposedPathPattern(string path)
     {
         var first = path.IndexOf('{');
@@ -1785,6 +1815,9 @@ public sealed class Analyzer
             var slash = prefix.IndexOf('/', "avares://".Length);
             prefix = slash >= 0 ? prefix[(slash + 1)..] : "";
         }
+        // 規則 97：ms-appx:///AppThemes/{name}.xaml —— 套件根目錄，等於專案裡的相對路徑
+        // ⚠ 2026-11-15 第十五輪 Wino Mail：PreDefinedAppTheme 這樣讀六套主題，舊版把它們全報成孤兒
+        else if (prefix.StartsWith("ms-appx:///", StringComparison.OrdinalIgnoreCase)) prefix = prefix["ms-appx:///".Length..];
         prefix = prefix.TrimStart('/');
         if (prefix.StartsWith("./", StringComparison.Ordinal)) prefix = prefix[2..];
 

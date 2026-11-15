@@ -15,8 +15,8 @@ First release. (The heading gets the release date when the tag is pushed.)
 
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
-against 93 real projects — 90 public ones and three of the maintainer's, about 17,700 XAML files —
-in fourteen rounds; the sections below are in the order the work happened, so the first
+against 99 real projects — 96 public ones and three of the maintainer's, about 18,100 XAML files —
+in fifteen rounds; the sections below are in the order the work happened, so the first
 "Validated against" section describes round one only. Across the final corpus the default gate
 fires on 50 findings in seven projects, every one of them verified by hand; the public corpus is
 listed with pinned commits and expected counts in `docs/corpus.tsv`.
@@ -236,6 +236,19 @@ coincidental name match.
     library, which in a monorepo made nearly the whole tree related.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
+
+- **A fifteenth corpus round: library base classes and shared projects** (ULogViewer, NuGetPackageExplorer,
+  Wino Mail, Uno.Extensions, BililiveRecorder, FluentHub): 2,613 findings on the first run, 2,100 after; the 232
+  gated findings were all false. Of the earlier 90 projects only three changed, all from shared projects. New:
+  - an application class deriving from a base class outside the tree (other than the framework's `Application`,
+    `PrismApplication` or MAUI's `MauiApplication`; interfaces and `using` aliases are seen through) makes that
+    base an unseen source in Application scope: missing keys there are `external`, not dangling;
+  - `FindResourceOrDefault<T>("K")` / `TryFindResource<T>("K", out v)` are literal lookups;
+  - `Resources[nameof(X)]` / `FindResource(nameof(X))` are references to `X`, not runtime-composed lookups;
+  - XAML in a shared project (`<Import Project="….projitems"/>`) belongs to the importing project, at its path
+    under the shared folder (or its `Link`);
+  - keys may contain `/` when C# names or composes them (`"Image/Icon.Chat"`);
+  - a composed `ms-appx:///Themes/{name}.xaml` matches dictionaries like `;component/` and `avares://` paths do.
 
 - **A fourteenth corpus round, and the corpus made reproducible.** The public projects are now listed in
   `docs/corpus.tsv` with a pinned commit and their expected counts; `scripts/corpus-run.sh` re-clones them sparsely
