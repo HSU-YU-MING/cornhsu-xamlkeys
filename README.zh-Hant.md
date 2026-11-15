@@ -25,9 +25,9 @@ xamlkeys path/to/your/wpf/project
 
 | 種類 | 分級 | 意思 |
 |---|---|---|
-| `dangling-static` | **fail** | `{StaticResource K}` 但沒有人定義 `K`。執行期丟例外——載入時，或寫在 Style 的 Setter 裡時要等那個屬性第一次被用到（`FocusVisualStyle` 的 Setter 要等鍵盤焦點，所以視窗能正常開、之後才當掉）。 |
+| `dangling-static` | **fail** | `{StaticResource K}`（或 WinUI／UWP 的 `{ThemeResource K}`）但沒有人定義 `K`。ThemeResource 找不到跟 StaticResource 一樣是 XAML 剖析例外。執行期丟例外——載入時，或寫在 Style 的 Setter 裡時要等那個屬性第一次被用到（`FocusVisualStyle` 的 Setter 要等鍵盤焦點，所以視窗能正常開、之後才當掉）。 |
 | `duplicate-key` | **fail** | 同一本字典裡同一個 `x:Key` 兩次。載入時 parser 丟錯，編譯器不擋。 |
-| `dangling-dynamic` | warn | `{DynamicResource K}` / `{ThemeResource K}` 找不到。默默退回預設值。 |
+| `dangling-dynamic` | warn | `{DynamicResource K}`（或程式碼裡的查找）找不到。默默退回預設值。 |
 | `out-of-scope` | warn | `K` 在專案裡存在，但不在這個引用看得到的地方。 |
 | `shadowed` | warn | 合併順序讓這份定義永遠輪不到，而且贏家的內容**不一樣**。 |
 | `shadowed-identical` | info | 同上，但每一份都一模一樣 —— 多餘，不是錯。 |
@@ -169,11 +169,12 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 
 ## 已知盲區
 
-每一條都是拿公開專案實跑找出來的 —— 目前 96 個（WPF、WinUI、UWP、Uno、Avalonia、.NET MAUI、Xamarin.Forms，約 18,100 個 XAML 檔；
+每一條都是拿公開專案實跑找出來的 —— 目前 102 個（WPF、WinUI、UWP、Uno、Avalonia、.NET MAUI、Xamarin.Forms，約 18,400 個 XAML 檔；
 釘死 commit 的清單在 [docs/corpus.tsv](docs/corpus.tsv)），完整歸因見 [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md)。
 
 | 盲區 | 後果 | 工具怎麼處理 |
 |---|---|---|
+| UWP 平台自己的資源（Windows SDK 裡系統的 `generic.xaml`） | 系統內建控制項的鍵看起來沒定義 | 不打包（授權），也不讀本機的檔（結果會因機器而異）。UWP 專案裡，只有 UWP 才有的內建控制項（`InkToolbar…`、`Handwriting…`、`ContentLink…`）的鍵報 `external`；其他找不到的鍵照樣是懸空 |
 | 函式庫自己的鍵名慣例（CarinaStudio.AppSuite 的 `{asXaml:StringResource 名稱}` 與 `GetString("名稱")` 都對到 `String/名稱` 這個鍵） | 可能看起來沒人用 | 不猜：對應關係寫在函式庫裡。用 `usedAtRuntime` 加一條（`"String/*"`）。App 類別繼承樹外的基底時，那個基底當成看不到的來源 —— 函式庫提供的鍵是 `external`，不是懸空 |
 | 執行期組出來的鍵名 | 可能看起來沒人用 | 有 3 個字以上的固定部分（`$"Icon{n}"`、`"Icon" + n`、`n + "Brush"`）時，同專案裡符合的鍵算有人用，summary 會講有幾個；完全由變數決定的計入動態查找點，`usedAtRuntime` 可壓制 |
 | 第三方組件裡的字典 | 看不到內容 | 標 `external`、計數、拉低覆蓋率。例外：工具內建鍵名清單的主題 —— WinUI 的 `XamlControlsResources`、.NET 的 WPF Fluent、Avalonia 的 Fluent／Fluent2／Simple／ColorPicker／DataGrid／TreeDataGrid、Windows Community Toolkit、Semi.Avalonia、Uno Material／Cupertino／Toolkit、ModernWpf、MahApps.Metro、MaterialDesignThemes、WPF-UI、FluentAvalonia、AvaloniaEdit —— 算解析得到，而且只在這棵樹真的合併了才算 |

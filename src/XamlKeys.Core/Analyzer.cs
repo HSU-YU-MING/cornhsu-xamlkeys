@@ -188,7 +188,7 @@ public sealed class AnalysisResult
 ///   4. 函式庫專案不報 unused／orphan，作用域放寬到整個專案 —— 它的字典是給別人合併的。
 ///   5. 框架自己提供的鍵不是懸空。
 /// </summary>
-public sealed class Analyzer
+public sealed partial class Analyzer
 {
     private static readonly string[] DefaultExcludes =
         ["bin", "obj", "node_modules", "packages", "artifacts", "TestResults"];
@@ -309,6 +309,19 @@ public sealed class Analyzer
             result.RuntimeLoadedDictionaries++;
         }
         result.DictionariesCreatedInCode = createdDicts.Count;
+        // 規則 98：執行期主題樣板（ControlzEx／MahApps 的 Theme.Template.xaml）—— 值是 {{ThemeName}} 這種佔位字，
+        // ThemeManager 執行期填好、XamlReader.Load、加進 Application.Resources。沒人合併它是正常的。
+        // ⚠ 2026-11-16 第十六輪 ControlzEx：Showcase 的 Theme.Template.xaml 被報孤兒，引用它的 53 筆報 out-of-scope。
+        var mergedTargets = dicts.SelectMany(x => x.Merged).Select(m => m.ResolvedDictionaryId).OfType<int>().ToHashSet();
+        foreach (var d in dicts.Where(d => d.IsStandaloneFile && !mergedTargets.Contains(d.Id)))
+        {
+            string text;
+            try { text = File.ReadAllText(d.File); }
+            catch (IOException) { continue; }
+            if (!ThemeTemplatePlaceholder().IsMatch(text)) continue;
+            d.IsRuntimeLoaded = true;
+            result.RuntimeLoadedDictionaries++;
+        }
         // 規則 92：App 繼承的是樹外的類別（AppSuiteApplication 之類）—— 那個基底可能在程式裡加資源，Application 作用域裡有看不到的東西
         // ⚠ 2026-11-15 第十五輪 ULogViewer：App : AppSuiteApplication（CarinaStudio.AppSuite，NuGet），Fluent 主題、圖示都由它載入 —— 720 筆假懸空、232 筆假 gate。
         foreach (var d in dicts.Where(d => d.IsApplicationScope))
@@ -654,6 +667,14 @@ public sealed class Analyzer
             var related = Projects.Related(project);
             return KeyPrefixesAddedInCode.Any(p => key.StartsWith(p.Prefix, StringComparison.Ordinal)
                                                    && related.Contains(p.Project));
+        }
+
+        /// <summary>引用所在的檔屬於 UWP 專案嗎（連結進 UWP 專案的檔也算）。</summary>
+        public bool InUwp(string file)
+        {
+            var abs = Abs(file);
+            if (Projects.ProjectDirOf(abs) is { } dir) return Projects.UwpProjectDirs.Contains(dir);
+            return LinkedInto(abs).Any(Projects.UwpProjectDirs.Contains);
         }
 
         /// <summary>這個鍵是不是由引用所在專案（或相關專案）的 C# 加進資源的。</summary>
@@ -1018,7 +1039,7 @@ public sealed class Analyzer
             // DynamicResource 不報懸空。排在 external 前面：「C# 寫進去的」比「也許在看不到的那本」準。
             // ⚠ 只放寬 DynamicResource：它本來就是「執行期才有」的寫法、而且只到 warn；
             //   StaticResource 是 gate 擋的那一級，語料裡也沒有看到這種情形，不碰。
-            if (r.Kind != RefKind.Static && !ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
+            if (r.Kind is not (RefKind.Static or RefKind.Theme) && !ctx.DefinedNames.Contains(r.Key) && ctx.IsNamedInCode(r.Key))
             {
                 result.DynamicKeysNamedInCode++;
                 continue;
@@ -1061,6 +1082,28 @@ public sealed class Analyzer
                     Message = $"'{r.Key}' is not defined in this tree, but a dictionary that merges this one also merges " +
                               $"'{above}' which could not be read -- not reported as dangling",
                 });
+                continue;
+            }
+
+            // 規則 100：UWP 專案 —— 平台內建的佈景資源（Windows SDK 的 generic.xaml）不在樹裡，我們沒看到，不能說「沒有」
+            // ⚠ 2026-11-16 第十六輪 Windows-universal-samples：InkToolbarButtonBackgroundThemeBrush 等 8 筆，
+            //   ThemeResource 改成跟 StaticResource 一樣擋 CI（規則 99）時浮出來 —— SDK 的 generic.xaml 裡都有。
+            //   不打包 SDK 的鍵清單（授權），也不在執行時讀本機的 SDK（結果會因機器而異）。
+            if (!ctx.DefinedNames.Contains(r.Key) && ctx.InUwp(r.Location.File)
+                && UwpInboxOnlyControls.Any(c => r.Key.StartsWith(c, StringComparison.OrdinalIgnoreCase)))
+            {
+                result.Findings.Add(new Finding
+                {
+                    Kind = FindingKind.External,
+                    Severity = cfg.SeverityFor(FindingKind.External),
+                    Key = r.Key,
+                    Location = r.Location,
+                    Side = side0,
+                    ExternalSource = UwpPlatformResources,
+                    Message = $"'{r.Key}' is not defined in this tree; in a UWP project it may be one of the platform's own theme resources " +
+                              "(Windows.UI.Xaml generic.xaml in the Windows SDK), which are not available here -- not reported as dangling",
+                });
+                if (!result.ExternalSources.Contains(UwpPlatformResources)) result.ExternalSources.Add(UwpPlatformResources);
                 continue;
             }
 
@@ -1118,8 +1161,14 @@ public sealed class Analyzer
                 continue;
             }
 
-            var kind = r.Kind == RefKind.Static ? FindingKind.DanglingStatic : FindingKind.DanglingDynamic;
-            var consequence = kind == FindingKind.DanglingStatic
+            // 規則 99：WinUI／UWP 的 {ThemeResource} 找不到鍵跟 StaticResource 一樣丟 XAML 剖析例外 —— 不是 DynamicResource 那種退回預設值。
+            // ⚠ 2026-11-16 第十六輪：Microsoft Learn 的 ThemeResource 頁寫明「Attempting to specify a ThemeResource to a key that cannot resolve
+            //   throws a XAML parse exception at run time」。舊版把它當 dangling-dynamic（warn），CommunityToolkit.Windows 的
+            //   {ThemeResource Transparent} 因此只被報成 info。
+            var kind = r.Kind is RefKind.Static or RefKind.Theme ? FindingKind.DanglingStatic : FindingKind.DanglingDynamic;
+            var consequence = r.Kind == RefKind.Theme
+                ? "ThemeResource throws a XAML parse exception at runtime, like StaticResource"
+                : kind == FindingKind.DanglingStatic
                 // ⚠ 不是一律「載入時」：寫在 Style 的 Setter 裡時，要等那個屬性第一次被讀才丟錯。
                 //   2026-11-14 以編譯過的 WPF App 實測：FocusVisualStyle 的 Setter 要等鍵盤焦點才會讀，
                 //   視窗能正常開，焦點一到就當掉 —— 舊訊息說「載入時」會讓人以為沒當就是沒事。
@@ -1787,6 +1836,15 @@ public sealed class Analyzer
         var start = p.LastIndexOf('/', component - 1) + 1;
         return p[start..component];
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"[>""]\{\{[A-Za-z][\w.]*\}\}[<""]")]
+    private static partial System.Text.RegularExpressions.Regex ThemeTemplatePlaceholder();
+
+    private const string UwpPlatformResources = "<UWP platform theme resources/>";
+
+    /// <summary>規則 100：只有 UWP 系統內建、WinUI 沒有的控制項（文件上公開的型別名）—— 它們的資源在 Windows SDK 的 generic.xaml。</summary>
+    /// <remarks>只認這幾個開頭：一般的錯字（NoSuchStyle）在 UWP 專案裡照樣是懸空。名單只放查過的。</remarks>
+    private static readonly string[] UwpInboxOnlyControls = ["InkToolbar", "Handwriting", "ContentLink"];
 
     /// <summary>框架本身的 Application 類別，與已知不加資源的框架基底（規則 92 不把它們當成看不到的來源）。</summary>
     /// <remarks>PrismApplication：Prism 只接管啟動流程（Dopamine）。MauiApplication：MAUI 在 Android／iOS 的宿主類別（egmaui）。

@@ -15,8 +15,8 @@ First release. (The heading gets the release date when the tag is pushed.)
 
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
-against 99 real projects — 96 public ones and three of the maintainer's, about 18,100 XAML files —
-in fifteen rounds; the sections below are in the order the work happened, so the first
+against 105 real projects — 102 public ones and three of the maintainer's, about 18,400 XAML files —
+in sixteen rounds; the sections below are in the order the work happened, so the first
 "Validated against" section describes round one only. Across the final corpus the default gate
 fires on 50 findings in seven projects, every one of them verified by hand; the public corpus is
 listed with pinned commits and expected counts in `docs/corpus.tsv`.
@@ -236,6 +236,20 @@ coincidental name match.
     library, which in a monorepo made nearly the whole tree related.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
+
+- **A sixteenth corpus round, and ThemeResource is now as strict as StaticResource** (ControlzEx,
+  XamlBehaviorsWpf, CommunityToolkit.Windows, Text-Grab, Avalonia.Controls.TreeDataGrid, NodeEditor): 186 findings
+  on the first run, 132 after; no new gated finding anywhere. **Upgrading:** an unresolvable WinUI/UWP
+  `{ThemeResource K}` is now `dangling-static` (fail in applications, warn in libraries) instead of
+  `dangling-dynamic` — Microsoft's documentation says it throws a XAML parse exception at run time, exactly like
+  StaticResource. Its "the name appears in code" relaxation no longer applies either. New:
+  - a standalone dictionary that nobody merges and whose values are `{{Placeholder}}` tokens (the ControlzEx /
+    MahApps `Theme.Template.xaml`) is loaded at run time into Application scope;
+  - in UWP projects (`<TargetPlatformIdentifier>UAP`, or a C++ `Windows Store` project), undefined keys of the
+    inbox-only controls (`InkToolbar…`, `Handwriting…`, `ContentLink…`) are `external`: their resources live in
+    the platform's `generic.xaml`, which is not in the tree;
+  - a XAML item a project includes from outside its folder without a `Link` (C++ projects do this) belongs to that
+    project.
 
 - **A fifteenth corpus round: library base classes and shared projects** (ULogViewer, NuGetPackageExplorer,
   Wino Mail, Uno.Extensions, BililiveRecorder, FluentHub): 2,613 findings on the first run, 2,100 after; the 232

@@ -181,7 +181,16 @@ public sealed partial class SourceResolver
 
             var link = item.Attribute("Link")?.Value
                     ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Link")?.Value;
-            if (string.IsNullOrWhiteSpace(link)) continue;
+            if (string.IsNullOrWhiteSpace(link))
+            {
+                // 規則 101：沒寫 Link、但檔在專案資料夾外（C++ 專案常這樣：<Page Include="..\shared\Scenario7.xaml" />）——
+                // 它還是這個專案編譯的檔：只記「屬於誰」，不替它編一個解析得到的路徑（那個路徑我們不知道）。
+                // ⚠ 2026-11-16 第十六輪 Windows-universal-samples 的 SimpleInk：shared 頁面只由 cpp 專案這樣收，認不出是 UWP 頁面。
+                var member = Path.GetFullPath(Path.Combine(dir, include.Replace('\\', Path.DirectorySeparatorChar)));
+                if (!_linkedInto.TryGetValue(member, out var owners)) _linkedInto[member] = owners = [];
+                if (!owners.Contains(dir, StringComparer.OrdinalIgnoreCase)) owners.Add(dir);
+                continue;
+            }
 
             // <AvaloniaResource Include="..\Other\Controls\**\*.axaml"><Link>Controls\%(RecursiveDir)%(Filename)%(Extension)</Link>
             // ⚠ 2026-11-15 第八輪 Dock：Simple 主題的 /Controls/ControlStrings.axaml 是從 Fluent 主題這樣連過來的。

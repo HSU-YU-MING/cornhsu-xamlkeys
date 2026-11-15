@@ -22,6 +22,10 @@ public sealed partial class ProjectIndex
     /// <summary>.vcxproj 專案的目錄（C++/WinRT）。它們的 .cpp／.h 也要讀（見 CSharpScanner 的 C++ 前處理）。</summary>
     public HashSet<string> CppProjectDirs { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>UWP（系統內建的 Windows.UI.Xaml）專案的目錄：<c>&lt;TargetPlatformIdentifier&gt;UAP</c>，或 C++ 的 <c>&lt;ApplicationType&gt;Windows Store</c>。</summary>
+    /// <remarks>規則 100：UWP 平台自己的佈景資源在 Windows SDK 的 generic.xaml 裡，不在樹裡、也不在 WinUI 的清單裡。</remarks>
+    public HashSet<string> UwpProjectDirs { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public ProjectIndex(string root, IEnumerable<string> projectFiles, IEnumerable<string> xamlFiles)
     {
         var xamlByDir = xamlFiles.ToLookup(f => Path.GetDirectoryName(Path.GetFullPath(f)) ?? "",
@@ -34,6 +38,14 @@ public sealed partial class ProjectIndex
 
             _projects.Add((dir, IsApplicationProject(proj, dir, xamlByDir), IsWinUiProject(proj, root)));
             if (proj.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)) CppProjectDirs.Add(dir);
+            try
+            {
+                var t = File.ReadAllText(proj);
+                if (t.Contains("<TargetPlatformIdentifier>UAP", StringComparison.OrdinalIgnoreCase)
+                    || t.Contains("<ApplicationType>Windows Store", StringComparison.OrdinalIgnoreCase))
+                    UwpProjectDirs.Add(dir);
+            }
+            catch (IOException) { }
         }
 
         // 最深的目錄排前面：巢狀專案要先比對到自己，不是父專案

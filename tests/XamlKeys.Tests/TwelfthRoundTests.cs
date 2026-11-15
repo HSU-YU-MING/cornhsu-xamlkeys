@@ -56,7 +56,7 @@ public class TwelfthRoundTests : IDisposable
         var r = Analyze(WinUiLibrary(WinUiProps,
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Library</OutputType><UseWPF>true</UseWPF></PropertyGroup></Project>"));
 
-        Assert.Equal(["CardBackgroundFillColorDefaultBrush"], Keys(r, FindingKind.DanglingDynamic));
+        Assert.Equal(["CardBackgroundFillColorDefaultBrush"], Keys(r, FindingKind.DanglingStatic));   // ThemeResource 找不到 = 剖析例外（規則 99）
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class TwelfthRoundTests : IDisposable
         files["dev/Directory.Build.props"] = "<Project><PropertyGroup><LangVersion>latest</LangVersion></PropertyGroup></Project>";
         var r = Analyze(files);
 
-        Assert.Equal(["CardBackgroundFillColorDefaultBrush"], Keys(r, FindingKind.DanglingDynamic));
+        Assert.Equal(["CardBackgroundFillColorDefaultBrush"], Keys(r, FindingKind.DanglingStatic));   // ThemeResource 找不到 = 剖析例外（規則 99）
     }
 
     // ── 85：AssemblyName 是展不開的屬性時退回專案檔名 ──────────────────────

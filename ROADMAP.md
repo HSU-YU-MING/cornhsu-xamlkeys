@@ -17,7 +17,7 @@
       「解析是純 XML、Linux 也跑得動」這句話到此才真的有證據
 - [ ] M5b nuget.org 的 Trusted Publishing 政策（**只有維護者的帳號能建**）＋ 推 `v0.1.0`
       —— 2026-11-15 發版前檢查全跑過：測試、`verify-readme-sample.ps1`、`verify-baselines.ps1`、
-      本機 `dotnet pack` ＋ `dotnet tool install` ＋ 示範專案（退出碼 3／1 照預期）、公開專案的 `corpus-compare.mjs`（第十五輪後 96 個）。
+      本機 `dotnet pack` ＋ `dotnet tool install` ＋ 示範專案（退出碼 3／1 照預期）、公開專案的 `corpus-compare.mjs`（第十六輪後 102 個）。
       推 tag 之前只剩：建政策、把 CHANGELOG `[0.1.0]` 的標題改成發版日期
 
 ## 0.x（介面凍結前）

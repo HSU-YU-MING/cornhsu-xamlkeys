@@ -28,9 +28,9 @@ xamlkeys path/to/your/wpf/project
 
 | Kind | Severity | What it means |
 |---|---|---|
-| `dangling-static` | **fail** | `{StaticResource K}` and nothing defines `K`. Throws at runtime — on load, or, inside a Style setter, the first time that property is used (a `FocusVisualStyle` setter waits for keyboard focus, so the window opens fine and crashes later). |
+| `dangling-static` | **fail** | `{StaticResource K}` — or WinUI/UWP `{ThemeResource K}` — and nothing defines `K`. Throws at runtime — on load, or, inside a Style setter, the first time that property is used (a `FocusVisualStyle` setter waits for keyboard focus, so the window opens fine and crashes later). An unresolvable ThemeResource is a XAML parse exception just like StaticResource. |
 | `duplicate-key` | **fail** | The same `x:Key` twice in one dictionary. The parser throws at load time; the compiler does not check this. |
-| `dangling-dynamic` | warn | `{DynamicResource K}` / `{ThemeResource K}` and nothing defines `K`. Falls back silently. |
+| `dangling-dynamic` | warn | `{DynamicResource K}` (or a lookup from code) and nothing defines `K`. Falls back silently. |
 | `out-of-scope` | warn | `K` exists in this project but not where this reference can see it. |
 | `shadowed` | warn | Merge order makes this definition unreachable, and the winner has **different** content. |
 | `shadowed-identical` | info | Same, but every copy is identical — redundant, not wrong. |
@@ -217,12 +217,13 @@ be able to reach `\\host\share` or the rest of the machine.
 
 ## Known limitations
 
-Every one of these was found by running the tool over public projects — 96 of them by now (WPF, WinUI,
-UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 18,100 XAML files; the list with pinned commits is
+Every one of these was found by running the tool over public projects — 102 of them by now (WPF, WinUI,
+UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 18,400 XAML files; the list with pinned commits is
 [docs/corpus.tsv](docs/corpus.tsv)) — see [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md).
 
 | Limitation | Effect | What the tool does about it |
 |---|---|---|
+| UWP's own platform resources (the system `generic.xaml` in the Windows SDK) | Keys of inbox-only controls look undefined | Not bundled (license) and not read from the machine (results would depend on it). In UWP projects, undefined keys of the inbox-only controls (`InkToolbar…`, `Handwriting…`, `ContentLink…`) are `external`; any other undefined key is still dangling |
 | A library's own key convention (CarinaStudio.AppSuite's `{asXaml:StringResource Name}` and `GetString("Name")` both reach the key `String/Name`) | Could look unused | Not guessed: the mapping lives in the library. Add a `usedAtRuntime` pattern (`"String/*"`). An application class that derives from a base class outside the tree is treated as an unseen source, so keys the library supplies are `external`, not dangling |
 | Keys composed at runtime (`$"Icon{n}"`) | Could look unused | With a fixed part of three characters or more (`$"Icon{n}"`, `"Icon" + n`, `n + "Brush"`), keys in the same project that match count as used, and the summary says how many. Fully variable lookups are counted as dynamic sites; `usedAtRuntime` patterns suppress the keys they reach |
 | Dictionaries inside third-party assemblies | Their contents are invisible | Marked `external`, counted, and they lower the coverage figure. Exception: themes whose key names ship with the tool — WinUI's `XamlControlsResources`, .NET's WPF Fluent theme, Avalonia's Fluent/Fluent2/Simple/ColorPicker/DataGrid/TreeDataGrid themes the Windows Community Toolkit, Semi.Avalonia, Uno Material/Cupertino/Toolkit, ModernWpf, MahApps.Metro, MaterialDesignThemes, WPF-UI, FluentAvalonia and AvaloniaEdit — count as resolved, and only when the tree merges them |
