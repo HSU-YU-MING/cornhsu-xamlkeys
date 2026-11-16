@@ -83,6 +83,10 @@ public sealed class ScopeEngine
             : new LookupResult(LookupStatus.NotFound);
     }
 
+    /// <summary>規則 108：整條查找鏈上所有讀不到的合併（Lookup 只回報第一個）。</summary>
+    public IEnumerable<string> ExternalsIn(IReadOnlyList<int> chain, string? projectDir = null) =>
+        EffectiveChain(chain, projectDir).SelectMany(id => OrderFor(id).Externals);
+
     /// <summary>真正的查找鏈：元素自己的作用域 → …→ 檔案根 → **同一個專案的** Application.Resources。
     ///
     /// ⚠ Application 那一層不在掃描器建的鏈裡（它在別的檔案），一定要補上，

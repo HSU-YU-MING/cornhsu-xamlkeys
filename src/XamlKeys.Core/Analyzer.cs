@@ -103,6 +103,9 @@ public sealed class AnalysisResult
 
     /// <summary>分層主題裡被覆寫、但在另一個主題裡是贏家的定義數（Windows11 主題蓋掉一部分 Windows10 的色票）。不報 shadowed。</summary>
     public int LayeredOverrides { get; set; }
+
+    /// <summary>規則 108：擋在前面的看不到的來源全是這棵樹裡程式寫內容的字典、而鍵名在樹裡哪裡都沒出現 —— 照常報懸空的引用數。</summary>
+    public int KeysNoCodeBuiltDictionaryNames { get; set; }
     /// <summary>被合併順序蓋掉、但有 {StaticResource} 在載入時解析到它的定義（規則 88）—— 不報 shadowed。</summary>
     public int ShadowedButResolvedByStatic { get; set; }
 
@@ -475,6 +478,16 @@ public sealed partial class Analyzer
 
         // 懸空的 DynamicResource 判定用：整棵樹的字串（執行期寫進資源的鍵跨專案 —— dnSpy 的主程式寫、外掛的 XAML 讀）
         ctx.NamesInCode.UnionWith(cs.NamesInCode.Select(n => n.Text));
+
+        // 規則 108：用元素合併、類別就在這棵樹的 C# 裡、直接繼承 ResourceDictionary 的字典（Unigram 的 <common:Theme/>）。
+        // 它的內容是程式寫的 —— 我們讀得到那些程式：它寫得出來的鍵名，一定在 C# 裡以字串（或組字的固定片段）出現過。
+        // ⚠ 那個檔從樹外的組件載入 XAML 時不算（ModernWpf 的 FluentControlsResources 載入
+        //   /PresentationFramework.Fluent;component/Themes/Fluent.xaml —— KeyboardFocusBorderColorBrush 就在那裡）。
+        foreach (var (source, _) in externalMerges)
+            if (source.Length > 3 && source[0] == '<' && source.EndsWith("/>", StringComparison.Ordinal)
+                && cs.XamlAssembliesNamedByClass.TryGetValue(source[1..^2], out var asms)
+                && asms.All(a => resolver.ProjectDirsOfAssembly(a).Count > 0))
+                ctx.CodeBuiltSources.Add(source);
         ctx.ComposedSuffixesInCode.AddRange(cs.ComposedSuffixesInCode);
         ctx.ComposedNamesInCode.AddRange(cs.ComposedNamesInCode);
         foreach (var (prefix, proj) in cs.KeyPrefixesAddedInCode)
@@ -654,6 +667,14 @@ public sealed partial class Analyzer
 
         /// <summary>整棵樹 C# 裡不是查找參數的字串（見 CSharpScanner.NamesInCode）。</summary>
         public HashSet<string> NamesInCode { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>規則 108：類別在這棵樹裡、程式寫內容的字典（"&lt;Theme/&gt;"）。</summary>
+        public HashSet<string> CodeBuiltSources { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>規則 108：擋住這個引用的看不到的來源全是樹裡的程式字典，而鍵名在整棵樹（XAML 定義、C# 字串、組字）都沒出現 ——
+        /// 那些程式寫不出這個名字，不能拿它們當「也許在那裡」。</summary>
+        public bool NoCodeBuiltSourceCanSupply(IEnumerable<string> sources, string key) =>
+            !DefinedNames.Contains(key) && !IsNamedInCode(key) && sources.All(CodeBuiltSources.Contains);
         public List<string> ComposedSuffixesInCode { get; } = [];
         public List<(string Prefix, string Suffix)> ComposedNamesInCode { get; } = [];
 
@@ -842,7 +863,11 @@ public sealed partial class Analyzer
         ///   執行期的查找會往上走到那裡，但靜態作用域只有 DatePicker.axaml 自己 —— 36 筆報成懸空。
         ///   上層合併了看不到的東西時，這個鍵可能就在那裡：是「沒看到」，不是「看到了、沒有」。
         /// </remarks>
-        public string? ExternalAbove(IReadOnlyList<int> chain, string? project)
+        public string? ExternalAbove(IReadOnlyList<int> chain, string? project) =>
+            ExternalsAbove(chain, project).FirstOrDefault();
+
+        /// <summary>合併我的上層（同一個專案）合併的所有讀不到的字典。</summary>
+        public IEnumerable<string> ExternalsAbove(IReadOnlyList<int> chain, string? project)
         {
             if (_parents is null)
             {
@@ -872,11 +897,10 @@ public sealed partial class Analyzer
                 //   一筆真的懸空（MaterialDesign.Brush.TextBox.ComboBoxHover）被降級成 external。
                 if (!string.Equals(node.ProjectDir, project, StringComparison.OrdinalIgnoreCase)) continue;
                 foreach (var m in node.Merged)
-                    if (m.IsExternal) return m.RawSource;
+                    if (m.IsExternal) yield return m.RawSource;
                 if (_parents.TryGetValue(id, out var ps))
                     foreach (var p in ps) if (seen.Add(p)) queue.Enqueue(p);
             }
-            return null;
         }
 
         private Dictionary<int, List<int>>? _parents;
@@ -1049,7 +1073,14 @@ public sealed partial class Analyzer
 
             var unknown = failures.FirstOrDefault(f => f.Res.Status == LookupStatus.Unknown);
 
-            if (unknown.Res is { Status: LookupStatus.Unknown })
+            // ⚠ 2026-11-16 第十八輪 Unigram：InstantPage／InstantContent 的 ChannelItemTemplate 定義被註解掉了，
+            //   兩個樣式還在用 {StaticResource ChannelItemTemplate} —— 舊版因為 App 合併了 <common:Theme/> 報成 external。
+            // ⚠ 要看作用域裡**所有**讀不到的合併，不是查找回報的那一個：同時合併了函式庫的字典時，鍵可能在那裡
+            var codeBuiltOnly = unknown.Res is { Status: LookupStatus.Unknown }
+                && ctx.NoCodeBuiltSourceCanSupply(ctx.Engine.ExternalsIn(r.ScopeChain, refProject), r.Key);
+            if (codeBuiltOnly) result.KeysNoCodeBuiltDictionaryNames++;
+
+            if (unknown.Res is { Status: LookupStatus.Unknown } && !codeBuiltOnly)
             {
                 result.Findings.Add(new Finding
                 {
@@ -1071,7 +1102,8 @@ public sealed partial class Analyzer
             var side0 = allSidesFailed ? ThemeSide.Neutral : failures[0].Side;
 
             // 合併我的上層合併了看不到的字典 → 鍵可能在那裡（見 Context.ExternalAbove）
-            if (!ctx.DefinedNames.Contains(r.Key) && ctx.ExternalAbove(r.ScopeChain, refProject) is { } above)
+            if (!ctx.DefinedNames.Contains(r.Key) && ctx.ExternalAbove(r.ScopeChain, refProject) is { } above
+                && !ctx.NoCodeBuiltSourceCanSupply(ctx.ExternalsAbove(r.ScopeChain, refProject), r.Key))
             {
                 result.Findings.Add(new Finding
                 {

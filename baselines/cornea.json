@@ -29,6 +29,7 @@
     "keysFromControlResources": 0,
     "startupResources": 0,
     "layeredOverrides": 0,
+    "keysNoCodeBuiltDictionaryNames": 0,
     "shadowedButResolvedByStatic": 0,
     "keysUsedAsFields": 0,
     "dictionariesCreatedInCode": 0,

@@ -16,7 +16,7 @@ First release. (The heading gets the release date when the tag is pushed.)
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
 against 112 real projects — 109 public ones and three of the maintainer's, about 19,600 XAML files —
-in seventeen rounds; the sections below are in the order the work happened, so the first
+in eighteen rounds; the sections below are in the order the work happened, so the first
 "Validated against" section describes round one only. Across the final corpus the default gate
 fires on 50 findings in seven projects, every one of them verified by hand; the public corpus is
 listed with pinned commits and expected counts in `docs/corpus.tsv`.
@@ -236,6 +236,16 @@ coincidental name match.
     library, which in a monorepo made nearly the whole tree related.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
+
+- **An eighteenth round: a dictionary class written in this tree no longer hides keys nobody names.**
+  A `ResourceDictionary` subclass merged as an element (`<common:Theme/>`) whose class is declared in this tree,
+  directly derives from `ResourceDictionary`, and loads no XAML from an assembly outside the tree, is filled by code
+  we can read. A reference whose scope can only fall back on such dictionaries, and whose key is named nowhere in the
+  tree (no XAML definition, no C# string, no composed name such as `prefix + "ButtonForeground"`), is reported as
+  dangling instead of `external`; the count is in `keysNoCodeBuiltDictionaryNames`. Every unreadable merge in the
+  scope is checked, not just the one the lookup reports. Across the 109 projects this turned exactly 4 `external`
+  findings into gated ones, all in Unigram: `{StaticResource ChannelItemTemplate}` whose `DataTemplate` is commented
+  out. `prefix + "Suffix"` concatenations now also count as composed key names.
 
 - **A seventeenth corpus round: custom Application classes and dictionaries the tree can now see** (OpenUtau,
   ChocolateyGUI, iNKORE.UI.WPF.Modern, Panuon.WPF.UI, accessibility-insights-windows, FluentTerminal, Unigram):

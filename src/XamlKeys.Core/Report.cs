@@ -54,6 +54,7 @@ public static class Report
             w.WriteNumber("keysFromControlResources", r.KeysFromControlResources);
             w.WriteNumber("startupResources", r.StartupResources);
             w.WriteNumber("layeredOverrides", r.LayeredOverrides);
+            w.WriteNumber("keysNoCodeBuiltDictionaryNames", r.KeysNoCodeBuiltDictionaryNames);
             w.WriteNumber("shadowedButResolvedByStatic", r.ShadowedButResolvedByStatic);
             w.WriteNumber("keysUsedAsFields", r.KeysUsedAsFields);
             w.WriteNumber("dictionariesCreatedInCode", r.DictionariesCreatedInCode);

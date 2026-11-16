@@ -165,6 +165,9 @@ public sealed partial class CSharpScanner
 
     /// <summary>每個 C# 類別宣告的第一個基底（短名）—— 規則 92 用來看 App 繼承誰。</summary>
     public Dictionary<string, string> ClassBases { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>規則 108：直接繼承 ResourceDictionary 的類別 → 宣告它的檔裡載入的 XAML 寫明的組件名。</summary>
+    public Dictionary<string, HashSet<string>> XamlAssembliesNamedByClass { get; } = new(StringComparer.Ordinal);
     /// <summary>樹裡宣告過的所有類別短名。</summary>
     public HashSet<string> ClassesDeclared { get; } = new(StringComparer.Ordinal);
     /// <summary>型別別名：<c>using AvApplication = Avalonia.Application;</c> → AvApplication → Application。</summary>
@@ -230,10 +233,19 @@ public sealed partial class CSharpScanner
         if (ClassesToFind.Count > 0) FindCreatedClasses(code, project);
         foreach (var m in TypeAliasRegex().Matches(code).Cast<Match>())
             TypeAliases.TryAdd(m.Groups["a"].Value, m.Groups["t"].Value);
+        HashSet<string>? xamlAssemblies = null;
         foreach (var m in ClassDeclRegex().Matches(code).Cast<Match>())
         {
             ClassesDeclared.Add(m.Groups["c"].Value);
             if (m.Groups["b"].Success) ClassBases.TryAdd(m.Groups["c"].Value, m.Groups["b"].Value);
+
+            // 規則 108：ResourceDictionary 子類別的檔裡，載入的 XAML 寫明了哪些組件（pack URI 的 /Asm;component/）
+            if (m.Groups["b"].Value != "ResourceDictionary") continue;
+            xamlAssemblies ??= XamlPathRegex().Matches(code).Cast<Match>()
+                .Select(p => Analyzer.AssemblyOfPath(p.Groups["p"].Value)).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!XamlAssembliesNamedByClass.TryGetValue(m.Groups["c"].Value, out var set))
+                XamlAssembliesNamedByClass[m.Groups["c"].Value] = set = new(StringComparer.OrdinalIgnoreCase);
+            set.UnionWith(xamlAssemblies);
         }
         if (ApplicationClassRegex().IsMatch(code))
             foreach (var m in AppResourcesAddRegex().Matches(code).Cast<Match>())
@@ -251,6 +263,9 @@ public sealed partial class CSharpScanner
             if (!readSpans.Any(s => m.Index >= s.Start && m.Index < s.End))
                 _namesInCode.Add((m.Groups["s"].Value, project, writer));
         foreach (var m in ComposedSuffixRegex().Matches(code).Cast<Match>())
+            _composedSuffixes.Add(m.Groups["s"].Value);
+        // 規則 108 一起來的：prefix + "ButtonForeground" —— 用 + 接的固定結尾（Unigram 的 AddAccentButtonPalette(…, "Danger", …)）
+        foreach (var m in ConcatWriteSuffixRegex().Matches(code).Cast<Match>())
             _composedSuffixes.Add(m.Groups["s"].Value);
         // 產生出來的在地化存取器：Localize.GameMode()、ShellLocalization.X —— 方法名就是鍵名
         // ⚠ 2026-11-15 實測 Flow Launcher：359 筆 unused 裡 158 筆其實是這樣用的（source generator 依語系檔產生）
@@ -633,6 +648,10 @@ public sealed partial class CSharpScanner
     // $"{baseName}75" —— 以洞開頭、固定結尾的內插字串，取結尾
     [GeneratedRegex("""\$@?"\{[^{}"]{1,80}\}(?<s>[A-Za-z0-9_.\-]{1,30})"(?!")""")]
     private static partial Regex ComposedSuffixRegex();
+
+    // prefix + "ButtonForeground" —— 變數接一個像鍵名的固定結尾
+    [GeneratedRegex("""\b[A-Za-z_]\w*\s*\+\s*"(?<s>[A-Za-z0-9_]{3,40})["]""")]
+    private static partial Regex ConcatWriteSuffixRegex();
 
     // "Icon" + name —— 參數一開頭就是字串字面再接 +
     [GeneratedRegex("""^"(?<s>(?:[^"\\]|\\.)*)"\s*\+""")]
