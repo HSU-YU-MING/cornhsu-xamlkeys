@@ -91,6 +91,7 @@ XAML 資源鍵的靜態作用域稽核。CLI + 函式庫，純 `System.Xml.Linq`
   方言、應用程式或函式庫、code-behind 位置**全部**要跟著改 —— 只改一半，Windows-universal-samples 的 391 筆 external 會變成 314 筆假懸空。
 - **外部專案比對用 `docs/corpus.tsv` ＋ `scripts/corpus-run.sh` ＋ `scripts/corpus-compare.mjs`**，不要再手抓。
   改了要讀的副檔名，`corpus-run.sh` 的 PATTERNS 要加，tsv 的計數要整批重算（第十四輪踩過：早期 clone 少抓檔）。
+- **App 不一定叫 Application**：根元素可能是自己寫的子類別（Unigram 的 `<navigation:BootStrapper>`），靠 `<Application.Resources>` 這個屬性元素認（規則 102）。
 - **ThemeResource 找不到 = 剖析例外**（規則 99，Microsoft Learn 明寫），跟 StaticResource 同一級；只有 DynamicResource 與程式查找是「默默退回」。
 - **UWP 系統的佈景資源不在樹裡**：不要打包 Windows SDK 的 generic.xaml 衍生清單（授權），也不要在執行時讀本機 SDK（結果會因機器而異）。
 - **看不到的來源會讓程式查找不再報懸空**（`result.ExternalSources` 是整棵樹的）：任何新增 external 來源的規則都要跑全語料，

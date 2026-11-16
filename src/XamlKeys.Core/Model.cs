@@ -49,6 +49,10 @@ public sealed class KeyDefinition
     public bool IsMarkupKey { get; init; }
     /// <summary>鍵屬於框架（<c>MenuItem.SeparatorStyleKey</c>…）：框架的樣板會讀，重新定義它不算沒人用。</summary>
     public bool IsFrameworkKey { get; init; }
+
+    /// <summary>有 x:Key 的子字典自己的名字（<c>&lt;ResourceInclude x:Key="themes-dark" Source="…"/&gt;</c>）。
+    /// 程式用這個名字把整本拿出來（規則 103）；它本身不報 unused —— 這種字典本來就是給程式挑的。</summary>
+    public bool IsSelectableDictionary { get; init; }
     /// <summary>markup 鍵在 C# 裡會出現的名字（成員名／ResourceId）。</summary>
     public string? MemberName { get; init; }
     /// <summary>markup 鍵的型別短名（C# 裡找不到 = 別的組件的鍵）。</summary>

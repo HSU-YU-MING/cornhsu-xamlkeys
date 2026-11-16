@@ -388,6 +388,10 @@ public sealed partial class SourceResolver
             {
                 var crossed = Path.GetFullPath(Path.Combine(projDir, path));
                 if (Exists(crossed)) return new(crossed, null, assembly);
+                // 規則 106：那個組件的檔是共用專案（.projitems）連結進去的 —— 同組件那條路早就會查連結，跨組件這條漏了
+                // ⚠ 2026-11-16 第十七輪 Panuon.WPF.UI：九個目標框架的專案都匯入 SharedResources 的 projitems，
+                //   Control.xaml 用 pack://application:,,,/Panuon.WPF.UI;component/Styles/Button.xaml 合併 —— 舊版 268 本全算看不到
+                if (Linked(projDir, path) is { } linkedInAsm) return new(linkedInAsm, null, assembly);
             }
             return new(null, $"'{path}' not found in assembly '{assembly}'", assembly);
         }

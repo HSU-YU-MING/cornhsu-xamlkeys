@@ -217,8 +217,8 @@ be able to reach `\\host\share` or the rest of the machine.
 
 ## Known limitations
 
-Every one of these was found by running the tool over public projects — 102 of them by now (WPF, WinUI,
-UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 18,400 XAML files; the list with pinned commits is
+Every one of these was found by running the tool over public projects — 109 of them by now (WPF, WinUI,
+UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 19,600 XAML files; the list with pinned commits is
 [docs/corpus.tsv](docs/corpus.tsv)) — see [docs/實查歸因-2026-11-14.md](docs/實查歸因-2026-11-14.md).
 
 | Limitation | Effect | What the tool does about it |

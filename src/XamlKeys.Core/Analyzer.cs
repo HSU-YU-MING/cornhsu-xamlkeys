@@ -344,7 +344,9 @@ public sealed partial class Analyzer
             externalMerges.Add((d.Merged[^1].RawSource, d));   // 算進看不到的來源（覆蓋率、程式查找的「樹裡有沒有看不到的東西」）
             result.MergeEdges++;
         }
-        MarkRuntimeLoaded(dicts, cs.LoadedDictionaryPaths, result, resolver.ProjectDirsOfAssembly);
+        MarkRuntimeLoaded(dicts,
+                          [.. cs.LoadedDictionaryPaths, .. scanner.MentionedPaths.Select(m => (m.Path, projects.ProjectDirOf(m.File)))],
+                          result, resolver.ProjectDirsOfAssembly);
         result.HasApplication = projects.HasAnyApplication;
 
         var sides = DetermineSides(dicts);
@@ -1497,6 +1499,9 @@ public sealed partial class Analyzer
 
             var dict = ctx.ById[d.DictionaryId];
 
+            // 規則 103：有 x:Key 的子字典的名字 —— 程式挑一本用，平常沒有人在 XAML 裡引用它
+            if (d.IsSelectableDictionary) continue;
+
             // Caliburn.Micro：App.xaml 的資源裡放 <local:Bootstrapper x:Key="bootstrapper"/>，沒有人引用 ——
             // 它存在的目的就是在啟動時被建立。刪掉 App 就不會啟動。
             // ⚠ 2026-11-15 第七輪 AvalonDock 的 CaliburnDockTestApp。
@@ -1861,14 +1866,21 @@ public sealed partial class Analyzer
         if (first < 0 || last < first) return null;
 
         var p = path.Replace('\\', '/');
+        // pack URI 只看 ;component/ 之後（專案內的相對路徑）。
+        // 規則 105：組件名也可能是組出來的（/{assemblyName};component/Presets/{name}.xaml）—— 所以先切再找 {
+        // ⚠ 2026-11-16 第十七輪 iNKORE Gallery：舊版從第一個 { 切，開頭變成 "pack://application:,,,"，什麼都比不到
+        var afterComponent = p.LastIndexOf(";component/", StringComparison.OrdinalIgnoreCase);
+        if (afterComponent >= 0)
+        {
+            p = p[(afterComponent + ";component/".Length)..];
+            if (p.IndexOf('{') < 0) return null;
+        }
         first = p.IndexOf('{'); last = p.LastIndexOf('}');
         var prefix = p[..first];
         var suffix = p[(last + 1)..];
 
-        // 開頭去掉 pack URI／avares 的部分，只留專案內的相對路徑
-        var component = prefix.LastIndexOf(";component/", StringComparison.OrdinalIgnoreCase);
-        if (component >= 0) prefix = prefix[(component + ";component/".Length)..];
-        else if (prefix.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
+        // 開頭去掉 avares／ms-appx 的部分，只留專案內的相對路徑（pack URI 上面已經切過）
+        if (prefix.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
         {
             var slash = prefix.IndexOf('/', "avares://".Length);
             prefix = slash >= 0 ? prefix[(slash + 1)..] : "";

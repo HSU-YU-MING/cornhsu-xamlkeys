@@ -15,8 +15,8 @@ First release. (The heading gets the release date when the tag is pushed.)
 
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
-against 105 real projects — 102 public ones and three of the maintainer's, about 18,400 XAML files —
-in sixteen rounds; the sections below are in the order the work happened, so the first
+against 112 real projects — 109 public ones and three of the maintainer's, about 19,600 XAML files —
+in seventeen rounds; the sections below are in the order the work happened, so the first
 "Validated against" section describes round one only. Across the final corpus the default gate
 fires on 50 findings in seven projects, every one of them verified by hand; the public corpus is
 listed with pinned commits and expected counts in `docs/corpus.tsv`.
@@ -236,6 +236,23 @@ coincidental name match.
     library, which in a monorepo made nearly the whole tree related.
 
   The 42 gated findings across the earlier 24 projects are unchanged.
+
+- **A seventeenth corpus round: custom Application classes and dictionaries the tree can now see** (OpenUtau,
+  ChocolateyGUI, iNKORE.UI.WPF.Modern, Panuon.WPF.UI, accessibility-insights-windows, FluentTerminal, Unigram):
+  3,137 findings on the first run — 808 of them gated, all false — and 1,407 after; no new gated finding anywhere.
+  New:
+  - a root element whose resources are written `<Application.Resources>` is the application even when the class is
+    a custom subclass (`<navigation:BootStrapper>`);
+  - the name of a keyed sub-dictionary (`<ResourceInclude x:Key="themes-dark" Source="…"/>`) is a key code can
+    look up, and is never reported unused;
+  - a library `ResourceDictionary` subclass inside `MergedDictionaries` that carries its own content
+    (`<ui:ThemeResources><ui:ThemeResources.ThemeDictionaries>…`) has that content read; this also clears
+    264 false findings in Flow.Launcher;
+  - a composed pack URI whose assembly name is composed too (`/{assemblyName};component/Presets/{name}.xaml`)
+    is matched from `;component/` on;
+  - a cross-assembly pack URI resolves to a file that assembly links in from a shared project (`.projitems`);
+  - a `.xaml` path in any XAML attribute (`<pu:ApplicationTheme ResourceDictionary="/App;component/Themes/Dark.xaml"/>`)
+    counts as loading that dictionary at run time.
 
 - **A sixteenth corpus round, and ThemeResource is now as strict as StaticResource** (ControlzEx,
   XamlBehaviorsWpf, CommunityToolkit.Windows, Text-Grab, Avalonia.Controls.TreeDataGrid, NodeEditor): 186 findings

@@ -185,6 +185,16 @@ public sealed partial class XamlScanner
     {
         if (IsIgnorable(el, ignorable)) return;
 
+        // 規則 107：屬性值是一個 .xaml 路徑（<pu:ApplicationTheme ResourceDictionary="/Samples;component/Themes/Light.xaml"/>）——
+        //   函式庫在執行期照這個路徑載入。跟 C# 裡提到的路徑一樣，只用來判斷「有人載入」，不合併進任何作用域。
+        // ⚠ 2026-11-16 第十七輪 Panuon.WPF.UI 的 Samples：GlobalSettings 這樣登記淺色／深色主題，舊版報兩本孤兒。
+        foreach (var a in el.Attributes())
+        {
+            var v = a.Value.Trim();
+            if (v.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))
+                _mentionedPaths.Add((v, file));
+        }
+
         var chainHere = chain;
         var resProp0 = FindResourcesProperty(el);
         var stylesProp = FindStylesProperty(el);
@@ -197,7 +207,7 @@ public sealed partial class XamlScanner
         {
             var sd = NewDictionary(file, $"{el.Name.LocalName}.Styles", LineOf(stylesProp),
                                    standalone: false,
-                                   appScope: el.Name.LocalName.EndsWith("Application", StringComparison.Ordinal));
+                                   appScope: IsApplicationElement(el, stylesProp));
             AddStyleSources(stylesProp, sd, ignorable);
             chainHere = Prepend(sd.Id, chain);
         }
@@ -205,7 +215,7 @@ public sealed partial class XamlScanner
         // 這個元素自己的 <X.Resources>
         if (resProp0 is { } resProp && !IsIgnorable(resProp, ignorable))
         {
-            var isApp = el.Name.LocalName.EndsWith("Application", StringComparison.Ordinal);
+            var isApp = IsApplicationElement(el, resProp);
             var dict = NewDictionary(file, $"{el.Name.LocalName}.Resources", LineOf(resProp),
                                      standalone: false, appScope: isApp);
 
@@ -439,6 +449,21 @@ public sealed partial class XamlScanner
                 sub.ThemeGroupId = groupId;
                 sub.IsSelectedAtRuntime = true;
                 ReadDictionaryElement(t, sub, Prepend(sub.Id, chain), ignorable, suppressed);
+
+                // 規則 103：子字典的名字本身也是這個字典裡的一個鍵 —— 程式用 Resources["themes-dark"] 把整本拿出來。
+                // ⚠ 2026-11-16 第十七輪 OpenUtau：App.SetTheme 這樣取 themes-light／themes-dark／themes-custom，
+                //   舊版只讀子字典裡面的鍵，名字本身不算定義 —— 3 筆假 dangling-dynamic。
+                var nameDef = new KeyDefinition
+                {
+                    Key = name,
+                    Location = new SourceLocation(Rel(dict.File), LineOf(t)),
+                    DictionaryId = dict.Id,
+                    ElementName = t.Name.LocalName,
+                    IsSelectableDictionary = true,
+                    SuppressedReason = suppressed,
+                };
+                _definitions.Add(nameDef);   // 只進全域名單：程式查找比的是名字，XAML 不會用 {StaticResource} 取整本字典
+
                 dict.Merged.Add(new MergedReference
                 {
                     RawSource = $"ResourceDictionary[{name}] (selected at runtime)",
@@ -464,6 +489,24 @@ public sealed partial class XamlScanner
         //    正好違反第一不變量。實測：QuillLook 因此多出 117 筆假 dangling-dynamic。
         // Avalonia 的 <ResourceInclude>／<MergeResourceInclude> 沒有 Source 時是空的,不是外部字典
         if (m.Name.LocalName is "ResourceInclude" or "MergeResourceInclude") return;
+
+        // 規則 104：子類別元素自己帶著內容（<ui:ThemeResources><ui:ThemeResources.ThemeDictionaries>…）——
+        //   那些照一般字典讀（ReadDictionaryElement 的子類別模式會另外記一筆「看不到的本體」）。
+        // ⚠ 2026-11-16 第十七輪 iNKORE.UI.WPF.Modern 的 Gallery：主題字典整組寫在 ThemeResources 裡，
+        //   舊版遇到子類別就整個跳過 —— 裡面定義的鍵看不到，它合併的 HighContrast.xaml 被報成孤兒。
+        if (m.Name.LocalName != "ResourceDictionary" && m.HasElements)
+        {
+            var body = NewDictionary(parent.File, $"MergedDictionaries[{m.Name.LocalName}]", LineOf(m),
+                                     standalone: false, appScope: false);
+            ReadDictionaryElement(m, body, Prepend(body.Id, chain), ignorable, suppressed);
+            parent.Merged.Add(new MergedReference
+            {
+                RawSource = "(inline)",
+                Location = new SourceLocation(Rel(parent.File), LineOf(m)),
+                ResolvedDictionaryId = body.Id,
+            });
+            return;
+        }
 
         if (m.Name.LocalName != "ResourceDictionary")
         {
@@ -829,6 +872,18 @@ public sealed partial class XamlScanner
         return d;
     }
 
+    /// <summary>
+    /// 這個元素是不是 Application（它的資源是整個 App 的作用域）。
+    /// 規則 102：根元素是自己寫的 Application 子類別、名字不以 Application 結尾時，
+    /// 屬性元素照 XAML 的規矩寫擁有者的型別名 —— <c>&lt;navigation:BootStrapper&gt;&lt;Application.Resources&gt;</c>。
+    /// 那個 <c>Application.</c> 就是語言本身在說「這是 Application」。
+    /// ⚠ 2026-11-16 第十七輪 Unigram：舊版只認名字，App.xaml 的資源被當成一般頁面的，
+    ///   1,690 筆假 out-of-scope，App 合併的 &lt;common:Theme/&gt; 帶的鍵也看不到 —— 808 筆假 gate。
+    /// </summary>
+    private static bool IsApplicationElement(XElement el, XElement? property) =>
+        el.Name.LocalName.EndsWith("Application", StringComparison.Ordinal)
+        || property?.Name.LocalName.StartsWith("Application.", StringComparison.Ordinal) == true;
+
     private static XElement? FindResourcesProperty(XElement el) =>
         el.Elements().FirstOrDefault(e =>
             e.Name.LocalName.EndsWith(".Resources", StringComparison.Ordinal));
@@ -973,6 +1028,10 @@ public sealed partial class XamlScanner
         else if (XmlnsMap.TryGetValue(ns, out var list))
             foreach (var n in list) yield return n;
     }
+
+    private readonly List<(string Path, string File)> _mentionedPaths = [];
+    /// <summary>XAML 屬性值裡出現的 .xaml 路徑（規則 107），跟它所在的檔。</summary>
+    public IReadOnlyList<(string Path, string File)> MentionedPaths => _mentionedPaths;
 
     private readonly Dictionary<string, int> _dictionaryByClass = new(StringComparer.Ordinal);
     private readonly List<(MergedReference Ref, string Ns, string Name)> _pendingClassLinks = [];
