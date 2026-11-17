@@ -40,6 +40,14 @@
          （DataGrid 下拉清單鍵盤焦點那一項引用不存在的 `…TextBox.ComboBoxHover`），貢獻者 corvinsz 開
          [#4125](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit/pull/4125)「fix(DataGrid): use defined brush for keyboard-focused ComboBoxItem」，
          維護者 Keboo 合併。
+         **第三則，2026-11-16 修掉**：[HandBrake#8266](https://github.com/HandBrake/HandBrake/issues/8266)
+         （可編輯 ComboBox 樣板引用不存在的 `ComboBoxEditableTextBox`，潛伏），維護者 sr55 以
+         [005b91a](https://github.com/HandBrake/HandBrake/commit/005b91a697ceefec13877f7b020e293fb8d7a8c5)
+         「WinGui: Fix a Xaml Warning #8266」在深色、淺色兩份主題補上該樣式，排進 1.12.0。
+         **維護者確認、尚未修**：[dnGrep#1554](https://github.com/dnGrep/dnGrep/issues/1554)
+         （主題化 RadioButton 焦點框的 `ControlTextBrush`，2026-11-15 doug24 回說下一版修）、
+         [PicView#453](https://github.com/Ruben2776/PicView/issues/453)
+         （主題改名後留下的舊鍵名，2026-11-16 作者 Ruben2776 確認是殘留，更新 Linux 版時會改）。
          其他送出的：[lepoco/wpfui#1780](https://github.com/lepoco/wpfui/issues/1780)
          （`TreeViewItemFocusVisual`）、[microsoft/WPF-Samples#819 的留言](https://github.com/microsoft/WPF-Samples/pull/819#issuecomment-6877668604)
          （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`）、
