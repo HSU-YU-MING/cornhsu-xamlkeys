@@ -307,7 +307,7 @@ public class FrozenContractTests
                           .Select(m => m.Groups[1].Value).ToArray();
 
         Assert.Equal(
-            ["path", "config", "baseline", "fail-on", "min-coverage", "sarif", "json", "version"],
+            ["root", "config", "baseline", "fail-on", "min-coverage", "sarif", "json", "version"],
             actual);
     }
 
