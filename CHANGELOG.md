@@ -9,6 +9,16 @@ see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Corrected a count in the 0.1.0 notes.** They say the default gate fires on 50 findings in
+  seven projects. That figure is from round fourteen and was never updated: round eighteen
+  ("dictionaries filled in code no longer hide keys nobody mentions") raised Unigram's gated
+  findings from 0 to 4, so the released corpus is **54 findings in eight projects**
+  (maui-samples 40, Unigram 4, HandBrake 2, MauiSamplesVA 2, PicView 2, WPF-Samples 2,
+  Telepathy 1, Weather21 1). Every one is still verified by hand. The 0.1.0 section is left as
+  published; `docs/corpus.tsv` is the source of truth for these counts.
+
 ## [0.1.0] - 2026-11-17
 
 First release.
