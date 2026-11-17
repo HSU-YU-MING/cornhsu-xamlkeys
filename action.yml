@@ -7,7 +7,7 @@ branding:
   color: 'blue'
 
 inputs:
-  path:
+  root:
     description: 'Folder to scan'
     required: false
     default: '.'
@@ -57,7 +57,7 @@ runs:
     - name: Run XamlKeys
       shell: bash
       env:
-        XK_PATH: ${{ inputs.path }}
+        XK_ROOT: ${{ inputs.root }}
         XK_CONFIG: ${{ inputs.config }}
         XK_BASELINE: ${{ inputs.baseline }}
         XK_SARIF: ${{ inputs.sarif }}
@@ -74,4 +74,4 @@ runs:
         args+=(--min-coverage "$XK_MIN_COVERAGE")
         # ⚠ 路徑一律放在 -- 之後：沒有這個出口的話,一個叫 --version 的資料夾
         #    會被當成旗標（印版本、exit 0、什麼都沒稽核）
-        xamlkeys "${args[@]}" -- "$XK_PATH"
+        xamlkeys "${args[@]}" -- "$XK_ROOT"

@@ -9,9 +9,9 @@ see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-17
 
-First release. (The heading gets the release date when the tag is pushed.)
+First release.
 
 **In one paragraph:** a static audit of XAML resource keys for WPF, WinUI, Avalonia and .NET MAUI.
 It reports nine kinds of finding and gates CI on the two that throw at load time. It was built
@@ -444,7 +444,7 @@ names, the baseline file — is somebody else's input. Three things were found b
   result lost with it. At 80,000 levels `XDocument.Load` alone took 18 seconds. Nesting is now
   measured while streaming, before the file is loaded; past 512 levels the file is skipped and
   counted as a parse error, so it still feeds the "is this result trustworthy" decision.
-- **`action.yml` interpolated its inputs straight into shell scripts.** `${{ inputs.path }}` inside
+- **`action.yml` interpolated its inputs straight into shell scripts.** `${{ inputs.root }}` inside
   `run:` is substituted before the shell sees the script, so a caller wiring an input to anything
   a PR author controls would have executed it. Inputs now arrive through `env`.
 
