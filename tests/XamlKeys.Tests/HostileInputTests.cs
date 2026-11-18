@@ -145,15 +145,44 @@ public class HostileInputTests : IDisposable
     {
         // `${{ inputs.x }}` 寫在 run: 裡，是在 shell 看到腳本**之前**做的文字代換 ——
         // 呼叫端把 PR 作者控制得到的值接上來，就是任意指令執行。
-        // 唯一允許的形式是 env 區塊裡的一行 `XK_NAME: ${{ inputs.name }}`。
-        var yml = File.ReadAllLines(Path.Combine(TestPaths.RepoRoot, "action.yml"));
+        // 只看 run: 腳本的內容：if:、with:、working-directory: 與 env 區塊是 runner 的表達式與參數，不經過 shell
+        // （XamlContrast、XamlFit 的 Action 也這樣用）。run: | 的區塊從那一行起，到縮排回到 run: 的層級為止。
+        var lines = File.ReadAllLines(Path.Combine(TestPaths.RepoRoot, "action.yml"));
+        var offenders = new List<string>();
+        var runBlocks = 0;
+        var runIndent = -1;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var indent = line.Length - line.TrimStart().Length;
+            if (runIndent >= 0 && line.Trim().Length > 0 && indent <= runIndent) runIndent = -1;
+            if (runIndent < 0)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"^(\s+)run:\s*(\|?)\s*(.*)$");
+                if (!m.Success) continue;
+                runBlocks++;
+                if (m.Groups[2].Value == "|") { runIndent = m.Groups[1].Length; continue; }
+                if (m.Groups[3].Value.Contains("${{", StringComparison.Ordinal)) offenders.Add($"action.yml:{i + 1}: {line.Trim()}");
+                continue;
+            }
+            if (line.Contains("${{", StringComparison.Ordinal) && !line.TrimStart().StartsWith('#'))
+                offenders.Add($"action.yml:{i + 1}: {line.Trim()}");
+        }
+
+        Assert.True(runBlocks > 0, "action.yml has no run: step");
+        Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+
+        // inputs 進 shell 只走 env 區塊裡的 `XK_NAME: ${{ inputs.name }}`
         var envLine = new System.Text.RegularExpressions.Regex(@"^\s+XK_[A-Z_]+: \$\{\{ inputs\.[a-z-]+ \}\}$");
-
-        var interpolations = yml.Where(l => l.Contains("${{", StringComparison.Ordinal)
-                                         && !l.TrimStart().StartsWith('#')).ToList();
-
-        Assert.NotEmpty(interpolations);
-        Assert.All(interpolations, l => Assert.Matches(envLine, l));
+        var inputLines = lines.Where(l => l.Contains("${{ inputs.", StringComparison.Ordinal)
+                                       && !l.TrimStart().StartsWith('#')
+                                       && !l.TrimStart().StartsWith("if:", StringComparison.Ordinal)
+                                       && !l.TrimStart().StartsWith("with:", StringComparison.Ordinal)
+                                       && !l.TrimStart().StartsWith("working-directory:", StringComparison.Ordinal)
+                                       && !l.TrimStart().StartsWith("name:", StringComparison.Ordinal)
+                                       && !l.TrimStart().StartsWith("category:", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(inputLines);
+        Assert.All(inputLines, l => Assert.Matches(envLine, l));
     }
 
     // ── 掃描範圍外的路徑 ────────────────────────────────────────────────

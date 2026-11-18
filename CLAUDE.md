@@ -136,6 +136,7 @@ ignore 註解語法、稽核範圍的硬規則。
 dotnet test XamlKeys.slnx                    # 單元 + CLI 契約 + 語料教訓
 ./scripts/verify-readme-sample.ps1           # README 的示範輸出沒走鐘
 ./scripts/verify-baselines.ps1               # 自家三個專案的結果沒有無聲變動
+bash scripts/verify-readme-facts.sh          # README 的 Action 範例釘的版本 = CHANGELOG 最新版（--update 重貼）
 ```
 
 `verify-baselines.ps1` **只守自家專案**。動到解析或判定規則時，

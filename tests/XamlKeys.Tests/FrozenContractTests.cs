@@ -295,20 +295,87 @@ public class FrozenContractTests
     }
 
     // ── 7. action.yml 的 inputs ────────────────────────────────────────────
+    // 0.2.0 起 Action 的形狀跟 XamlContrast、XamlFit 一樣（三件套要長得一樣，之後合併的 Action 才接得起來）：
+    // `sarif` 是開關（Action 自己上傳 code scanning）、`json` 拿掉（報告上傳成 artifact）、Action 自己裝 .NET。
+    // 改 inputs 是對使用者的承諾變動：要同時改兩份 README 的表、CHANGELOG 的 Upgrading，再來改這裡的清單。
+
+    private static readonly string[] ActionInputs =
+    [
+        "root", "working-directory", "version", "config", "baseline", "fail-on", "min-coverage",
+        "upload-report", "sarif", "artifact-name",
+    ];
+
+    private static string ActionYml() => File.ReadAllText(Path.Combine(TestPaths.RepoRoot, "action.yml"));
 
     [Fact]
     public void The_action_inputs_are_frozen()
     {
-        var yml = File.ReadAllText(Path.Combine(TestPaths.RepoRoot, "action.yml"));
+        var yml = ActionYml();
         var inputs = yml[yml.IndexOf("inputs:", StringComparison.Ordinal)..];
         inputs = inputs[..inputs.IndexOf("\nruns:", StringComparison.Ordinal)];
 
         var actual = Regex.Matches(inputs, @"^  ([a-z-]+):", RegexOptions.Multiline)
                           .Select(m => m.Groups[1].Value).ToArray();
 
-        Assert.Equal(
-            ["root", "config", "baseline", "fail-on", "min-coverage", "sarif", "json", "version"],
-            actual);
+        Assert.Equal(ActionInputs, actual);
+    }
+
+    [Theory]
+    [InlineData("README.md")]
+    [InlineData("README.zh-Hant.md")]
+    public void Every_action_input_is_listed_in_both_readmes(string readme)
+    {
+        // 表裡沒寫的 input 等於不存在（跟旗標同一條規矩）
+        var text = File.ReadAllText(Path.Combine(TestPaths.RepoRoot, readme));
+
+        foreach (var input in ActionInputs)
+            Assert.True(text.Contains($"`{input}`", StringComparison.Ordinal), $"{readme} does not mention the action input `{input}`");
+    }
+
+    [Fact]
+    public void Third_party_actions_are_pinned_to_commit_shas()
+    {
+        // 移動 tag（@v4）會讓別人的新版默默進來；2026-10 稽核後六個 repo 都釘 SHA（ci.yml 也是）
+        var uses = Regex.Matches(ActionYml(), @"^\s+uses:\s*(\S+)", RegexOptions.Multiline)
+                        .Select(m => m.Groups[1].Value).ToList();
+        Assert.NotEmpty(uses);
+        foreach (var u in uses)
+            Assert.Matches(@"^[^@]+@[0-9a-f]{40}$", u);
+    }
+
+    [Fact]
+    public void The_action_has_the_same_shape_as_the_xamlcontrast_action()
+    {
+        var yml = ActionYml();
+        // 先驗再裝、輸出包在一次性 token 的 stop-commands 裡、root 在 -- 後面、報告固定寫到 $RUNNER_TEMP、最後一步才擋
+        Assert.Contains("- name: Validate inputs", yml);
+        Assert.Contains("::stop-commands::$token", yml);
+        Assert.Contains("args+=(-- \"$XK_ROOT\")", yml);
+        Assert.Contains("--json \"$RUNNER_TEMP/xamlkeys-report.json\"", yml);
+        Assert.Contains("--sarif \"$RUNNER_TEMP/xamlkeys.sarif\"", yml);
+        Assert.EndsWith("run: exit \"$XK_EXIT\"", yml.TrimEnd());
+        // 沒有 outputs：退出碼只是內部的 step output
+        Assert.DoesNotMatch(new Regex("^outputs:", RegexOptions.Multiline), yml);
+    }
+
+    [Fact]
+    public void The_action_annotation_reads_fields_every_finding_has()
+    {
+        // Annotate findings 那段 jq 讀的欄位（file、line、severity、kind、message）每筆 finding 都要有，
+        // 等級對應 fail → error、warn → warning、其餘 notice
+        var yml = ActionYml();
+        Assert.Contains("file=\\(($root + .file) | prop)", yml);
+        Assert.Contains(".severity == \"fail\" then \"error\"", yml);
+        Assert.Contains(".severity == \"warn\" then \"warning\"", yml);
+        Assert.Contains("\\(.kind): \\(.message)", yml);
+
+        using var doc = JsonDocument.Parse(Json());
+        foreach (var f in doc.RootElement.GetProperty("findings").EnumerateArray())
+        {
+            Assert.Equal(JsonValueKind.String, f.GetProperty("file").ValueKind);
+            Assert.Equal(JsonValueKind.Number, f.GetProperty("line").ValueKind);
+            Assert.DoesNotContain('\\', f.GetProperty("file").GetString()!);   // root 相對、正斜線：Action 直接接上前綴
+        }
     }
 
     // ── 8. ignore 註解的語法 ───────────────────────────────────────────────

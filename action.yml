@@ -1,39 +1,57 @@
 name: 'XamlKeys resource key audit'
-description: 'Static scope audit for XAML resource keys: dangling references, duplicate and shadowed keys, unused keys.'
+description: 'Static scope audit for XAML resource keys: dangling references, duplicate and shadowed keys, unused keys. Fails the PR on load-time errors, annotates the lines.'
 author: 'Cornhsu'
 
 branding:
   icon: 'key'
   color: 'blue'
 
+# 形狀照 XamlContrast 的 action.yml（三件套要長得一樣，之後合併的 Action 才接得起來）：
+#   inputs 先進 env 再用、先驗再裝、CLI 輸出包在 ::stop-commands:: 裡、報告與註記先出去、最後一步才依結論擋。
+#   0.2.0 起 `sarif` 是開關（Action 自己上傳到 code scanning）、JSON 報告上傳成 artifact（upload-report／artifact-name），
+#   不再收輸出路徑 —— 跟 XamlContrast 1.x 一致，那邊的 inputs 已經凍結、改不了。
+
 inputs:
   root:
-    description: 'Folder to scan'
+    description: 'Folder to scan (the one containing your XAML); default: the repository root'
     required: false
     default: '.'
-  config:
-    description: 'Path to xamlkeys.config.json'
+  working-directory:
+    description: 'Directory to run in (`root`, `config` and `baseline` are resolved relative to it)'
     required: false
-  baseline:
-    description: 'Path to a baseline file; only findings outside it are reported'
-    required: false
-  fail-on:
-    description: "Gate level: 'fail' (default) or 'warn'"
-    required: false
-    default: 'fail'
-  min-coverage:
-    description: 'Minimum share of merged dictionaries that must resolve (0-100)'
-    required: false
-    default: '80'
-  sarif:
-    description: 'Write a SARIF report to this path'
-    required: false
-  json:
-    description: 'Write the JSON report to this path'
-    required: false
+    default: '.'
   version:
-    description: 'Version of Cornhsu.XamlKeys to install (default: latest)'
+    description: 'Cornhsu.XamlKeys tool version, such as 0.2.0 (default: the latest). The tool is 0.x: pin it, so a new release cannot change your build without a commit'
     required: false
+    default: ''
+  config:
+    description: 'Path to xamlkeys.config.json (default: the file inside root)'
+    required: false
+    default: ''
+  baseline:
+    description: 'Path to a baseline file (ratchet mode: only findings outside it are reported; the file must be committed to the repo)'
+    required: false
+    default: ''
+  fail-on:
+    description: 'fail: fail the job on fail-level findings only (the default); warn: also on warn-level ones. Omit to use the config file''s failOn, else fail'
+    required: false
+    default: ''
+  min-coverage:
+    description: 'Fail the job (exit 3) when fewer than this percentage (0-100) of merged dictionaries could be resolved. Omit to use the config file''s minCoverage, else 80; 0 disables'
+    required: false
+    default: ''
+  upload-report:
+    description: 'Upload the JSON report as an artifact named by artifact-name (default xamlkeys-report)'
+    required: false
+    default: 'true'
+  sarif:
+    description: 'Upload SARIF to GitHub code scanning (requires security-events: write, plus GitHub Advanced Security or a public repo)'
+    required: false
+    default: 'false'
+  artifact-name:
+    description: 'Name of the uploaded report artifact. Give every call its own name when the action runs more than once in a workflow run (a matrix, or two calls in one job). Letters, digits, ".", "_" and "-" only, 1-100 characters, not starting with "-" and not only dots'
+    required: false
+    default: 'xamlkeys-report'
 
 runs:
   using: 'composite'
@@ -42,36 +60,169 @@ runs:
     #    ${{ }} 是在 shell 看到腳本之前就做文字代換的：呼叫端只要把一個
     #    PR 作者控制得到的值（分支名、標題、檔名）接到 input 上，
     #    那個值就會被當成指令執行。走 env 的話它永遠只是一個字串。
+    #
+    # 先驗再用：壞值 → exit 2（與 CLI 的用法錯誤同一碼），在裝任何東西之前。訊息只點名 input，不印值。
+    - name: Validate inputs
+      shell: bash
+      env:
+        XK_ROOT: ${{ inputs.root }}
+        XK_WORKDIR: ${{ inputs.working-directory }}
+        XK_VERSION: ${{ inputs.version }}
+        XK_CONFIG: ${{ inputs.config }}
+        XK_BASELINE: ${{ inputs.baseline }}
+        XK_FAIL_ON: ${{ inputs.fail-on }}
+        XK_MIN_COVERAGE: ${{ inputs.min-coverage }}
+        XK_UPLOAD_REPORT: ${{ inputs.upload-report }}
+        XK_SARIF: ${{ inputs.sarif }}
+        XK_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        # 同一個 job 前一次呼叫留下的報告（$RUNNER_TEMP 共用）不能被這一次的註記與上傳撿去
+        rm -f -- "$RUNNER_TEMP/xamlkeys-report.json" "$RUNNER_TEMP/xamlkeys.sarif"
+        bad=0
+        refuse() { echo "::error title=XamlKeys action::$1"; bad=1; }
+        # 帶換行的值一律拒絕：CLI／dotnet 的錯誤訊息會把它原樣印出，換行後的內容落在行首就成了
+        # runner 會解析的 workflow command（::error …、::add-mask::）。這些值本來就跑不起來，提早擋不改變行為
+        case "$XK_ROOT$XK_WORKDIR$XK_VERSION$XK_CONFIG$XK_BASELINE$XK_MIN_COVERAGE" in
+          *$'\n'* | *$'\r'*) refuse "root, working-directory, version, config, baseline and min-coverage must not contain a line break" ;;
+        esac
+        # 以 - 開頭的路徑會被 CLI 當成旗標：root: --version 印版本、exit 0，什麼都沒稽核就綠燈。
+        # Run audit 另外以 -- 傳 root（雙重保險），這裡先點名擋下
+        case "$XK_ROOT" in -*) refuse "root must not start with '-' (write ./-name for such a directory)" ;; esac
+        for pair in "config=$XK_CONFIG" "baseline=$XK_BASELINE"; do
+          case "${pair#*=}" in -*) refuse "${pair%%=*} must not start with '-' (write ./-name for such a path)" ;; esac
+        done
+        case "$XK_FAIL_ON" in
+          '' | warn | fail) ;;
+          *) refuse "fail-on must be 'fail', 'warn' or empty (the config file's failOn, else fail)" ;;
+        esac
+        # 範圍（0-100）交給 CLI 驗：超出範圍是 exit 2 並說明
+        [[ "$XK_MIN_COVERAGE" =~ ^([0-9]+(\.[0-9]+)?)?$ ]] || refuse "min-coverage must be a number between 0 and 100, or empty"
+        # artifact-name 會成為 artifact 名稱與 code scanning 的 category，只收安全的字元（比照 XamlContrast）。
+        # bash 的 =~ 是整串比對，換行過不了
+        if ! [[ "$XK_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]] || [[ "$XK_ARTIFACT_NAME" =~ ^-|^\.+$ ]]; then
+          refuse "artifact-name must be 1-100 characters of A-Z, a-z, 0-9, '.', '_' or '-', not starting with '-' and not only dots"
+        fi
+        for pair in "upload-report=$XK_UPLOAD_REPORT" "sarif=$XK_SARIF"; do
+          case "${pair#*=}" in
+            true | false) ;;
+            *) refuse "${pair%%=*} must be 'true' or 'false'" ;;
+          esac
+        done
+        if [ "$bad" -ne 0 ]; then exit 2; fi
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        dotnet-version: '10.0.x'
+
     - name: Install XamlKeys
       shell: bash
       env:
         XK_VERSION: ${{ inputs.version }}
       run: |
         if [ -n "$XK_VERSION" ]; then
-          dotnet tool install -g Cornhsu.XamlKeys --version "$XK_VERSION"
+          dotnet tool install --global Cornhsu.XamlKeys --version "$XK_VERSION"
         else
-          dotnet tool install -g Cornhsu.XamlKeys
+          # 0.x 沒有「只跟隨一個 major」的承諾可以給：不釘版本就是最新版。README 教使用者釘
+          dotnet tool install --global Cornhsu.XamlKeys
         fi
         echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-    - name: Run XamlKeys
+    # 先跑、先產報告與註記，最後一步才依結論擋（讓失敗的 PR 也看得到完整輸出）
+    - name: Run audit
+      id: audit
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         XK_ROOT: ${{ inputs.root }}
         XK_CONFIG: ${{ inputs.config }}
         XK_BASELINE: ${{ inputs.baseline }}
-        XK_SARIF: ${{ inputs.sarif }}
-        XK_JSON: ${{ inputs.json }}
         XK_FAIL_ON: ${{ inputs.fail-on }}
         XK_MIN_COVERAGE: ${{ inputs.min-coverage }}
+        XK_SARIF: ${{ inputs.sarif }}
       run: |
-        args=()
+        set +e
+        args=(--json "$RUNNER_TEMP/xamlkeys-report.json")
+        [ "$XK_SARIF" = "true" ] && args+=(--sarif "$RUNNER_TEMP/xamlkeys.sarif")
         [ -n "$XK_CONFIG" ]   && args+=(--config "$XK_CONFIG")
         [ -n "$XK_BASELINE" ] && args+=(--baseline "$XK_BASELINE")
-        [ -n "$XK_SARIF" ]    && args+=(--sarif "$XK_SARIF")
-        [ -n "$XK_JSON" ]     && args+=(--json "$XK_JSON")
-        args+=(--fail-on "$XK_FAIL_ON")
-        args+=(--min-coverage "$XK_MIN_COVERAGE")
-        # ⚠ 路徑一律放在 -- 之後：沒有這個出口的話,一個叫 --version 的資料夾
-        #    會被當成旗標（印版本、exit 0、什麼都沒稽核）
-        xamlkeys "${args[@]}" -- "$XK_ROOT"
+        # gate 與覆蓋率下限：空白就不傳，交給 config（沒有就是內建預設）—— 旗標 > config > 預設
+        [ -n "$XK_FAIL_ON" ]  && args+=(--fail-on "$XK_FAIL_ON")
+        [ -n "$XK_MIN_COVERAGE" ] && args+=(--min-coverage "$XK_MIN_COVERAGE")
+        # ⚠ root 放在 -- 後面：之後的字一律是位置參數，以 - 開頭也不會被當成旗標
+        #    （沒有這個出口的話，一個叫 --version 的資料夾會被當成旗標：印版本、exit 0、什麼都沒稽核）
+        args+=(-- "$XK_ROOT")
+        # CLI 的輸出包在一次性 token 的 ::stop-commands:: 裡：被稽核的 XAML 是不可信的輸入，CLI 已經把鍵名跳脫成一行
+        # （Report.OneLine），這是第二道防線 —— 這段期間 runner 不解析任何 workflow command。
+        # token 每次隨機（固定的 token 可以被輸出內容提前關掉）
+        token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        echo "::stop-commands::$token"
+        xamlkeys "${args[@]}"
+        code=$?
+        echo "::$token::"
+        echo "exit=$code" >> "$GITHUB_OUTPUT"
+
+    # 把 finding 直接標在 PR 的行上。等級：fail → error、warn → warning、info → notice。
+    # finding 的 file 是「root 相對、正斜線」路徑（JSON 與 SARIF 都是）；前綴 working-directory + root 即為 workspace 路徑。
+    # 前綴組完要把 "./"、"/./"、重複的 "/" 收乾淨，否則 GitHub 對不上檔案 —— root 是 "." 時前綴是空的。
+    - name: Annotate findings
+      if: ${{ always() }}
+      shell: bash
+      env:
+        XK_ROOT: ${{ inputs.root }}
+        XK_WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        report="$RUNNER_TEMP/xamlkeys-report.json"
+        [ -f "$report" ] || exit 0
+        prefix=$(echo "$XK_WORKDIR/$XK_ROOT" | sed 's|^|/|; s|$|/|; s|//*|/|g; s|/\./|/|g; s|/\./|/|g; s|/\./|/|g; s|^/||; s|/$||')
+        if [ -n "$prefix" ]; then prefix="$prefix/"; fi
+        # workflow command 的跳脫（GitHub 規格）：訊息跳脫 % \r \n，屬性值（file=…）另外跳脫 : 與 ,。
+        # 不跳脫的話，檔名裡一個逗號就把 file 屬性切斷、一個換行就讓後面的內容落在行首變成另一個 workflow command
+        # （鍵名是被掃的 repo 寫的：x:Key="A&#10;::error::..." 是合法的 XAML，JSON 裡保留原樣）
+        jq -r --arg root "$prefix" '
+          def esc: gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A");
+          def prop: esc | gsub(":"; "%3A") | gsub(","; "%2C");
+          .findings[]
+          | (if .severity == "fail" then "error" elif .severity == "warn" then "warning" else "notice" end) as $level
+          | "::\($level) file=\(($root + .file) | prop),line=\(if .line < 1 then 1 else .line end)::\("\(.kind): \(.message)" | esc)"
+        ' "$report" || true
+
+    # SARIF 的路徑是 root 相對 —— 先補上前綴變成 repo 相對，code scanning 才對得上檔案
+    - name: Make SARIF paths repo-relative
+      if: ${{ always() && inputs.sarif == 'true' }}
+      shell: bash
+      env:
+        XK_ROOT: ${{ inputs.root }}
+        XK_WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        f="$RUNNER_TEMP/xamlkeys.sarif"
+        [ -f "$f" ] || exit 0
+        prefix=$(echo "$XK_WORKDIR/$XK_ROOT" | sed 's|^|/|; s|$|/|; s|//*|/|g; s|/\./|/|g; s|/\./|/|g; s|/\./|/|g; s|^/||; s|/$||')
+        if [ -n "$prefix" ]; then prefix="$prefix/"; fi
+        jq --arg root "$prefix" \
+          '(.runs[].results[].locations[].physicalLocation.artifactLocation.uri) |= ($root + .)' \
+          "$f" > "$RUNNER_TEMP/xamlkeys.repo.sarif"
+        mv "$RUNNER_TEMP/xamlkeys.repo.sarif" "$f"
+    - name: Upload SARIF
+      if: ${{ always() && inputs.sarif == 'true' }}
+      continue-on-error: true   # 無 Advanced Security 的私有 repo 會 403，不該紅掉整個 job
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      with:
+        sarif_file: ${{ runner.temp }}/xamlkeys.sarif
+        # 同一個 run 用兩次時 code scanning 以 category 區分兩份分析（不給的話後一份蓋掉前一份）；預設名稱照舊不給
+        category: ${{ inputs.artifact-name != 'xamlkeys-report' && inputs.artifact-name || '' }}
+
+    - name: Upload report
+      if: ${{ always() && inputs.upload-report == 'true' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/xamlkeys-report.json
+        if-no-files-found: ignore
+
+    # 報告與註記都出去了，現在才依 gate 結論決定 job 成敗
+    - name: Enforce gate
+      shell: bash
+      env:
+        XK_EXIT: ${{ steps.audit.outputs.exit }}
+      run: exit "$XK_EXIT"

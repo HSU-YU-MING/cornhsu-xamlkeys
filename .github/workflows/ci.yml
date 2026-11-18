@@ -76,6 +76,10 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-readme-sample.ps1
 
+      # README 的 Action 範例釘的版本要等於 CHANGELOG 最新的已發佈版本（XamlFit 0.3.0 發完才發現還釘著 0.1.0）
+      - name: README pins the released version
+        run: bash scripts/verify-readme-facts.sh
+
   # 解析引擎是純 XML,不依賴 WPF runtime —— 這個 job 守住那句話。
   windows:
     runs-on: windows-latest
