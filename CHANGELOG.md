@@ -7,6 +7,44 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
+## [0.3.0] - 2026-11-19
+
+**Upgrading**: if you use the GitHub Action, move `@v0.3.0` and `version: 0.3.0` together. The
+0.3.0 action passes `--md` to the tool, which 0.2.0 and earlier reject (exit 2). The action now
+comments on pull requests by default; give the job `permissions: pull-requests: write`, or set
+`comment: false`. Without the permission the comment step gets a 403 and is skipped over
+(`continue-on-error`); the gate is unaffected. The CLI's exit codes, JSON, SARIF and baseline
+formats did not change.
+
+### Added
+
+- **`--md <path>`: a Markdown report for pull request comments**, shaped like XamlContrast's.
+  It opens with the verdict (PASS / FAIL / NOT TRUSTWORTHY, matching the exit code), the counts per
+  severity and the size of the scan; then **what the run could not see**, before any finding:
+  the reason the result is not trustworthy, merged dictionaries that could not be read, files that
+  failed to parse, runtime-composed lookups in C#, ignore comments without a reason, and the
+  "counted as used / not gated / suppressed" counters. Then the findings grouped by severity
+  (Location, Kind, Key, Message; info folded away), at most 50 rows per severity with a line saying
+  how many more there are and that the full list is in the JSON report. Numbers use the invariant
+  culture; the text is ASCII (GitHub's `:x:` short codes, no emoji); no timestamp.
+  Every string that comes from the scanned repository (keys, file paths, messages, merge sources,
+  parser messages, C# expressions) is a code span whose fence is longer than any backtick run in
+  it, with `|` escaped in tables, line breaks collapsed and long values clipped, so a key named
+  `[x](http://evil)`, `@someone` or `` a` [x](…) `b `` cannot become a link or a mention in the
+  comment. Tests strip the code spans the way CommonMark does and check that nothing hostile is
+  left, and that every table row still has four cells.
+- **The Action's `comment` input** (default `true`): posts the Markdown report as a PR comment and
+  updates the same comment on every push. The step is copied from the XamlContrast action: it runs
+  only on `pull_request`, finds its previous comment by a marker made from `artifact-name` (each
+  name keeps its own comment), pages through all comments and only edits one written by
+  `github-actions[bot]`, truncates above 60,000 characters with a pointer to the artifact, and is
+  `continue-on-error`. The Markdown report is also uploaded with the JSON one.
+- **CI runs the action itself** (`action` job, after XamlFit's): `uses: ./` on the demo with
+  `min-coverage: 0` must fail the gate and leave a JSON report with findings and a Markdown report
+  that says FAIL; `fail-on: Warn` must be refused. The tool it installs is this commit's CLI,
+  packed into a local feed and pinned through `version` (the released 0.2.0 does not know `--md`),
+  so the install step still runs for real.
+
 ## [0.2.0] - 2026-11-19
 
 **Upgrading**: the GitHub Action's inputs changed; the CLI did not. `sarif` is now a switch

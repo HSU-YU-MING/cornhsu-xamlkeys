@@ -15,6 +15,7 @@ string? root = null;
 string? jsonPath = null;
 string? sarifPath = null;
 string? htmlPath = null;
+string? mdPath = null;
 string? configPath = null;
 string? baselinePath = null;
 string? writeBaselinePath = null;
@@ -47,6 +48,10 @@ for (var i = 0; i < args.Length; i++)
         case "--html":
             if (Value(args, ref i, "--html") is not { } hp) return 2;
             htmlPath = hp; break;
+
+        case "--md":
+            if (Value(args, ref i, "--md") is not { } mdp) return 2;
+            mdPath = mdp; break;
 
         case "--config":
             if (Value(args, ref i, "--config") is not { } cp) return 2;
@@ -236,6 +241,10 @@ if (jsonPath is not null && !TryWrite(jsonPath, Report.ToJson(result, version)))
 if (sarifPath is not null && !TryWrite(sarifPath, ReportSarif.ToSarif(result, version))) return 2;
 if (htmlPath is not null && !TryWrite(htmlPath, ReportHtml.ToHtml(result, version))) return 2;
 
+// 退出碼先算好（純函式，不印東西）：Markdown 的 PASS／FAIL 要跟真的退出碼一致，不能各說各話
+var exit = DecideExit(result, writeBaselinePath is not null);
+if (mdPath is not null && !TryWrite(mdPath, ReportMarkdown.ToMarkdown(result, version, exit))) return 2;
+
 // 棘輪只有在會「收緊」的時候才有意義。債還掉了卻沒人去縮 baseline,
 // 那份清單就會一直把將來的新債一起蓋住 —— 所以即使沒下 --stale 也要提一句。
 if (baseline is not null)
@@ -262,7 +271,10 @@ if (baseline is not null)
     }
 }
 
-return DecideExit(result, writeBaselinePath is not null);
+// 原因放在最後一行印（跟 0.2.0 一樣）：它是這一次執行的結論
+if (exit == 3 && result.Untrustworthy(out var untrustworthyReason))
+    Console.Error.WriteLine($"result is not trustworthy: {untrustworthyReason}");
+return exit;
 
 // ── 判定 ───────────────────────────────────────────────────────────────────
 
@@ -270,11 +282,7 @@ static int DecideExit(AnalysisResult r, bool wroteBaseline)
 {
     // ⚠ 順序有意義：「不可信」排在「有違規」前面。
     //   一次重構讓所有路徑失效時，findings 會是空的 —— 綠燈放行就是謊報健康。
-    if (r.Untrustworthy(out var reason))
-    {
-        Console.Error.WriteLine($"result is not trustworthy: {reason}");
-        return 3;
-    }
+    if (r.Untrustworthy(out _)) return 3;
 
     // 剛寫完 baseline 的那一次不擋：使用者是在建立清單，不是在驗收
     if (wroteBaseline) return 0;
@@ -340,6 +348,7 @@ static void PrintUsage(TextWriter o)
           --json <path>            write the JSON report
           --sarif <path>           write a SARIF 2.1.0 report (fail/warn only)
           --html <path>            write a self-contained HTML report (no scripts, no external files)
+          --md <path>              write a Markdown summary (for a pull request comment)
           --msbuild                also print MSBuild diagnostics for the VS error list
           --config <path>          config file (default: xamlkeys.config.json in <path>)
           --baseline <path>        only report findings that are not in this baseline

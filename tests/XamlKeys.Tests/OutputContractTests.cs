@@ -25,6 +25,9 @@ public class OutputContractTests
 
         AssertAscii(Report.ToJson(r, "0.0.0-test"), "json");
         AssertAscii(ReportSarif.ToSarif(r, "0.0.0-test"), "sarif");
+        // Markdown 用 GitHub 的 :x: 短碼，不放 emoji（跟其他輸出同一條規矩）
+        AssertAscii(ReportMarkdown.ToMarkdown(r, "0.0.0-test", 1), "markdown");
+        AssertAscii(ReportMarkdown.ToMarkdown(r, "0.0.0-test", 3), "markdown");
     }
 
     private static void AssertAscii(string text, string what)
