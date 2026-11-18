@@ -124,6 +124,45 @@ must not produce the same green tick.
 
 ## CI
 
+### GitHub Action
+
+```yaml
+permissions:
+  contents: read
+  security-events: write          # only with sarif: true
+steps:
+  - uses: actions/checkout@v4
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.2.0
+    with:
+      root: src/MyApp
+      version: 0.2.0              # pin the tool too: it is 0.x, so pin an exact version
+      sarif: true                 # upload to code scanning
+```
+
+The action installs .NET and the tool, runs `xamlkeys`, annotates every finding on its line in
+the PR, uploads the JSON report as a workflow artifact, uploads SARIF to code scanning when asked,
+and only then fails the job on the audit's exit code, so a red PR still shows the whole report. It
+has the same shape as the XamlContrast and XamlFit actions (inputs are validated before anything
+is installed; the tool's output is wrapped in `::stop-commands::`, because the key names it prints
+come from the scanned repository).
+
+| Input | Default | What it does |
+|---|---|---|
+| `root` | `.` | folder to scan |
+| `working-directory` | `.` | folder to run in; the paths below are relative to it |
+| `version` | latest | tool version to install; the tool is 0.x, so pin it |
+| `config` | `xamlkeys.config.json` in `root` | config file |
+| `baseline` | none | ratchet file: only findings outside it are reported |
+| `fail-on` | config, else `fail` | `fail` or `warn` |
+| `min-coverage` | config, else 80 | share of merged dictionaries that must resolve; below it the job exits 3 |
+| `sarif` | `false` | upload SARIF to code scanning (needs `security-events: write`) |
+| `upload-report` | `true` | upload the JSON report as an artifact |
+| `artifact-name` | `xamlkeys-report` | artifact name, and the code-scanning category when the action runs twice in one run |
+
+The path is passed after `--`, so a folder named like a flag is still scanned as a folder.
+
+### Plain CLI
+
 ```yaml
 - run: dotnet tool install -g Cornhsu.XamlKeys
 - run: xamlkeys src --sarif xamlkeys.sarif

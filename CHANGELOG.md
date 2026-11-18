@@ -7,7 +7,39 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-19
+
+**Upgrading**: the GitHub Action's inputs changed; the CLI did not. `sarif` is now a switch
+(`true` uploads to code scanning from inside the action, so drop your own `upload-sarif` step)
+and `json` is gone: the JSON report is uploaded as a workflow artifact (`upload-report`,
+`artifact-name`). The action installs .NET itself, so the `setup-dotnet` step before it can go.
+`fail-on` and `min-coverage` no longer default to `fail` / `80` inside the action: left empty,
+they are not passed, so the config file's `failOn` / `minCoverage` apply (the CLI's own defaults
+are unchanged: `fail` and 80).
+
+### Changed
+
+- **The GitHub Action has the same shape as the XamlContrast and XamlFit actions** — the three
+  are meant to be combinable later. Inputs: `root` (default `.`), `working-directory`, `version`,
+  `config`, `baseline`, `fail-on`, `min-coverage`, `upload-report`, `sarif`, `artifact-name`.
+  Every input is validated before anything is installed (a line break, a path starting with `-`,
+  an unknown `fail-on`, a non-numeric `min-coverage`, an unsafe `artifact-name`, a non-boolean
+  switch all exit 2, naming the input but not its value). The action installs .NET, installs the
+  tool (pinned when `version` is set), runs it with the root after `--` and the output fenced in a
+  one-time `::stop-commands::` token, annotates every finding on its line in the PR
+  (fail → error, warn → warning, info → notice), rewrites SARIF paths to repository-relative and
+  uploads the file to code scanning when `sarif: true`, uploads the JSON report as an artifact, and
+  only then fails the job on the audit's exit code. Third-party actions are pinned to commit SHAs.
+  Both READMEs carry the example and an input table; the frozen-contract tests cover the input
+  list, the README tables, the SHA pins and the shape.
+
+### Added
+
+- **`scripts/verify-readme-facts.sh`**: the version the README's action example pins
+  (`cornhsu-xamlkeys@vX.Y.Z` and `version: X.Y.Z`, both READMEs) must equal the latest released
+  version in this file. The tag is the version's source of truth and the csproj stays at
+  `0.0.0-dev`, so the README example is the only place that can drift — and did, in XamlFit. CI
+  runs it; `--update` re-pins both READMEs after a new section is added here.
 
 ### Fixed
 

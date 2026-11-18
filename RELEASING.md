@@ -20,9 +20,12 @@
 2. `dotnet test XamlKeys.slnx` 全綠
 3. `scripts/verify-readme-sample.ps1` 綠 —— 動過 console 輸出就會紅，確認新輸出正確後跑 `-Update`
 4. `scripts/verify-baselines.ps1` 綠 —— 自家三個專案的結果沒有無聲變動
-5. **動到解析或判定規則時，外部專案比對要再跑一次**（下一節），`corpus-compare.mjs` 要綠
-6. 相依升版或增減時，`THIRD-PARTY-NOTICES.md` 要跟著改
-7. 推 tag：
+5. `bash scripts/verify-readme-facts.sh` 綠 —— 兩份 README 的 Action 範例釘的版本（`@vX.Y.Z` 與 `version: X.Y.Z`）
+   要等於 CHANGELOG 最新的版本段落。CHANGELOG 加了新版本段落之後跑 `--update` 重貼（CI 也會擋；
+   0.x 沒有移動 tag，使用者釘的就是這個版本，忘了改等於使用者永遠拿不到新版）
+6. **動到解析或判定規則時，外部專案比對要再跑一次**（下一節），`corpus-compare.mjs` 要綠
+7. 相依升版或增減時，`THIRD-PARTY-NOTICES.md` 要跟著改
+8. 推 tag：
 
 ```bash
 git tag v0.1.0

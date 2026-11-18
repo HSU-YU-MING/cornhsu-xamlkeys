@@ -44,15 +44,19 @@
          （可編輯 ComboBox 樣板引用不存在的 `ComboBoxEditableTextBox`，潛伏），維護者 sr55 以
          [005b91a](https://github.com/HandBrake/HandBrake/commit/005b91a697ceefec13877f7b020e293fb8d7a8c5)
          「WinGui: Fix a Xaml Warning #8266」在深色、淺色兩份主題補上該樣式，排進 1.12.0。
+         **第四則，2026-11-17 修掉**：[Avalonia#22833](https://github.com/AvaloniaUI/Avalonia/issues/22833)
+         （Simple 主題 TabbedPage 引用色盤沒有的 `ThemeForegroundMidColor`、`ThemeDisabledColor`），維護者 maxkatz6 開
+         [#22857](https://github.com/AvaloniaUI/Avalonia/pull/22857)「SimpleTheme: fix missing resource on TabbedPage, DatePicker and TimePicker with unified theme tests」，
+         MrJul 合併；順手修了 DatePicker／TimePicker 的同類缺鍵，並把「SolidColorBrush 的 DynamicResource 指到不存在的鍵」擴成全主題、全控制項的單元測試。
          **維護者確認、尚未修**：[dnGrep#1554](https://github.com/dnGrep/dnGrep/issues/1554)
          （主題化 RadioButton 焦點框的 `ControlTextBrush`，2026-11-15 doug24 回說下一版修）、
          [PicView#453](https://github.com/Ruben2776/PicView/issues/453)
          （主題改名後留下的舊鍵名，2026-11-16 作者 Ruben2776 確認是殘留，更新 Linux 版時會改）。
          其他送出的：[lepoco/wpfui#1780](https://github.com/lepoco/wpfui/issues/1780)
          （`TreeViewItemFocusVisual`）、[microsoft/WPF-Samples#819 的留言](https://github.com/microsoft/WPF-Samples/pull/819#issuecomment-6877668604)
-         （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`）、
+         （`CustomNavWindowStyle`／`NavButtonFocusVisualStyle`；2026-11-18 PR 作者 ade0003 照建議以 238354e 刪掉該 setter，
+         但他是外部貢獻者、PR 尚未被微軟合併，所以不算維護者確認）、
          [MaterialDesignInXamlToolkit#4124](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit/issues/4124)、
-         [Avalonia#22833](https://github.com/AvaloniaUI/Avalonia/issues/22833)、
          [SukiUI#674](https://github.com/kikipoulet/SukiUI/issues/674)、
          [WeatherTwentyOne#72](https://github.com/davidortinau/WeatherTwentyOne/issues/72)。
          追蹤表在 repo 外（維護者本機的上游回報資料夾）。
