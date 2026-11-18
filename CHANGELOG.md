@@ -38,7 +38,11 @@ formats did not change.
   only on `pull_request`, finds its previous comment by a marker made from `artifact-name` (each
   name keeps its own comment), pages through all comments and only edits one written by
   `github-actions[bot]`, truncates above 60,000 characters with a pointer to the artifact, and is
-  `continue-on-error`. The Markdown report is also uploaded with the JSON one.
+  `continue-on-error`. One fix over the XamlContrast step: truncation drops the last, partial line.
+  Cutting at a byte count can end a line inside a code span (or a UTF-8 character), and the rest of
+  that line, which is scanned text, would render as links and mentions; every line of the report
+  closes its own code spans, so cutting at a line boundary is safe. The Markdown report is also
+  uploaded with the JSON one.
 - **CI runs the action itself** (`action` job, after XamlFit's): `uses: ./` on the demo with
   `min-coverage: 0` must fail the gate and leave a JSON report with findings and a Markdown report
   that says FAIL; `fail-on: Warn` must be refused. The tool it installs is this commit's CLI,

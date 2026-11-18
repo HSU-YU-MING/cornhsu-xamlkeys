@@ -192,9 +192,12 @@ runs:
         # 標記以 artifact-name 區分：每個名稱各自一則留言。
         # 名稱已在 Validate inputs 限定成 [A-Za-z0-9._-]，拼進 jq 字串是安全的
         marker="<!-- $XK_ARTIFACT_NAME -->"
-        # GitHub 留言上限 ~65536 字，超過就截斷並附提示（完整內容在 artifact）
+        # GitHub 留言上限 ~65536 字，超過就截斷並附提示（完整內容在 artifact）。
+        # ⚠ 截在整行上，不是截在第 60000 個位元組：head -c 會把最後一行切在 code span 中間，收尾的反引號沒了，
+        #   被切開那段裡掃描來的 [文字](網址)、@帳號 就在留言裡變成連結與提及（也可能切在 UTF-8 字的中間）。
+        #   sed '$d' 丟掉最後那半行 —— 報告的每一行都自己關好 code span（--md 把換行收成空白），整行為單位就是安全的
         if [ "$(wc -c < "$report")" -gt 60000 ]; then
-          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>:warning: Report truncated because it exceeds the comment size limit -- see the %s artifact on this workflow run for the full version.</sub>\n' "$XK_ARTIFACT_NAME"; } > "$out"
+          { echo "$marker"; head -c 60000 "$report" | sed '$d'; printf '\n\n<sub>:warning: Report truncated because it exceeds the comment size limit -- see the %s artifact on this workflow run for the full version.</sub>\n' "$XK_ARTIFACT_NAME"; } > "$out"
         else
           { echo "$marker"; cat "$report"; } > "$out"
         fi

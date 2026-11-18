@@ -379,6 +379,8 @@ public class FrozenContractTests
         Assert.Contains("gh api --paginate", step);
         Assert.Contains(".user.login == \\\"github-actions[bot]\\\"", step);
         Assert.Contains("-gt 60000", step);
+        // 截在整行上：head -c 會把最後一行切在 code span 中間，被切開那段的連結與 @ 提及就生效了
+        Assert.Contains("head -c 60000 \"$report\" | sed '$d'", step);
         Assert.Contains("-X PATCH", step);
         Assert.Contains("-X POST", step);
 
