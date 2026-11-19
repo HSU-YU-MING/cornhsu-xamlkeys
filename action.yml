@@ -128,13 +128,19 @@ runs:
       env:
         XK_VERSION: ${{ inputs.version }}
       run: |
+        # 0.3.1 起裝進 $RUNNER_TEMP 的專用資料夾，不裝成全域工具（跟 XamlFit 0.7.0、XamlContrast 1.8.3 一樣）：
+        #   - 使用者自己先 `dotnet tool install --global` 過時，全域安裝會失敗；
+        #   - 同一個 job 呼叫兩次（artifact-name 說可以），第二次的全域安裝也會失敗（「已經安裝」）；
+        #   - Windows runner 上 $HOME 是 Git Bash 的路徑，寫進 GITHUB_PATH 不可靠 —— RUNNER_TEMP 是 runner 自己的格式。
+        dir="$RUNNER_TEMP/xamlkeys-tool"
+        rm -rf -- "$dir"
         if [ -n "$XK_VERSION" ]; then
-          dotnet tool install --global Cornhsu.XamlKeys --version "$XK_VERSION"
+          dotnet tool install --tool-path "$dir" Cornhsu.XamlKeys --version "$XK_VERSION"
         else
           # 0.x 沒有「只跟隨一個 major」的承諾可以給：不釘版本就是最新版。README 教使用者釘
-          dotnet tool install --global Cornhsu.XamlKeys
+          dotnet tool install --tool-path "$dir" Cornhsu.XamlKeys
         fi
-        echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+        echo "$dir" >> "$GITHUB_PATH"
 
     # 先跑、先產報告與註記，最後一步才依結論擋（讓失敗的 PR 也看得到完整輸出）
     - name: Run audit
@@ -238,7 +244,8 @@ runs:
           .findings[]
           | (if .severity == "fail" then "error" elif .severity == "warn" then "warning" else "notice" end) as $level
           | "::\($level) file=\(($root + .file) | prop),line=\(if .line < 1 then 1 else .line end)::\("\(.kind): \(.message)" | esc)"
-        ' "$report" || true
+        ' "$report" | tr -d '\r' || true
+        # tr：Windows 上的 jq 以 CRLF 換行；訊息裡的 \r 上面已經跳脫成 %0D，這裡只會拿掉行尾那個
 
     # SARIF 的路徑是 root 相對 —— 先補上前綴變成 repo 相對，code scanning 才對得上檔案
     - name: Make SARIF paths repo-relative

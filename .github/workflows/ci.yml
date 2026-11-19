@@ -84,28 +84,32 @@ jobs:
   # 照 XamlFit 的 action job。差別在工具從哪裡裝：
   #   這一版的 Action 會傳 --md（0.3.0 才有的旗標），nuget.org 上的 0.2.0 不認得、Run audit 會 exit 2 —— 那樣測到的是版本錯配，
   #   不是殼。所以先把這個 commit 的 CLI 打包成本機來源，用 `version` 釘住它：Action 的安裝步驟照真的走
-  #   （`dotnet tool install --global … --version`），裝到的是同一個 commit 的工具，跟使用者「@vX.Y.Z 與 version: X.Y.Z 一起釘」一樣。
+  #   （`dotnet tool install --tool-path … --version`），裝到的是同一個 commit 的工具，跟使用者「@vX.Y.Z 與 version: X.Y.Z 一起釘」一樣。
+  # 0.3.1 起 Linux 與 Windows 各跑一次，而且同一個 job 呼叫兩次（工具裝進 $RUNNER_TEMP/xamlkeys-tool 之後，第二次不能再因為「已經安裝」失敗）
   action:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
 
-      # 使用者層級的 NuGet 設定多一個本機來源：Action 的 `dotnet tool install --global` 在 workspace 根目錄跑，讀得到它。
+      # workspace 根目錄的 nuget.config 多一個本機來源：Action 的安裝步驟在 workspace 根目錄跑，讀得到它。
+      # （0.3.0 寫在 ~/.nuget/NuGet/NuGet.Config：那是 Linux／macOS 的使用者設定檔，Windows 的在 %APPDATA%。）
       # 版本號每次 run 都不一樣（同一個版本號第二次 pack，install 會拿快取裡的舊檔）
       - name: Pack this commit's CLI into a local feed
         id: pack
         run: |
           v="0.0.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
-          dotnet pack src/XamlKeys.Cli/XamlKeys.Cli.csproj -c Release -o "$RUNNER_TEMP/feed" -p:Version="$v"
-          cfg="$HOME/.nuget/NuGet/NuGet.Config"
-          if [ ! -f "$cfg" ]; then
-            mkdir -p "$(dirname "$cfg")"
-            printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<configuration><packageSources><add key="nuget.org" value="https://api.nuget.org/v3/index.json" /></packageSources></configuration>' > "$cfg"
-          fi
-          dotnet nuget add source "$RUNNER_TEMP/feed" --name xamlkeys-ci --configfile "$cfg"
+          dotnet pack src/XamlKeys.Cli/XamlKeys.Cli.csproj -c Release -o ci-feed -p:Version="$v"
+          printf '<configuration><packageSources><add key="ci" value="ci-feed" /></packageSources></configuration>\n' > nuget.config
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       # 示範專案是刻意做壞的：gate 一定要紅，而且報告與註記要在紅之前就出去。
@@ -120,7 +124,7 @@ jobs:
           root: samples/demo
           min-coverage: 0
           version: ${{ steps.pack.outputs.version }}
-          artifact-name: xamlkeys-demo-report
+          artifact-name: xamlkeys-demo-report-${{ matrix.os }}
       - name: The gate failed and the reports were written
         env:
           OUTCOME: ${{ steps.demo.outcome }}
@@ -130,15 +134,35 @@ jobs:
           md="$RUNNER_TEMP/xamlkeys-report.md"
           test "$OUTCOME" = failure || { echo "expected the demo to fail the gate, got $OUTCOME"; exit 1; }
           test -s "$report" || { echo "no JSON report"; exit 1; }
-          n=$(jq '.findings | length' "$report")
+          # tr：Windows 上的 jq 以 CRLF 換行
+          n=$(jq '.findings | length' "$report" | tr -d '\r')
           test "$n" -gt 0 || { echo "the report has no findings"; exit 1; }
           # 裝到的是這個 commit 打包的工具，不是 nuget.org 上的
-          got=$(jq -r '.toolVersion' "$report")
+          got=$(jq -r '.toolVersion' "$report" | tr -d '\r')
           test "$got" = "$VERSION" || { echo "expected tool $VERSION, the report says $got"; exit 1; }
           test -s "$md" || { echo "no Markdown report"; exit 1; }
-          test "$(head -n 1 "$md")" = "## XamlKeys - resource key audit" || { echo "unexpected Markdown header"; exit 1; }
+          test "$(head -n 1 "$md" | tr -d '\r')" = "## XamlKeys - resource key audit" || { echo "unexpected Markdown header"; exit 1; }
           grep -qF ':x: **FAIL**' "$md" || { echo "the Markdown verdict does not say FAIL"; exit 1; }
           echo "ok: gate failed, $n finding(s) in the report, Markdown written"
+
+      # 同一個 job 第二次呼叫：每次呼叫一開始就清掉上一次的報告，所以報告又出現 = 第二次真的跑完了檢查
+      - name: Second call in the same job
+        id: second
+        continue-on-error: true
+        uses: ./
+        with:
+          root: samples/demo
+          min-coverage: 0
+          version: ${{ steps.pack.outputs.version }}
+          comment: 'false'
+          artifact-name: xamlkeys-second-${{ matrix.os }}
+      - name: The second call ran the audit too
+        env:
+          OUTCOME: ${{ steps.second.outcome }}
+        run: |
+          test "$OUTCOME" = failure || { echo "expected the second call to fail the gate, got $OUTCOME"; exit 1; }
+          test -s "$RUNNER_TEMP/xamlkeys-report.json" || { echo "no JSON report from the second call (did the install fail?)"; exit 1; }
+          echo "ok: the second call installed the tool and ran the audit"
 
       # 壞的輸入要在裝任何東西之前 exit 2，不能變成預設值（Action 的 fail-on 只收小寫的 fail／warn）
       - name: A bad input is refused

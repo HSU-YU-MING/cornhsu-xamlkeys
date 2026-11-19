@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
+## [0.3.1] - 2026-11-19
+
+### Fixed
+
+- **The action installs the tool into its own folder.** It used `dotnet tool install --global`, which fails
+  when the job already installed the tool globally, and on the second call in one job (which the
+  `artifact-name` input says is supported). The tool now goes into `$RUNNER_TEMP/xamlkeys-tool`, cleared
+  first, and that folder is put on the `PATH`. Inputs and outputs are unchanged.
+- **Windows runners.** The annotations drop the carriage return that `jq` adds on Windows. The CI `action`
+  job now runs on `ubuntu-24.04` and `windows-latest`, and calls the action twice in one job.
+
 ## [0.3.0] - 2026-11-19
 
 **Upgrading**: if you use the GitHub Action, move `@v0.3.0` and `version: 0.3.0` together. The
