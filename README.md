@@ -129,19 +129,24 @@ must not produce the same green tick.
 ```yaml
 permissions:
   contents: read
+  pull-requests: write            # for the PR comment (comment: true, the default)
   security-events: write          # only with sarif: true
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.2.0
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.0
     with:
       root: src/MyApp
-      version: 0.2.0              # pin the tool too: it is 0.x, so pin an exact version
+      version: 0.3.0              # pin the tool too: it is 0.x, so pin an exact version
       sarif: true                 # upload to code scanning
 ```
 
 The action installs .NET and the tool, runs `xamlkeys`, annotates every finding on its line in
-the PR, uploads the JSON report as a workflow artifact, uploads SARIF to code scanning when asked,
-and only then fails the job on the audit's exit code, so a red PR still shows the whole report. It
+the PR, posts the Markdown report as a PR comment (one comment, updated on every push), uploads
+the JSON and Markdown reports as a workflow artifact, uploads SARIF to code scanning when asked,
+and only then fails the job on the audit's exit code, so a red PR still shows the whole report.
+The comment opens with what the run could not see (unreadable dictionaries, files that failed to
+parse, keys composed at runtime), then the findings by severity. Pin `version` to the same release
+as the action: the action passes `--md`, which tools before 0.3.0 reject. It
 has the same shape as the XamlContrast and XamlFit actions (inputs are validated before anything
 is installed; the tool's output is wrapped in `::stop-commands::`, because the key names it prints
 come from the scanned repository).
@@ -155,9 +160,10 @@ come from the scanned repository).
 | `baseline` | none | ratchet file: only findings outside it are reported |
 | `fail-on` | config, else `fail` | `fail` or `warn` |
 | `min-coverage` | config, else 80 | share of merged dictionaries that must resolve; below it the job exits 3 |
+| `comment` | `true` | post or update the report as a PR comment (needs `pull-requests: write`; without it that step gets a 403 and is skipped over, the gate still applies) |
 | `sarif` | `false` | upload SARIF to code scanning (needs `security-events: write`) |
-| `upload-report` | `true` | upload the JSON report as an artifact |
-| `artifact-name` | `xamlkeys-report` | artifact name, and the code-scanning category when the action runs twice in one run |
+| `upload-report` | `true` | upload the JSON and Markdown reports as an artifact |
+| `artifact-name` | `xamlkeys-report` | artifact name, and the key of the PR comment and the code-scanning category when the action runs twice in one run |
 
 The path is passed after `--`, so a folder named like a flag is still scanned as a folder.
 
@@ -241,6 +247,7 @@ be able to reach `\\host\share` or the rest of the machine.
 --json <path>            write the JSON report
 --sarif <path>           write a SARIF 2.1.0 report (fail/warn only)
 --html <path>            write a self-contained HTML report (no scripts, no external files)
+--md <path>              write a Markdown summary (for a pull request comment)
 --msbuild                also print MSBuild diagnostics for the VS error list
 --config <path>          config file (default: xamlkeys.config.json in <path>)
 --baseline <path>        only report findings that are not in this baseline

@@ -119,18 +119,22 @@ baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓�
 ```yaml
 permissions:
   contents: read
+  pull-requests: write            # PR 留言用（comment: true，預設）
   security-events: write          # 只有 sarif: true 才需要
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.2.0
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.0
     with:
       root: src/MyApp
-      version: 0.2.0              # 工具的版本也要釘：還在 0.x，請釘確切版本
+      version: 0.3.0              # 工具的版本也要釘：還在 0.x，請釘確切版本
       sarif: true                 # 上傳到 code scanning
 ```
 
-Action 會自己裝 .NET 與工具、跑 `xamlkeys`、把每一筆 finding 標在 PR 的那一行上、把 JSON 報告上傳成 workflow artifact、
-要的話把 SARIF 上傳到 code scanning，最後才依稽核的退出碼讓 job 紅燈 —— 紅掉的 PR 也看得到完整報告。
+Action 會自己裝 .NET 與工具、跑 `xamlkeys`、把每一筆 finding 標在 PR 的那一行上、把 Markdown 報告貼成 PR 留言
+（同一則留言，每次 push 更新）、把 JSON 與 Markdown 報告上傳成 workflow artifact、要的話把 SARIF 上傳到 code scanning，
+最後才依稽核的退出碼讓 job 紅燈 —— 紅掉的 PR 也看得到完整報告。
+留言開頭先講這次**看不到的東西**（讀不到的字典、解析失敗的檔、執行期組出來的鍵），再依等級列 finding。
+`version` 要跟 Action 釘同一個版本：Action 會傳 `--md`，0.3.0 之前的工具不認得這個旗標。
 形狀跟 XamlContrast、XamlFit 的 Action 一樣：裝任何東西之前先驗輸入；工具的輸出包在 `::stop-commands::` 裡，因為它印出來的鍵名是被掃的 repo 寫的。
 
 | 輸入 | 預設 | 作用 |
@@ -142,9 +146,10 @@ Action 會自己裝 .NET 與工具、跑 `xamlkeys`、把每一筆 finding 標�
 | `baseline` | 無 | 棘輪檔：只報基準線外的 finding |
 | `fail-on` | 設定檔，否則 `fail` | `fail` 或 `warn` |
 | `min-coverage` | 設定檔，否則 80 | 合併字典要解析得到的比例下限，低於它 job exit 3 |
+| `comment` | `true` | 把報告貼成（或更新）PR 留言（要 `pull-requests: write`；沒有的話那一步 403、略過，gate 照擋） |
 | `sarif` | `false` | 把 SARIF 上傳到 code scanning（要 `security-events: write`） |
-| `upload-report` | `true` | 把 JSON 報告上傳成 artifact |
-| `artifact-name` | `xamlkeys-report` | artifact 名稱；同一個 run 跑兩次時也是 code scanning 的 category |
+| `upload-report` | `true` | 把 JSON 與 Markdown 報告上傳成 artifact |
+| `artifact-name` | `xamlkeys-report` | artifact 名稱；同一個 run 跑兩次時也是 PR 留言的標記與 code scanning 的 category |
 
 路徑放在 `--` 後面傳，資料夾名字長得像旗標也照樣當資料夾掃。
 
@@ -190,6 +195,7 @@ Action 會自己裝 .NET 與工具、跑 `xamlkeys`、把每一筆 finding 標�
 --json <path>            寫出 JSON 報告
 --sarif <path>           寫出 SARIF 2.1.0 報告（只含 fail／warn）
 --html <path>            寫出單檔 HTML 報告（沒有 script、沒有外部檔案）
+--md <path>              寫出 Markdown 摘要（給 PR 留言用）
 --msbuild                另外印出 MSBuild 診斷，給 VS 的錯誤清單用
 --config <path>          設定檔（預設：<path> 裡的 xamlkeys.config.json）
 --baseline <path>        只回報不在這份 baseline 裡的 finding

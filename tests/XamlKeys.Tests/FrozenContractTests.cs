@@ -24,7 +24,7 @@ public class FrozenContractTests
     private static readonly string[] Flags =
     [
         "--baseline", "--config", "--dialect", "--exclude", "--fail-on", "--help", "--html",
-        "--include-tests", "--json", "--min-coverage", "--msbuild", "--sarif", "--show-info",
+        "--include-tests", "--json", "--md", "--min-coverage", "--msbuild", "--sarif", "--show-info",
         "--stale", "--version", "--write-baseline",
     ];
 
@@ -302,7 +302,7 @@ public class FrozenContractTests
     private static readonly string[] ActionInputs =
     [
         "root", "working-directory", "version", "config", "baseline", "fail-on", "min-coverage",
-        "upload-report", "sarif", "artifact-name",
+        "comment", "upload-report", "sarif", "artifact-name",
     ];
 
     private static string ActionYml() => File.ReadAllText(Path.Combine(TestPaths.RepoRoot, "action.yml"));
@@ -353,9 +353,40 @@ public class FrozenContractTests
         Assert.Contains("args+=(-- \"$XK_ROOT\")", yml);
         Assert.Contains("--json \"$RUNNER_TEMP/xamlkeys-report.json\"", yml);
         Assert.Contains("--sarif \"$RUNNER_TEMP/xamlkeys.sarif\"", yml);
+        Assert.Contains("--md \"$RUNNER_TEMP/xamlkeys-report.md\"", yml);
         Assert.EndsWith("run: exit \"$XK_EXIT\"", yml.TrimEnd());
         // 沒有 outputs：退出碼只是內部的 step output
         Assert.DoesNotMatch(new Regex("^outputs:", RegexOptions.Multiline), yml);
+    }
+
+    [Fact]
+    public void The_pr_comment_step_has_the_same_shape_as_the_xamlcontrast_one()
+    {
+        // 0.3.0：照 XamlContrast 的那一步。每一條都是那邊踩過的：
+        //   只在 pull_request；標記用 artifact-name（同一個 run 跑兩次各自一則）；
+        //   --paginate（不分頁只看得到 30 則，留言一多就每次都發新的）；只認 github-actions[bot] 的留言
+        //   （任何人都能搶先貼一則以標記開頭的留言）；超過 60000 字截斷；continue-on-error（沒有權限是 403，不該紅掉 job）
+        var yml = ActionYml();
+        var step = yml[yml.IndexOf("- name: Comment report on PR", StringComparison.Ordinal)..];
+        step = step[..step.IndexOf("\n    - name:", 10, StringComparison.Ordinal)];
+
+        Assert.Contains("if: ${{ github.event_name == 'pull_request' && inputs.comment == 'true' }}", step);
+        Assert.Contains("continue-on-error: true", step);
+        Assert.Contains("GH_TOKEN: ${{ github.token }}", step);
+        Assert.Contains("XK_PR: ${{ github.event.pull_request.number }}", step);
+        Assert.Contains("XK_ARTIFACT_NAME: ${{ inputs.artifact-name }}", step);
+        Assert.Contains("marker=\"<!-- $XK_ARTIFACT_NAME -->\"", step);
+        Assert.Contains("gh api --paginate", step);
+        Assert.Contains(".user.login == \\\"github-actions[bot]\\\"", step);
+        Assert.Contains("-gt 60000", step);
+        // 截在整行上：head -c 會把最後一行切在 code span 中間，被切開那段的連結與 @ 提及就生效了
+        Assert.Contains("head -c 60000 \"$report\" | sed '$d'", step);
+        Assert.Contains("-X PATCH", step);
+        Assert.Contains("-X POST", step);
+
+        // 留言之前清掉上一次呼叫的 .md、上傳時一起帶上
+        Assert.Contains("\"$RUNNER_TEMP/xamlkeys-report.md\"", yml[..yml.IndexOf("- name: Setup .NET", StringComparison.Ordinal)]);
+        Assert.Contains("${{ runner.temp }}/xamlkeys-report.md", yml);
     }
 
     [Fact]
