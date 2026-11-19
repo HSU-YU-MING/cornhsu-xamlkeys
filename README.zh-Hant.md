@@ -123,10 +123,10 @@ permissions:
   security-events: write          # 只有 sarif: true 才需要
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.0
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.1
     with:
       root: src/MyApp
-      version: 0.3.0              # 工具的版本也要釘：還在 0.x，請釘確切版本
+      version: 0.3.1              # 工具的版本也要釘：還在 0.x，請釘確切版本
       sarif: true                 # 上傳到 code scanning
 ```
 
