@@ -7,7 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-11-24
 
 **Upgrading**: a `xamlkeys-ignore` comment with a commented-out element or text between it and the next element
 no longer suppresses that next element, and a marker without a reason right before an element is no longer
