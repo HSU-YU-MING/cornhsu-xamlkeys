@@ -458,6 +458,55 @@ public class FrozenContractTests
     [InlineData("<!-- <SolidColorBrush x:Key='Old' Color='#111' /> --><!-- xamlkeys-ignore: r -->", true)]
     public void An_ignore_does_not_reach_past_a_commented_out_element(string before, bool suppressed)
     {
+        // 停下要講出來（資源與引用各一處）；不然使用者只看到問題重新報出來，看不出自己的註解為什麼沒生效
+        CheckIgnore(before, suppressed, warnings: suppressed ? 0 : 2);
+    }
+
+    [Theory]
+    // 最近的標記說了算：沒理由的不會被跳過去、改用更前面那個（0.3.1 以前會，一邊警告「沒作用」一邊照壓）
+    [InlineData("<!-- xamlkeys-ignore: far --><!-- xamlkeys-ignore -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: far --><!-- xamlkeys-ignore: --><!-- xamlfit-ignore: f -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore --><!-- xamlkeys-ignore: near -->", true, 2)]
+    // 沒有標記停在那裡，就沒有東西要講
+    [InlineData("<!-- <SolidColorBrush x:Key='Old' Color='#111' /> -->", false, 0)]
+    [InlineData("<!-- xamlfit-ignore: f --><!-- <Border /> -->", false, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <Border /> --><!-- xamlkeys-ignore: near -->", true, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <A /> --><!-- <B /> -->", false, 2)] // 講一次，不是一段一次
+    // 文字也是內容，停；處理指令不是，跳過（0.3.1 以前文字也跳過）
+    [InlineData("<!-- xamlkeys-ignore: r -->some text", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlfit-ignore: f -->some text<!-- a note -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: r --><![CDATA[some text]]>", false, 2)]
+    [InlineData("some text<!-- xamlkeys-ignore: r -->", true, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><?note x?>", true, 0)]
+    [InlineData("<!-- xamlfit-ignore: f -->some text", false, 0)]
+    public void The_nearest_ignore_marker_decides(string before, bool suppressed, int warnings)
+        => CheckIgnore(before, suppressed, warnings);
+
+    [Theory]
+    // 標記要是整個字：「xamlkeys-ignored by design」不是標記（0.3.1 以前當成理由是「d by design」的標記，照壓）
+    [InlineData("<!-- xamlkeys-ignored by design -->", false)]
+    [InlineData("<!-- xamlkeys-ignores: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore_next: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore-next: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore2 r -->", false)]
+    // 原本有效的寫法都還有效：不分大小寫、沒有冒號、冒號前後的空白、全形冒號、理由直接接中文
+    [InlineData("<!-- xamlkeys-ignore: r -->", true)]
+    [InlineData("<!--xamlkeys-ignore:r-->", true)]
+    [InlineData("<!-- xamlkeys-ignore : r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore r -->", true)]
+    [InlineData("<!-- XamlKeys-Ignore: r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore：理由 -->", true)]
+    [InlineData("<!-- xamlkeys-ignore理由 -->", true)]
+    [InlineData("<!-- xamlkeys-ignore - r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore- r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore\n  r -->", true)]
+    // 不是標記的註解就跟一般註解一樣：跳過
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlkeys-ignored by design -->", true)]
+    public void The_ignore_marker_is_a_whole_word(string before, bool suppressed)
+        => CheckIgnore(before, suppressed, warnings: 0);
+
+    private static void CheckIgnore(string before, bool suppressed, int warnings)
+    {
         var dir = Directory.CreateTempSubdirectory("xk-contract-ig");
         try
         {
@@ -487,7 +536,8 @@ public class FrozenContractTests
 
             Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Next"));
             Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Missing"));
-            Assert.Empty(r.InvalidIgnores);
+            Assert.Equal(warnings, r.InvalidIgnores.Count);
+            Assert.Equal(warnings / 2, r.InvalidIgnores.Count(l => l.File == "Main.xaml"));
         }
         finally { dir.Delete(true); }
     }

@@ -207,7 +207,8 @@ Baseline entries deliberately **do not contain line numbers** — one reformat w
 invalidate the whole file.
 
 To exempt a single key, with a reason (the reason is required, and suppressed items are counted). Other comments
-may sit between the marker and its element; another element may not, a commented-out one included:
+may sit between the marker and its element; another element or text may not. A marker without a reason, or in front of
+text or a commented-out element, does nothing and is reported:
 
 ```xml
 <!-- xamlkeys-ignore: looked up by a plugin at runtime -->

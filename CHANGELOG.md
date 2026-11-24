@@ -9,17 +9,28 @@ see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
 ## [0.4.0] - Unreleased
 
-**Upgrading**: a `xamlkeys-ignore` comment with a commented-out element between it and the next element
-no longer suppresses that next element, so a finding that was hidden may come back. Move the comment to
-the element it is meant for. Everything else an ignore comment suppresses stays suppressed. The comment's
-syntax and the JSON, SARIF and baseline formats did not change.
+**Upgrading**: a `xamlkeys-ignore` comment with a commented-out element or text between it and the next element
+no longer suppresses that next element, and a marker without a reason right before an element is no longer
+passed over in favour of an earlier one that has a reason. In both cases a finding that was hidden may come
+back, and the comment is counted in `summary.invalidIgnores`: move it to the element it is meant for, or give
+it a reason. A comment that only starts with the same letters, such as `xamlkeys-ignored by design`, no longer
+counts as a marker. Everything else an ignore comment suppresses stays suppressed. The comment's syntax and the
+JSON, SARIF and baseline formats did not change.
 
 ### Changed
 
-- **An ignore comment stops at a commented-out element.** Comments between a marker and its element are
+- **An ignore comment stops at a commented-out element and at text.** Comments between a marker and its element are
   skipped, so that the markers of several tools can be stacked — but a commented-out element is a comment
   too. In `<!-- xamlkeys-ignore: r --><!-- <SolidColorBrush x:Key="Old" …/> --><SolidColorBrush x:Key="Next" …/>`
-  the marker written for `Old` suppressed `Next`. A comment that starts with `<` now counts as an element.
+  the marker written for `Old` suppressed `Next`. A comment that starts with `<` now counts as an element, and
+  the marker that stops there is reported with the ones that have no reason. Text between a marker and an
+  element (`<!-- xamlkeys-ignore: r -->Hello<Run …/>`) is content too and stops it the same way; processing
+  instructions are skipped, as before.
+- **The marker has to be a whole word.** `<!-- xamlkeys-ignored by design -->` was read as a marker with the
+  reason "d by design" and suppressed the next element.
+- **With several `xamlkeys-ignore` markers on one element, the closest decides.** In
+  `<!-- xamlkeys-ignore: r --><!-- xamlkeys-ignore --><Border/>` the second one was reported as having no
+  effect while the first one still suppressed the element.
 
 ## [0.3.1] - 2026-11-19
 

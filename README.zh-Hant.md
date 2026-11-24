@@ -106,7 +106,7 @@ xamlkeys src --baseline xamlkeys-baseline.json --write-baseline xamlkeys-baselin
 baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓整份失效。
 
 要豁免單一個鍵（理由必填，而且被壓掉的項目會計入 summary）。標記與元素之間可以隔別的註解，
-不能隔別的元素（被註解掉的也算）：
+不能隔別的元素或文字。沒寫理由、或停在文字、被註解掉的元素前面的標記沒有作用，而且會列出來：
 
 ```xml
 <!-- xamlkeys-ignore: 這個鍵由外掛在執行期取用 -->

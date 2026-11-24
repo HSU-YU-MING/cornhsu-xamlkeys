@@ -40,7 +40,7 @@
         "baselineSuppressed": { "type": "integer", "description": "The part of 'suppressed' hidden by --baseline." },
         "parseErrors": { "type": "integer" },
         "unresolvedSites": { "type": "integer", "description": "References whose key is not a string (x:Type, x:Static)." },
-        "invalidIgnores": { "type": "integer", "description": "Ignore comments with no reason. They suppress nothing." },
+        "invalidIgnores": { "type": "integer", "description": "Ignore comments with no reason, or with a commented-out element or text after them. They suppress nothing." },
         "dynamicKeySites": { "type": "integer", "description": "C# lookups that build the key at runtime." },
         "frameworkKeyOverrides": { "type": "integer", "description": "Keys that redefine a framework-provided key (WinUI lightweight styling, System* resources). The framework's own templates read them, so they are never reported as unused." },
         "unusedOnlyViaUnused": { "type": "integer", "description": "How many of the unused findings are keys referenced only from inside other unused resources (counted in 'unused' as well)." },

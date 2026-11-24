@@ -315,8 +315,9 @@ public static class Report
         if (r.ParseErrors.Count > 0)
             o.WriteLine($"note: {r.ParseErrors.Count} file(s) failed to parse and were skipped");
         if (r.InvalidIgnores.Count > 0)
-            o.WriteLine($"warning: {r.InvalidIgnores.Count} ignore comment(s) have no reason and were ignored " +
-                        $"themselves -- write '<!-- xamlkeys-ignore: why -->' (see summary.invalidIgnoreDetails)");
+            o.WriteLine($"warning: {r.InvalidIgnores.Count} ignore comment(s) have no reason, or a commented-out element " +
+                        $"or text after them, and were ignored themselves -- write '<!-- xamlkeys-ignore: why -->' right before " +
+                        $"the element (see summary.invalidIgnoreDetails)");
         if (r.Suppressed - r.BaselineSuppressed > 0)
             o.WriteLine($"note: {r.Suppressed - r.BaselineSuppressed} finding(s) suppressed by ignore comments or config");
         if (r.BaselineSuppressed > 0)
