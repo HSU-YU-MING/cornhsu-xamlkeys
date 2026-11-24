@@ -277,7 +277,7 @@ public sealed partial class XamlScanner
             {
                 if (node is XComment c)
                 {
-                    pendingIgnore = ParseIgnore(c, file) ?? pendingIgnore;
+                    pendingIgnore = IsCommentedOutElement(c) ? null : ParseIgnore(c, file) ?? pendingIgnore;
                     continue;
                 }
 
@@ -1110,6 +1110,12 @@ public sealed partial class XamlScanner
     /// <summary>沒有寫理由、因此被當成無效的 ignore 註解。</summary>
     public IReadOnlyList<SourceLocation> InvalidIgnores => _invalidIgnores;
 
+    /// <summary>
+    /// 被註解掉的元素（註解內容以 &lt; 開頭）。它前面的 ignore 管的是它：註解掉之後不能改壓下一個元素，
+    /// 那會讓一個沒有人寫過理由的東西從報告消失。別的註解照樣跳過（四件套的 ignore 會疊在同一個元素上）。
+    /// </summary>
+    private static bool IsCommentedOutElement(XComment c) => c.Value.AsSpan().TrimStart().StartsWith("<");
+
     /// <summary>把直接子層的 ignore 註解套到緊接著的資源項目上。</summary>
     private void ApplyIgnoreComments(XElement container, ResourceDictionaryNode dict)
     {
@@ -1118,7 +1124,7 @@ public sealed partial class XamlScanner
         {
             if (node is XComment c)
             {
-                pending = ParseIgnore(c, dict.File) ?? pending;
+                pending = IsCommentedOutElement(c) ? null : ParseIgnore(c, dict.File) ?? pending;
                 continue;
             }
 

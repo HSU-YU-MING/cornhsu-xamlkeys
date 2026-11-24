@@ -105,7 +105,8 @@ xamlkeys src --baseline xamlkeys-baseline.json --write-baseline xamlkeys-baselin
 
 baseline 的比對鍵**刻意不含行號** —— 否則一次格式化就讓整份失效。
 
-要豁免單一個鍵（理由必填，而且被壓掉的項目會計入 summary）：
+要豁免單一個鍵（理由必填，而且被壓掉的項目會計入 summary）。標記與元素之間可以隔別的註解，
+不能隔別的元素（被註解掉的也算）：
 
 ```xml
 <!-- xamlkeys-ignore: 這個鍵由外掛在執行期取用 -->
@@ -123,10 +124,10 @@ permissions:
   security-events: write          # 只有 sarif: true 才需要
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.1
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.0
     with:
       root: src/MyApp
-      version: 0.3.1              # 工具的版本也要釘：還在 0.x，請釘確切版本
+      version: 0.4.0              # 工具的版本也要釘：還在 0.x，請釘確切版本
       sarif: true                 # 上傳到 code scanning
 ```
 

@@ -447,6 +447,51 @@ public class FrozenContractTests
         finally { dir.Delete(true); }
     }
 
+    [Theory]
+    // 被註解掉的元素也是隔了元素：ignore 原本管的是它，不能因為它被註解掉就改壓下一個。
+    // 0.3.1 以前「註解都跳過」，被註解掉的元素在 XML 裡也是註解，所以一起被跳過了（四件套 2026-11-24 統一成會停）
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <SolidColorBrush x:Key='Old' Color='#111' /> -->", false)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!--\n  <SolidColorBrush x:Key='Old' Color='#111' />\n--><!-- xamlfit-ignore: f -->", false)]
+    // 對照：疊了別的註解照樣有效；在談元素的註解不是被註解掉的元素；標記在後面的照樣有效
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlfit-ignore: f --><!-- a note -->", true)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- the <SolidColorBrush/> below is for plugins -->", true)]
+    [InlineData("<!-- <SolidColorBrush x:Key='Old' Color='#111' /> --><!-- xamlkeys-ignore: r -->", true)]
+    public void An_ignore_does_not_reach_past_a_commented_out_element(string before, bool suppressed)
+    {
+        var dir = Directory.CreateTempSubdirectory("xk-contract-ig");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, "App.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+            File.WriteAllText(Path.Combine(dir.FullName, "App.xaml"), $"""
+                <Application xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources><ResourceDictionary>
+                    {before}
+                    <SolidColorBrush x:Key="Next" Color="#222" />
+                  </ResourceDictionary></Application.Resources>
+                </Application>
+                """);
+            // 引用那一側走另一個迴圈（WalkElement）
+            File.WriteAllText(Path.Combine(dir.FullName, "Main.xaml"), $$"""
+                <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Grid>
+                    {{before}}
+                    <Border Background="{StaticResource Missing}" />
+                  </Grid>
+                </Window>
+                """);
+
+            var r = Analyzer.Run(dir.FullName, new Config());
+
+            Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Next"));
+            Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Missing"));
+            Assert.Empty(r.InvalidIgnores);
+        }
+        finally { dir.Delete(true); }
+    }
+
     // ── 9. 稽核範圍的硬規則 ────────────────────────────────────────────────
 
     [Fact]

@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
+## [0.4.0] - Unreleased
+
+**Upgrading**: a `xamlkeys-ignore` comment with a commented-out element between it and the next element
+no longer suppresses that next element, so a finding that was hidden may come back. Move the comment to
+the element it is meant for. Everything else an ignore comment suppresses stays suppressed. The comment's
+syntax and the JSON, SARIF and baseline formats did not change.
+
+### Changed
+
+- **An ignore comment stops at a commented-out element.** Comments between a marker and its element are
+  skipped, so that the markers of several tools can be stacked — but a commented-out element is a comment
+  too. In `<!-- xamlkeys-ignore: r --><!-- <SolidColorBrush x:Key="Old" …/> --><SolidColorBrush x:Key="Next" …/>`
+  the marker written for `Old` suppressed `Next`. A comment that starts with `<` now counts as an element.
+
 ## [0.3.1] - 2026-11-19
 
 ### Fixed
