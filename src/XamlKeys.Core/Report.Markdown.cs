@@ -159,8 +159,8 @@ public static class ReportMarkdown
         {
             Head();
             sb.Append(string.Create(inv,
-                $"**{r.InvalidIgnores.Count} ignore comment(s) have no reason** and were ignored themselves " +
-                $"(write `<!-- xamlkeys-ignore: why -->`):\n"));
+                $"**{r.InvalidIgnores.Count} ignore comment(s) have no reason, or a commented-out element or text after them,** " +
+                $"and were ignored themselves (write `<!-- xamlkeys-ignore: why -->` right before the element):\n"));
             foreach (var l in r.InvalidIgnores.Take(MaxDetailsPerKind))
                 sb.Append($"- {Code(l.ToString(), table: false)}\n");
             More(sb, r.InvalidIgnores.Count, inv, "");

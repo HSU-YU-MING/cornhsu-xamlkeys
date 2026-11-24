@@ -133,10 +133,10 @@ permissions:
   security-events: write          # only with sarif: true
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.3.1
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.0
     with:
       root: src/MyApp
-      version: 0.3.1              # pin the tool too: it is 0.x, so pin an exact version
+      version: 0.4.0              # pin the tool too: it is 0.x, so pin an exact version
       sarif: true                 # upload to code scanning
 ```
 
@@ -206,7 +206,9 @@ xamlkeys src --baseline xamlkeys-baseline.json --write-baseline xamlkeys-baselin
 Baseline entries deliberately **do not contain line numbers** — one reformat would otherwise
 invalidate the whole file.
 
-To exempt a single key, with a reason (the reason is required, and suppressed items are counted):
+To exempt a single key, with a reason (the reason is required, and suppressed items are counted). Other comments
+may sit between the marker and its element; another element or text may not. A marker without a reason, or in front of
+text or a commented-out element, does nothing and is reported:
 
 ```xml
 <!-- xamlkeys-ignore: looked up by a plugin at runtime -->

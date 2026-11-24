@@ -272,20 +272,14 @@ public sealed partial class XamlScanner
         {
             CollectRefs(el, file, chainHere, ignorable, suppressed);
 
-            string? pendingIgnore = null;
+            var pendingIgnore = new PendingIgnore();
             foreach (var node in el.Nodes())
             {
-                if (node is XComment c)
-                {
-                    pendingIgnore = ParseIgnore(c, file) ?? pendingIgnore;
-                    continue;
-                }
+                if (node is not XElement child) { ReadIgnore(ref pendingIgnore, node, file); continue; }
+                var own = TakeIgnore(ref pendingIgnore, file);
+                if (ReferenceEquals(child, FindResourcesProperty(el))) continue;
 
-                if (node is not XElement child) continue;
-                if (ReferenceEquals(child, FindResourcesProperty(el))) { pendingIgnore = null; continue; }
-
-                WalkElement(child, file, chainHere, ignorable, suppressed ?? pendingIgnore);
-                pendingIgnore = null;
+                WalkElement(child, file, chainHere, ignorable, suppressed ?? own);
             }
         }
         finally
@@ -1087,48 +1081,84 @@ public sealed partial class XamlScanner
     /// <see cref="InvalidIgnores"/> 讓報告講出來 ——
     /// 否則 <c>&lt;!-- xamlkeys-ignore --&gt;</c> 就是一條沒有任何交代的靜默壓制通道，
     /// 而這個工具的第二條憲法正是「讓結果變寬鬆的每一條路徑都要留下痕跡」。
+    /// 回傳 null = 不是標記；"" = 是標記但沒寫理由。
     /// </summary>
     private string? ParseIgnore(XComment c, string file)
     {
         var t = c.Value.Trim();
         if (!t.StartsWith(IgnoreMarker, StringComparison.OrdinalIgnoreCase)) return null;
 
-        var rest = t[IgnoreMarker.Length..].TrimStart();
+        // 要是整個字：「xamlkeys-ignored by design」不是標記。只擋 ASCII 的字 —— 理由直接接中文的寫法一直有效
+        var rest = t[IgnoreMarker.Length..];
+        if (IsWord(rest, 0) || rest.StartsWith('-') && IsWord(rest, 1)) return null;
+
+        rest = rest.TrimStart();
         if (rest.StartsWith(':')) rest = rest[1..].Trim();
 
         if (rest.Length == 0)
         {
             _invalidIgnores.Add(new SourceLocation(Rel(file), LineOf(c)));
-            return null;
+            return "";
         }
 
         return rest;
     }
 
+    private static bool IsWord(string s, int i) => i < s.Length && (char.IsAsciiLetterOrDigit(s[i]) || s[i] == '_');
+
+    /// <summary>走到下一個元素之前讀到的標記。Stranded = 停在文字或被註解掉的元素前面、因此沒作用的那一個。</summary>
+    private record struct PendingIgnore(string? Reason, XComment? Marker, XComment? Stranded);
+
+    /// <summary>
+    /// 讀元素之間的一個節點。自己的標記有好幾個時，最靠近元素的說了算（沒寫理由的也算，不會改用更前面那個）；
+    /// 不相關的註解與處理指令跳過（四件套的 ignore 會疊在同一個元素上），內容 —— 文字、被註解掉的元素 —— 就停。
+    /// </summary>
+    private void ReadIgnore(ref PendingIgnore pending, XNode node, string file)
+    {
+        switch (node)
+        {
+            case XText t when !string.IsNullOrWhiteSpace(t.Value):
+            case XComment c when IsCommentedOutElement(c):
+                if (pending.Reason is not null) pending = new PendingIgnore(null, null, pending.Marker);
+                break;
+            case XComment c when ParseIgnore(c, file) is { } reason:
+                pending = reason.Length > 0 ? new PendingIgnore(reason, c, null) : new PendingIgnore();
+                break;
+        }
+    }
+
+    /// <summary>走到一個元素：把讀到的標記交給它。停在文字或被註解掉的元素前面的沒作用，而且要講出來。</summary>
+    private string? TakeIgnore(ref PendingIgnore pending, string file)
+    {
+        var (reason, _, stranded) = pending;
+        pending = new PendingIgnore();
+        if (stranded is not null) _invalidIgnores.Add(new SourceLocation(Rel(file), LineOf(stranded)));
+        return reason;
+    }
+
     private readonly List<SourceLocation> _invalidIgnores = [];
 
-    /// <summary>沒有寫理由、因此被當成無效的 ignore 註解。</summary>
+    /// <summary>沒作用的 ignore 註解：沒有寫理由，或停在文字、被註解掉的元素前面。</summary>
     public IReadOnlyList<SourceLocation> InvalidIgnores => _invalidIgnores;
+
+    /// <summary>
+    /// 被註解掉的元素（註解內容以 &lt; 開頭）。它前面的 ignore 管的是它：註解掉之後不能改壓下一個元素，
+    /// 那會讓一個沒有人寫過理由的東西從報告消失。別的註解照樣跳過（四件套的 ignore 會疊在同一個元素上）。
+    /// </summary>
+    private static bool IsCommentedOutElement(XComment c) => c.Value.AsSpan().TrimStart().StartsWith("<");
 
     /// <summary>把直接子層的 ignore 註解套到緊接著的資源項目上。</summary>
     private void ApplyIgnoreComments(XElement container, ResourceDictionaryNode dict)
     {
-        string? pending = null;
+        var pending = new PendingIgnore();
         foreach (var node in container.Nodes())
         {
-            if (node is XComment c)
-            {
-                pending = ParseIgnore(c, dict.File) ?? pending;
-                continue;
-            }
-
-            if (node is not XElement el) continue;
-            if (pending is not null)
+            if (node is not XElement el) { ReadIgnore(ref pending, node, dict.File); continue; }
+            if (TakeIgnore(ref pending, dict.File) is { } reason)
             {
                 var line = LineOf(el);
                 foreach (var d in dict.OwnKeys.Where(d => d.Location.Line == line))
-                    d.SuppressedReason = pending;
-                pending = null;
+                    d.SuppressedReason = reason;
             }
         }
     }

@@ -447,6 +447,101 @@ public class FrozenContractTests
         finally { dir.Delete(true); }
     }
 
+    [Theory]
+    // 被註解掉的元素也是隔了元素：ignore 原本管的是它，不能因為它被註解掉就改壓下一個。
+    // 0.3.1 以前「註解都跳過」，被註解掉的元素在 XML 裡也是註解，所以一起被跳過了（四件套 2026-11-24 統一成會停）
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <SolidColorBrush x:Key='Old' Color='#111' /> -->", false)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!--\n  <SolidColorBrush x:Key='Old' Color='#111' />\n--><!-- xamlfit-ignore: f -->", false)]
+    // 對照：疊了別的註解照樣有效；在談元素的註解不是被註解掉的元素；標記在後面的照樣有效
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlfit-ignore: f --><!-- a note -->", true)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- the <SolidColorBrush/> below is for plugins -->", true)]
+    [InlineData("<!-- <SolidColorBrush x:Key='Old' Color='#111' /> --><!-- xamlkeys-ignore: r -->", true)]
+    public void An_ignore_does_not_reach_past_a_commented_out_element(string before, bool suppressed)
+    {
+        // 停下要講出來（資源與引用各一處）；不然使用者只看到問題重新報出來，看不出自己的註解為什麼沒生效
+        CheckIgnore(before, suppressed, warnings: suppressed ? 0 : 2);
+    }
+
+    [Theory]
+    // 最近的標記說了算：沒理由的不會被跳過去、改用更前面那個（0.3.1 以前會，一邊警告「沒作用」一邊照壓）
+    [InlineData("<!-- xamlkeys-ignore: far --><!-- xamlkeys-ignore -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: far --><!-- xamlkeys-ignore: --><!-- xamlfit-ignore: f -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore --><!-- xamlkeys-ignore: near -->", true, 2)]
+    // 沒有標記停在那裡，就沒有東西要講
+    [InlineData("<!-- <SolidColorBrush x:Key='Old' Color='#111' /> -->", false, 0)]
+    [InlineData("<!-- xamlfit-ignore: f --><!-- <Border /> -->", false, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <Border /> --><!-- xamlkeys-ignore: near -->", true, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- <A /> --><!-- <B /> -->", false, 2)] // 講一次，不是一段一次
+    // 文字也是內容，停；處理指令不是，跳過（0.3.1 以前文字也跳過）
+    [InlineData("<!-- xamlkeys-ignore: r -->some text", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlfit-ignore: f -->some text<!-- a note -->", false, 2)]
+    [InlineData("<!-- xamlkeys-ignore: r --><![CDATA[some text]]>", false, 2)]
+    [InlineData("some text<!-- xamlkeys-ignore: r -->", true, 0)]
+    [InlineData("<!-- xamlkeys-ignore: r --><?note x?>", true, 0)]
+    [InlineData("<!-- xamlfit-ignore: f -->some text", false, 0)]
+    public void The_nearest_ignore_marker_decides(string before, bool suppressed, int warnings)
+        => CheckIgnore(before, suppressed, warnings);
+
+    [Theory]
+    // 標記要是整個字：「xamlkeys-ignored by design」不是標記（0.3.1 以前當成理由是「d by design」的標記，照壓）
+    [InlineData("<!-- xamlkeys-ignored by design -->", false)]
+    [InlineData("<!-- xamlkeys-ignores: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore_next: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore-next: r -->", false)]
+    [InlineData("<!-- xamlkeys-ignore2 r -->", false)]
+    // 原本有效的寫法都還有效：不分大小寫、沒有冒號、冒號前後的空白、全形冒號、理由直接接中文
+    [InlineData("<!-- xamlkeys-ignore: r -->", true)]
+    [InlineData("<!--xamlkeys-ignore:r-->", true)]
+    [InlineData("<!-- xamlkeys-ignore : r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore r -->", true)]
+    [InlineData("<!-- XamlKeys-Ignore: r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore：理由 -->", true)]
+    [InlineData("<!-- xamlkeys-ignore理由 -->", true)]
+    [InlineData("<!-- xamlkeys-ignore - r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore- r -->", true)]
+    [InlineData("<!-- xamlkeys-ignore\n  r -->", true)]
+    // 不是標記的註解就跟一般註解一樣：跳過
+    [InlineData("<!-- xamlkeys-ignore: r --><!-- xamlkeys-ignored by design -->", true)]
+    public void The_ignore_marker_is_a_whole_word(string before, bool suppressed)
+        => CheckIgnore(before, suppressed, warnings: 0);
+
+    private static void CheckIgnore(string before, bool suppressed, int warnings)
+    {
+        var dir = Directory.CreateTempSubdirectory("xk-contract-ig");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, "App.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>");
+            File.WriteAllText(Path.Combine(dir.FullName, "App.xaml"), $"""
+                <Application xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Application.Resources><ResourceDictionary>
+                    {before}
+                    <SolidColorBrush x:Key="Next" Color="#222" />
+                  </ResourceDictionary></Application.Resources>
+                </Application>
+                """);
+            // 引用那一側走另一個迴圈（WalkElement）
+            File.WriteAllText(Path.Combine(dir.FullName, "Main.xaml"), $$"""
+                <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Grid>
+                    {{before}}
+                    <Border Background="{StaticResource Missing}" />
+                  </Grid>
+                </Window>
+                """);
+
+            var r = Analyzer.Run(dir.FullName, new Config());
+
+            Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Next"));
+            Assert.Equal(!suppressed, r.Findings.Any(f => f.Key == "Missing"));
+            Assert.Equal(warnings, r.InvalidIgnores.Count);
+            Assert.Equal(warnings / 2, r.InvalidIgnores.Count(l => l.File == "Main.xaml"));
+        }
+        finally { dir.Delete(true); }
+    }
+
     // ── 9. 稽核範圍的硬規則 ────────────────────────────────────────────────
 
     [Fact]
