@@ -7,7 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
-## [Unreleased]
+## [0.4.1] - 2026-11-24
+
+**Upgrading**: only the GitHub Action changed; the tool gives the same results as 0.4.0.
+If your workflow writes `root` in one of the ways below, or your XAML is in a folder whose name
+needs encoding, code scanning alerts move to the right file: expect the ones at the old path to close and new ones
+to open.
 
 ### Fixed
 

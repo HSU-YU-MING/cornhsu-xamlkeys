@@ -133,10 +133,10 @@ permissions:
   security-events: write          # only with sarif: true
 steps:
   - uses: actions/checkout@v4
-  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.0
+  - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.1
     with:
       root: src/MyApp
-      version: 0.4.0              # pin the tool too: it is 0.x, so pin an exact version
+      version: 0.4.1              # pin the tool too: it is 0.x, so pin an exact version
       sarif: true                 # upload to code scanning
 ```
 
