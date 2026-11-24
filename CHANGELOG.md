@@ -7,6 +7,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **This project is on 0.x: pin an exact version.** Interfaces are not frozen until 1.0 —
 see [ROADMAP.md](ROADMAP.md) for the freeze checklist.
 
+## [Unreleased]
+
+### Fixed
+
+- **PR annotations and code scanning locations for more ways of writing `root`** (GitHub Action). The finding's
+  path is relative to `root`, and the action puts the repository part in front of it. That part was wrong when
+  `root` was an absolute path (`${{ github.workspace }}/src`), contained `..` (`../src` with a
+  `working-directory`) or used backslashes (`src\App`), and when `working-directory` was an absolute path: the
+  annotation and the code scanning alert then pointed at a file that does not exist, with no error.
+- **Paths in the uploaded SARIF are URI-encoded** (GitHub Action): a folder such as `My App` is now
+  `My%20App`. The CLI's own `--sarif` file did not change.
+
 ## [0.4.0] - 2026-11-24
 
 **Upgrading**: a `xamlkeys-ignore` comment with a commented-out element or text between it and the next element
