@@ -283,6 +283,14 @@ UWP, Uno, Avalonia, .NET MAUI and Xamarin.Forms, about 19,600 XAML files; the li
 | Symlinks and directory junctions | Their contents are skipped | Following them can loop forever when one points at an ancestor |
 | Avalonia custom theme variants (`x:Key="{x:Static …}"`) | Treated as a neutral side | Mutual exclusion still applies, so they never shadow each other |
 
+## Related tools
+
+[XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) (WCAG contrast),
+[XamlFit](https://github.com/HSU-YU-MING/cornhsu-xamlfit) (translated text that does not fit) and
+[XamlA11y](https://github.com/HSU-YU-MING/cornhsu-xamla11y) (controls a screen reader cannot name or a keyboard cannot
+reach) read the same XAML, with the same exit codes and action inputs.
+[All four in one job](https://github.com/HSU-YU-MING/cornhsu-xamla11y/blob/main/docs/four-tools.md).
+
 ## License
 
 MIT. The embedded list of WinUI framework resource keys is generated from

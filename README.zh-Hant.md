@@ -229,6 +229,14 @@ Action 會自己裝 .NET 與工具、跑 `xamlkeys`、把每一筆 finding 標�
 | 符號連結與目錄接合點 | 裡面的內容會被跳過 | 跟著走的話，指回祖先的接合點會讓掃描永遠跑不完 |
 | Avalonia 的自訂主題變體（`x:Key="{x:Static …}"`） | 當成中性側 | 互斥規則仍然適用，所以它們之間不會互相覆蓋 |
 
+## 相關工具
+
+[XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast)（WCAG 對比度）、
+[XamlFit](https://github.com/HSU-YU-MING/cornhsu-xamlfit)（翻譯後放不放得下）、
+[XamlA11y](https://github.com/HSU-YU-MING/cornhsu-xamla11y)（螢幕閱讀器念不念得出來、鍵盤到不到得了）
+讀的是同一份 XAML，退出碼與 Action 輸入都一樣。
+[四支放在同一個 job](https://github.com/HSU-YU-MING/cornhsu-xamla11y/blob/main/docs/four-tools.md)（英文）。
+
 ## 授權
 
 MIT。內嵌的 WinUI 框架資源鍵清單由
