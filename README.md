@@ -132,7 +132,7 @@ permissions:
   pull-requests: write            # for the PR comment (comment: true, the default)
   security-events: write          # only with sarif: true
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
   - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.1
     with:
       root: src/MyApp

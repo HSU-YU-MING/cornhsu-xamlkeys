@@ -123,7 +123,7 @@ permissions:
   pull-requests: write            # PR 留言用（comment: true，預設）
   security-events: write          # 只有 sarif: true 才需要
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
   - uses: HSU-YU-MING/cornhsu-xamlkeys@v0.4.1
     with:
       root: src/MyApp
